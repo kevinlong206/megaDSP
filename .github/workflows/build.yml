@@ -1,0 +1,78 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plugins:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (VST3, AU, CLAP)
+            os: macos-15
+            artifact: macOS
+          - name: Windows (VST3, CLAP)
+            os: windows-2025
+            artifact: Windows
+          - name: Linux (VST3, CLAP)
+            os: ubuntu-24.04
+            artifact: Linux
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            libasound2-dev \
+            libfontconfig1-dev \
+            libfreetype-dev \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            ninja-build \
+            xvfb
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMEGADSP_ADHOC_SIGN=OFF
+
+      - name: Build VST3, CLAP, and tests
+        run: cmake --build build --config Release --target megaDSP_VST3 megaDSP_CLAP megaDSPTests --parallel 4
+
+      - name: Build Audio Unit
+        if: runner.os == 'macOS'
+        run: cmake --build build --config Release --target megaDSP_AU --parallel 4
+
+      - name: Test (macOS and Windows)
+        if: runner.os != 'Linux'
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum ctest --test-dir build -C Release --output-on-failure
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: megaDSP-${{ matrix.artifact }}
+          path: build/megaDSP_artefacts/Release
+          if-no-files-found: error

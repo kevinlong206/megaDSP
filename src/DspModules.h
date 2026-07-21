@@ -1,0 +1,17 @@
+#pragma once
+
+#include "modules/DspModule.h"
+#include "modules/Equalizer.h"
+#include "modules/Compressor.h"
+#include "modules/Saturator.h"
+#include "modules/Delay.h"
+#include "modules/Limiter.h"
+#include "modules/AlgorithmicReverb.h"
+#include "modules/StereoWidth.h"
+#include "modules/MidSideDecoder.h"
+#include "modules/Tremolo.h"
+#include "modules/RotarySpeaker.h"
+#include "modules/ConvolutionReverb.h"
+#include "modules/DynamicEqualizer.h"
+#include "modules/RandomGranulizer.h"
+#include "modules/VintageChorus.h"
