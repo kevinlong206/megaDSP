@@ -4,6 +4,7 @@
 #include "EffectRack.h"
 #include "modules/ModuleRegistry.h"
 
+#include <cstdio>
 #include <type_traits>
 #include <utility>
 
@@ -1800,16 +1801,26 @@ VintageChorusTests vintageChorusTests;
 
 int main(int argc, char** argv)
 {
-    juce::ScopedJuceInitialiser_GUI juceInitialiser;
+    class TestLogger final : public juce::Logger
+    {
+        void logMessage(const juce::String& message) override
+        {
+            std::fprintf(stderr, "%s\n", message.toRawUTF8());
+            std::fflush(stderr);
+        }
+    };
+
+    TestLogger logger;
+    juce::Logger::setCurrentLogger(&logger);
     juce::UnitTestRunner runner;
     if (argc > 1)
         runner.runTestsWithName(argv[1]);
     else
         runner.runAllTests();
-    if (runner.getNumResults() == 0)
-        return 1;
+    auto exitCode = runner.getNumResults() == 0 ? 1 : 0;
     for (int index = 0; index < runner.getNumResults(); ++index)
         if (runner.getResult(index)->failures != 0)
-            return 1;
-    return 0;
+            exitCode = 1;
+    juce::Logger::setCurrentLogger(nullptr);
+    return exitCode;
 }
