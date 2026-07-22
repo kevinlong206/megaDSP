@@ -1231,8 +1231,10 @@ public:
                 for (int channel = 0; channel < 2; ++channel)
                     for (int sample = 0; sample < automated.getNumSamples(); ++sample)
                         expect(std::isfinite(automated.getSample(channel, sample)));
-                const auto leftMagnitude = automated.getMagnitude(0, 512);
-                const auto rightMagnitude = automated.getMagnitude(1, 512);
+                const auto leftMagnitude =
+                    automated.getMagnitude(0, 0, automated.getNumSamples());
+                const auto rightMagnitude =
+                    automated.getMagnitude(1, 0, automated.getNumSamples());
                 expect(leftMagnitude < 4.0f,
                        "Left magnitude " + juce::String(leftMagnitude, 6)
                            + " at " + juce::String(rate, 0) + " Hz, block "
