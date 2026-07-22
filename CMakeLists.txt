@@ -47,6 +47,7 @@ juce_add_plugin(megaDSP
 
 set(MEGADSP_MODULE_SOURCES
     src/modules/AlgorithmicReverb.cpp
+    src/modules/AnalogTape.cpp
     src/modules/Compressor.cpp
     src/modules/ConvolutionReverb.cpp
     src/modules/Delay.cpp
@@ -66,6 +67,7 @@ set(MEGADSP_MODULE_SOURCES
 set(MEGADSP_MODULE_HEADERS
     src/DspModules.h
     src/modules/AlgorithmicReverb.h
+    src/modules/AnalogTape.h
     src/modules/Compressor.h
     src/modules/ConvolutionReverb.h
     src/modules/Delay.h
@@ -97,6 +99,7 @@ set(MEGADSP_UI_SOURCES
     src/ui/ModuleBrowser.cpp
     src/ui/ModuleBrowser.h
     src/ui/modules/AlgorithmicReverbModuleView.cpp
+    src/ui/modules/AnalogTapeModuleView.cpp
     src/ui/modules/CompressorModuleView.cpp
     src/ui/modules/ConvolutionReverbModuleView.cpp
     src/ui/modules/DelayModuleView.cpp

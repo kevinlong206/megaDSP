@@ -121,6 +121,7 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::dynamicEqualizer: return "DynEQ";
         case ModuleType::randomGranulizer: return "Grains";
         case ModuleType::vintageChorus: return "Chorus";
+        case ModuleType::analogTape: return "Tape";
         case ModuleType::empty:
         case ModuleType::delay:
         case ModuleType::limiter:
@@ -169,6 +170,7 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::rotarySpeaker:
         case ModuleType::convolutionReverb:
         case ModuleType::dynamicEqualizer:
+        case ModuleType::analogTape:
             break;
     }
 

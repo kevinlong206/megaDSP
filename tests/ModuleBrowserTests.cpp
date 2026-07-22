@@ -47,7 +47,17 @@ public:
         expectOnly("m/S", megadsp::ModuleType::midSideDecoder);
 
         beginTest("Category matching supports multiple tokens");
-        expectOnly("SATURATION & color", megadsp::ModuleType::saturator);
+        const auto saturationCategoryModules = flatten(
+            megadsp::ui::filterAndGroupModules("SATURATION & color"));
+        expectEquals(static_cast<int>(saturationCategoryModules.size()), 2);
+        expect(std::find(saturationCategoryModules.begin(),
+                        saturationCategoryModules.end(),
+                        megadsp::ModuleType::saturator)
+               != saturationCategoryModules.end());
+        expect(std::find(saturationCategoryModules.begin(),
+                        saturationCategoryModules.end(),
+                        megadsp::ModuleType::analogTape)
+               != saturationCategoryModules.end());
 
         beginTest("Description matching finds module copy");
         expectOnly("evolving randomized", megadsp::ModuleType::randomGranulizer);

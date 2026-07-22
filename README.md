@@ -6,8 +6,8 @@ megaDSP is a modular 8-slot effects rack for VST3, AU, and CLAP hosts. It
 includes parametric EQ, compressor, saturator, delay, limiter, and algorithmic
 and convolution reverbs, stereo-width, M/S Decoder, premium tremolo, and
 physical rotary-speaker modules, plus a stackable single-band Dynamic EQ /
-De-Esser, Random Granulizer, and four-model Vintage Chorus, with mono/stereo
-processing and an optional dynamics sidechain.
+De-Esser, Random Granulizer, four-model Vintage Chorus, and four-machine
+Analog Tape, with mono/stereo processing and an optional dynamics sidechain.
 
 ## Building
 
@@ -67,6 +67,9 @@ are never rewritten:
   every voice trajectory and phase relationship, direct Rate/Depth/Delay/Width
   editing, signed Regeneration polarity, grouped Density and Character rails,
   and compact Phase/Output rails
+- Analog Tape: prominent Machine pills, an animated reel/transport graphic tied
+  to Tape Speed, a direct speed strip, and compact Input/Drive/Bias/Head
+  Bump/Wow/Flutter/Wear/Noise/Mix/Output tracks
 - Algorithmic Reverb: interactive early-reflection and stereo decay field with
   Hall, Chamber, and Plate modes, a direct Decay/Room Scale handle with its
   named and exact 25–200% readout, direct input-passband handles, and adjacent
@@ -78,11 +81,11 @@ are never rewritten:
 Live analysis runs only for the selected tab. Graphs edit the same automatable
 slot parameters as the contextual controls.
 
-For the full-panel EQ, Limiter, Dynamic EQ, Random Granulizer, and Vintage
-Chorus editors, focus the graph and use Left/Right to select a semantic
-control. Up/Down edits it (Shift for fine changes), Space or Return activates
-choices and switches, and Home restores that control's module default. Tab and
-Shift+Tab leave the graph normally.
+For the full-panel EQ, Limiter, Dynamic EQ, Random Granulizer, Vintage Chorus,
+and Analog Tape editors, focus the graph and use Left/Right to select a
+semantic control. Up/Down edits it (Shift for fine changes), Space or Return
+activates choices and switches, and Home restores that control's module
+default. Tab and Shift+Tab leave the graph normally.
 
 Controls match the value they edit: modes and tempo divisions use named
 choices, Sync/Ping Pong/sidechain routing use switches, paired levels use rails,
@@ -168,6 +171,24 @@ Density changes fade individual taps. Regeneration is filtered and remains below
 unity. Width scales only the wet mid/side field, so synthetic side cancels on
 mono fold-down. Mix is constant-power with exact dry at 0%, and Age noise is
 deterministic, low-level, and gated by input energy so silence remains silent.
+
+Analog Tape offers four distinct machines: Worn Cassette, Consumer Reel, and
+finely tuned Ampex-Style and Studer-Style studio decks, each with its own
+saturation hardness, bandwidth, noise floor, head-bump frequency, and
+wow/flutter character. Tape Speed selects 3.75, 7.5, 15, or 30 ips, scaling
+bandwidth, noise, and wow/flutter to match. Input sets the level printed to the
+tape; Drive adds extra saturation and compression intensity independent of
+level; Bias shifts from underbias (brighter, more distortion) to overbias
+(darker, more headroom); Head Bump sets the low-frequency resonance depth; Wow
+and Flutter set slow and fast transport pitch drift; Wear ages the transport
+with hysteresis smear, high-frequency loss, and gentle dropout modulation; and
+Noise sets level-dependent, energy-gated tape hiss that stays silent with a
+silent input. Mix is constant power with 0% exactly dry apart from Input and
+Output, which remain independent trims applied to both the dry and processed
+paths. Record and playback saturation run through 4x oversampling with the
+same half-band filtering pattern as Saturator; Wow and Flutter share one
+modulated delay line applied identically to both channels so stereo output
+stays mono-compatible without a Haas-style delay offset.
 
 Convolution Reverb loads mono or stereo WAV, AIFF, and FLAC impulse responses
 from its `Load IR...` button or by dropping a file on the graph. The normalized
@@ -268,7 +289,7 @@ validation requirements, and contributor guidance.
 Host automation is intentionally tied to rack slot numbers. Reordering modules
 moves module settings between slots, while existing automation remains attached
 to its original slot. Version 0.23.1 uses state schema 7. Vintage Chorus remains
-module value 14. It migrates schema-2
+module value 14 and Analog Tape appends module value 15. It migrates schema-2
 states without enabling the newer gain-compensation controls, preserves
 schema-2/3 EQ edge bands as bell filters, and converts schema-4 edge rolloffs
 into explicit HP/LP modes without moving their cutoff. Schema-5 Random

@@ -13,7 +13,7 @@ namespace megadsp
 constexpr int slotCount = 8;
 constexpr int controlsPerSlot = 12;
 constexpr int stateSchemaVersion = 7;
-constexpr int moduleTypeCount = 15;
+constexpr int moduleTypeCount = 16;
 
 enum class ModuleType
 {
@@ -31,7 +31,8 @@ enum class ModuleType
     convolutionReverb = 11,
     dynamicEqualizer = 12,
     randomGranulizer = 13,
-    vintageChorus = 14
+    vintageChorus = 14,
+    analogTape = 15
 };
 
 enum class ModuleCategory
@@ -64,6 +65,7 @@ enum class ModulePresentation
     dynamicEqualizer,
     randomGranulizer,
     vintageChorus,
+    analogTape,
     count
 };
 

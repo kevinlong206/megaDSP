@@ -308,6 +308,32 @@ constexpr Metadata vintageChorusMetadata {{
     { "Output", ControlKind::horizontal, true, "Output",
       "Adjusts level after the blend." }
 }};
+constexpr Metadata analogTapeMetadata {{
+    { "Machine", ControlKind::choice, true, "Machine",
+      "Selects Worn Cassette, Consumer Reel, Ampex-Style Deck, or Studer-Style Deck character." },
+    { "Input", ControlKind::level, true, "Level",
+      "Sets the level printed to the tape before saturation and compression." },
+    { "Drive", ControlKind::horizontal, true, "Character",
+      "Adds extra tape saturation and compression intensity independent of level." },
+    { "Bias", ControlKind::horizontal, false, "Character",
+      "Shifts record bias from underbias (brighter, more distortion) to overbias (darker, more headroom)." },
+    { "Tape Speed", ControlKind::choice, true, "Machine",
+      "Selects transport speed from 3.75 to 30 ips, setting bandwidth, noise, and wow/flutter." },
+    { "Head Bump", ControlKind::horizontal, false, "Character",
+      "Sets the depth of the low-frequency resonance from the playback head." },
+    { "Wow", ControlKind::horizontal, false, "Transport",
+      "Sets slow pitch drift from transport speed variation." },
+    { "Flutter", ControlKind::horizontal, false, "Transport",
+      "Sets fast pitch flutter from transport speed variation." },
+    { "Wear", ControlKind::horizontal, false, "Transport",
+      "Ages the transport and coating with hysteresis smear, high-frequency loss, and gentle dropout modulation." },
+    { "Noise", ControlKind::horizontal, false, "Character",
+      "Sets tape hiss level as level-dependent modulation noise." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends dry and tape-processed signal with constant power; zero is exactly dry apart from Input and Output." },
+    { "Output", ControlKind::level, true, "Output",
+      "Trims level after the dry/wet blend." }
+}};
 constexpr Names emptyNames { "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-" };
 constexpr Names eqNames {
     "Low Frequency", "Low Gain", "Low Q",
@@ -368,6 +394,10 @@ constexpr Names randomGranulizerNames {
 constexpr Names vintageChorusNames {
     "Model", "Rate", "Depth", "Delay", "Density", "Width", "Regeneration",
     "Tone", "Age", "Stereo Phase", "Mix", "Output"
+};
+constexpr Names analogTapeNames {
+    "Machine", "Input", "Drive", "Bias", "Tape Speed", "Head Bump", "Wow",
+    "Flutter", "Wear", "Noise", "Mix", "Output"
 };
 const std::array<std::array<float, 16>, 3> premiumEarlyMilliseconds {{
     { 11.3f, 18.7f, 27.1f, 37.9f, 51.7f, 69.1f, 79.3f, 88.7f,
@@ -543,6 +573,11 @@ ControlOptions optionsFor(ModuleType type, int control)
         return { { "Peak", "RMS" }, 2 };
     if (type == ModuleType::vintageChorus && control == 0)
         return { { "Vintage BBD", "Dimension", "Tri-Chorus", "String Ensemble" }, 4 };
+    if (type == ModuleType::analogTape && control == 0)
+        return { { "Worn Cassette", "Consumer Reel", "Ampex-Style Deck",
+                   "Studer-Style Deck" }, 4 };
+    if (type == ModuleType::analogTape && control == 4)
+        return { { "3.75 ips", "7.5 ips", "15 ips", "30 ips" }, 4 };
     return {};
 }
 
@@ -674,6 +709,22 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 0.25f,
                 0.5f,
                 0.40f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::analogTape:
+            values = {
+                discreteValue(1, 4),
+                linearNormalized(-18.0f, 18.0f, 0.0f),
+                0.30f,
+                0.5f,
+                discreteValue(2, 4),
+                0.35f,
+                0.20f,
+                0.20f,
+                0.15f,
+                0.20f,
+                1.0f,
                 linearNormalized(-18.0f, 12.0f, 0.0f)
             };
             break;
@@ -862,6 +913,21 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 9) return juce::String(value * 180.0f, 0) + juce::String::charToString(0x00b0);
             if (control == 11) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
+        case ModuleType::analogTape:
+            if (control == 1) return juce::String(linear(-18.0f, 18.0f, value), 1) + " dB";
+            if (control == 2 || control == 5 || control == 6 || control == 7
+                || control == 8 || control == 9 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 3)
+            {
+                const auto bias = linear(-100.0f, 100.0f, value);
+                if (std::abs(bias) < 1.0f)
+                    return "Neutral";
+                return (bias < 0.0f ? "Under " : "Over ")
+                       + juce::String(std::abs(bias), 0) + "%";
+            }
+            if (control == 11) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
         case ModuleType::empty: break;
     }
     return juce::String(value * 100.0f, 0) + "%";
@@ -885,6 +951,9 @@ std::optional<float> parseControlValue(ModuleType type, int control,
         return 0.5f;
     if (type == ModuleType::rotarySpeaker && control == 2
         && text.trim().equalsIgnoreCase("equal"))
+        return 0.5f;
+    if (type == ModuleType::analogTape && control == 3
+        && text.trim().equalsIgnoreCase("neutral"))
         return 0.5f;
     if (type == ModuleType::algorithmicReverb && control == 1)
         if (const auto named = namedRoomScale(text))
@@ -1056,6 +1125,22 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 9) return linearNormalized(0.0f, 180.0f, value);
             if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
             break;
+        case ModuleType::analogTape:
+            if (control == 1) return linearNormalized(-18.0f, 18.0f, value);
+            if (control == 2 || control == 5 || control == 6 || control == 7
+                || control == 8 || control == 9 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 3)
+            {
+                const auto amount = juce::jlimit(0.0f, 100.0f, value);
+                if (text.containsIgnoreCase("under"))
+                    return linearNormalized(-100.0f, 100.0f, -amount);
+                if (text.containsIgnoreCase("over"))
+                    return linearNormalized(-100.0f, 100.0f, amount);
+                return linearNormalized(-100.0f, 100.0f, value);
+            }
+            if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
+            break;
         case ModuleType::empty: break;
     }
     return juce::jlimit(0.0f, 1.0f, value / 100.0f);
@@ -1125,6 +1210,7 @@ bool isControlContextuallyVisible(
         case ModuleType::dynamicEqualizer:
         case ModuleType::randomGranulizer:
         case ModuleType::vintageChorus:
+        case ModuleType::analogTape:
             break;
     }
     return true;
@@ -1284,7 +1370,15 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "Blend classic chorus, dimension, and ensemble textures.",
             "chorus dimension ensemble bbd modulation vintage",
             vintageChorusNames, vintageChorusMetadata,
-            &makeModule<VintageChorusModule>)
+            &makeModule<VintageChorusModule>),
+        makeDefinition(
+            ModuleType::analogTape, ModulePresentation::analogTape,
+            "Analog Tape",
+            ModuleCategory::saturationAndColor,
+            "Print through a worn cassette or a finely tuned studio reel deck.",
+            "tape saturation reel cassette wow flutter analog warmth",
+            analogTapeNames, analogTapeMetadata,
+            &makeModule<AnalogTapeModule>)
     }};
     return definitions;
 }
@@ -1383,7 +1477,7 @@ juce::StringArray validateModuleRegistry()
         if (!juce::isPositiveAndBelow(stableType, moduleTypeCount)
             && stableType != 0)
         {
-            errors.add("Module type is outside the stable 0..14 range.");
+            errors.add("Module type is outside the stable 0..15 range.");
             continue;
         }
         ++typeCounts[static_cast<size_t>(stableType)];

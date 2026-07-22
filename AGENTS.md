@@ -11,7 +11,7 @@ serial slots and twelve fixed generic controls per slot.
 - Preserve existing `ModuleType` integer values. Append new module types.
 - Current appended values include M/S Decoder 8, Tremolo 9, and Rotary Speaker
   10, Convolution Reverb 11, Dynamic EQ / De-Esser 12, Random Granulizer 13,
-  and Vintage Chorus 14.
+  Vintage Chorus 14, and Analog Tape 15.
 - Preserve the eight-slot, twelve-control host parameter topology and existing
   parameter IDs.
 - Keep state migration compatible with schema 2 through current schema 7.

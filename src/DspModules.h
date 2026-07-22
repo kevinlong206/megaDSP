@@ -15,3 +15,4 @@
 #include "modules/DynamicEqualizer.h"
 #include "modules/RandomGranulizer.h"
 #include "modules/VintageChorus.h"
+#include "modules/AnalogTape.h"

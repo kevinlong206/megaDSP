@@ -213,6 +213,37 @@ public:
         expect(std::isfinite(chorusRackBlock.getMagnitude(
             0, chorusRackBlock.getNumSamples())));
 
+        beginTest("Rack routes appended Analog Tape module");
+        if (auto* type = state.getParameter(
+                megadsp::slotParameterId(0, "type")))
+            type->setValueNotifyingHost(type->convertTo0to1(
+                static_cast<float>(megadsp::ModuleType::analogTape)));
+        rack.synchronizeModules();
+        const auto tapeDefaults = megadsp::moduleDefaults(
+            megadsp::ModuleType::analogTape);
+        for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+            if (auto* parameter = state.getParameter(
+                    megadsp::controlParameterId(0, control)))
+                parameter->setValueNotifyingHost(parameter->convertTo0to1(
+                    tapeDefaults[static_cast<size_t>(control)]));
+        juce::AudioBuffer<float> tapeRackBlock(2, 8192);
+        for (int sample = 0; sample < tapeRackBlock.getNumSamples(); ++sample)
+        {
+            const auto value = 0.2f * std::sin(
+                juce::MathConstants<float>::twoPi * 440.0f
+                * static_cast<float>(sample) / 48000.0f);
+            tapeRackBlock.setSample(0, sample, value);
+            tapeRackBlock.setSample(1, sample, value);
+        }
+        rack.process(tapeRackBlock, nullptr, 120.0);
+        expect(rack.moduleType(0) == megadsp::ModuleType::analogTape);
+        expect(rack.activeModuleType(0)
+               == megadsp::ModuleType::analogTape);
+        expect(dynamic_cast<const megadsp::AnalogTapeModule*>(
+                   rack.activeModuleInstance(0)) != nullptr);
+        expect(std::isfinite(tapeRackBlock.getMagnitude(
+            0, tapeRackBlock.getNumSamples())));
+
         beginTest("Removing a slot compacts signal flow");
         auto setType = [&state, &rack](int slot, megadsp::ModuleType type)
         {
@@ -783,6 +814,14 @@ public:
                 grainLabels[static_cast<size_t>(control)]);
         expectLabel(megadsp::ModuleType::vintageChorus, 4, "Density");
         expectLabel(megadsp::ModuleType::vintageChorus, 6, "Regeneration");
+        const std::array<const char*, megadsp::controlsPerSlot> tapeLabels {
+            "Machine", "Input", "Drive", "Bias", "Tape Speed", "Head Bump",
+            "Wow", "Flutter", "Wear", "Noise", "Mix", "Output"
+        };
+        for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+            expectLabel(
+                megadsp::ModuleType::analogTape, control,
+                tapeLabels[static_cast<size_t>(control)]);
         expectEquals(
             megadsp::moduleDefaults(megadsp::ModuleType::compressor)[5],
             compressorDefaults[5]);
@@ -999,6 +1038,16 @@ public:
             0.25f, 0.5f, 0.40f,
             linearDefault(-18.0f, 12.0f, 0.0f)
         });
+        expectDefaults(megadsp::ModuleType::analogTape, {
+            megadsp::discreteValue(1, 4),
+            linearDefault(-18.0f, 18.0f, 0.0f),
+            0.30f,
+            0.5f,
+            megadsp::discreteValue(2, 4),
+            0.35f, 0.20f, 0.20f, 0.15f, 0.20f,
+            1.0f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
 
         beginTest("Host parameter contract remains fixed");
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
@@ -1020,7 +1069,9 @@ public:
                          megadsp::ModuleType::randomGranulizer), 13);
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::vintageChorus), 14);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 15);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::analogTape), 15);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 16);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1037,7 +1088,7 @@ public:
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 15);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 16);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1169,6 +1220,9 @@ public:
         expectCategory(megadsp::ModuleType::limiter,
                       megadsp::ModuleCategory::dynamics, "Dynamics");
         expectCategory(megadsp::ModuleType::saturator,
+                      megadsp::ModuleCategory::saturationAndColor,
+                      "Saturation & Color");
+        expectCategory(megadsp::ModuleType::analogTape,
                       megadsp::ModuleCategory::saturationAndColor,
                       "Saturation & Color");
         expectCategory(megadsp::ModuleType::delay,
@@ -1797,6 +1851,387 @@ private:
 };
 
 VintageChorusTests vintageChorusTests;
+
+class AnalogTapeTests final : public juce::UnitTest
+{
+public:
+    AnalogTapeTests() : juce::UnitTest("Analog Tape", "megaDSP") {}
+
+    void runTest() override
+    {
+        const auto defaults =
+            megadsp::moduleDefaults(megadsp::ModuleType::analogTape);
+
+        beginTest("Control contract, defaults, and parsing");
+        expectEquals(static_cast<int>(megadsp::descriptorFor(
+                         megadsp::ModuleType::analogTape).type),
+                     static_cast<int>(megadsp::ModuleType::analogTape));
+        expectEquals(megadsp::controlOptions(
+                         megadsp::ModuleType::analogTape, 0).size(), 4);
+        expectEquals(megadsp::controlOptions(
+                         megadsp::ModuleType::analogTape, 4).size(), 4);
+        expectEquals(megadsp::formatControlValue(
+                         megadsp::ModuleType::analogTape, 0, defaults[0]),
+                     juce::String("Consumer Reel"));
+        expectEquals(megadsp::formatControlValue(
+                         megadsp::ModuleType::analogTape, 1, defaults[1]),
+                     juce::String("0.0 dB"));
+        expectEquals(megadsp::formatControlValue(
+                         megadsp::ModuleType::analogTape, 2, defaults[2]),
+                     juce::String("30%"));
+        expectEquals(megadsp::formatControlValue(
+                         megadsp::ModuleType::analogTape, 3, defaults[3]),
+                     juce::String("Neutral"));
+        expectEquals(megadsp::formatControlValue(
+                         megadsp::ModuleType::analogTape, 4, defaults[4]),
+                     juce::String("15 ips"));
+        expectEquals(megadsp::formatControlValue(
+                         megadsp::ModuleType::analogTape, 5, defaults[5]),
+                     juce::String("35%"));
+        expectEquals(megadsp::formatControlValue(
+                         megadsp::ModuleType::analogTape, 9, defaults[9]),
+                     juce::String("20%"));
+        expectEquals(megadsp::formatControlValue(
+                         megadsp::ModuleType::analogTape, 10, defaults[10]),
+                     juce::String("100%"));
+        expectEquals(megadsp::formatControlValue(
+                         megadsp::ModuleType::analogTape, 11, defaults[11]),
+                     juce::String("0.0 dB"));
+        const auto parsedMachine = megadsp::parseControlValue(
+            megadsp::ModuleType::analogTape, 0, "Ampex-Style Deck");
+        expect(parsedMachine.has_value());
+        if (parsedMachine.has_value())
+            expectEquals(megadsp::discreteIndex(*parsedMachine, 4), 2);
+        const auto parsedSpeed = megadsp::parseControlValue(
+            megadsp::ModuleType::analogTape, 4, "30 ips");
+        expect(parsedSpeed.has_value());
+        if (parsedSpeed.has_value())
+            expectEquals(megadsp::discreteIndex(*parsedSpeed, 4), 3);
+        const auto parsedOverBias = megadsp::parseControlValue(
+            megadsp::ModuleType::analogTape, 3, "Over 50");
+        expect(parsedOverBias.has_value());
+        if (parsedOverBias.has_value())
+            expectWithinAbsoluteError(*parsedOverBias, 0.75f, 0.0001f);
+        const auto parsedUnderBias = megadsp::parseControlValue(
+            megadsp::ModuleType::analogTape, 3, "under 50");
+        expect(parsedUnderBias.has_value());
+        if (parsedUnderBias.has_value())
+            expectWithinAbsoluteError(*parsedUnderBias, 0.25f, 0.0001f);
+        const auto parsedNeutralBias = megadsp::parseControlValue(
+            megadsp::ModuleType::analogTape, 3, "Neutral");
+        expect(parsedNeutralBias.has_value());
+        if (parsedNeutralBias.has_value())
+            expectWithinAbsoluteError(*parsedNeutralBias, 0.5f, 0.0001f);
+
+        beginTest("Every machine keeps silence exactly silent");
+        for (int machine = 0; machine < megadsp::AnalogTapeModule::machineCount;
+             ++machine)
+        {
+            auto controls = defaults;
+            controls[0] = megadsp::discreteValue(machine, 4);
+            controls[9] = 1.0f;
+            controls[10] = 1.0f;
+            megadsp::AnalogTapeModule tape;
+            tape.prepare({ 48000.0, 48000, 2 });
+            juce::AudioBuffer<float> silence(2, 48000);
+            silence.clear();
+            tape.process(silence, controls, {});
+            expect(silence.getMagnitude(0, silence.getNumSamples()) < 1.0e-6f,
+                   "Machine " + juce::String(machine)
+                       + " emitted noise from silence");
+            expectFinite(silence);
+        }
+
+        beginTest("Zero mix is exact dry apart from Input and Output");
+        megadsp::AnalogTapeModule dryTape;
+        dryTape.prepare({ 48000.0, 8192, 2 });
+        auto dryControls = defaults;
+        dryControls[10] = 0.0f;
+        juce::AudioBuffer<float> dryInput(2, 8192);
+        fillSignal(dryInput);
+        auto dryReference = dryInput;
+        dryTape.process(dryInput, dryControls, {});
+        const auto latency = dryTape.latencySamples();
+        expect(latency >= 0);
+        for (int channel = 0; channel < 2; ++channel)
+            for (int sample = 0; sample < dryInput.getNumSamples() - latency;
+                 ++sample)
+                expectEquals(dryInput.getSample(channel, sample + latency),
+                             dryReference.getSample(channel, sample));
+
+        beginTest("Reported latency includes the wet transport path");
+        megadsp::AnalogTapeModule latencyTape;
+        latencyTape.prepare({ 48000.0, 2048, 1 });
+        auto latencyControls = defaults;
+        latencyControls[2] = 0.0f;
+        latencyControls[5] = 0.0f;
+        latencyControls[6] = 0.0f;
+        latencyControls[7] = 0.0f;
+        latencyControls[8] = 0.0f;
+        latencyControls[9] = 0.0f;
+        latencyControls[10] = 1.0f;
+        juce::AudioBuffer<float> impulse(1, 2048);
+        impulse.clear();
+        impulse.setSample(0, 0, 0.5f);
+        latencyTape.process(impulse, latencyControls, {});
+        int peakIndex = 0;
+        float peakMagnitude = 0.0f;
+        for (int sample = 0; sample < impulse.getNumSamples(); ++sample)
+        {
+            const auto magnitude = std::abs(impulse.getSample(0, sample));
+            if (magnitude > peakMagnitude)
+            {
+                peakMagnitude = magnitude;
+                peakIndex = sample;
+            }
+        }
+        expect(peakMagnitude > 0.05f);
+        expect(std::abs(peakIndex - latencyTape.latencySamples()) <= 4,
+               "Peak " + juce::String(peakIndex) + ", reported "
+                   + juce::String(latencyTape.latencySamples()));
+
+        beginTest("All machines are audible and remain distinct");
+        std::array<juce::AudioBuffer<float>, 4> machines;
+        for (int machine = 0; machine < 4; ++machine)
+        {
+            auto controls = defaults;
+            controls[0] = megadsp::discreteValue(machine, 4);
+            controls[1] = 1.0f;
+            controls[2] = 1.0f;
+            controls[10] = 1.0f;
+            machines[static_cast<size_t>(machine)] = render(controls, 2, 96000);
+            expect(rms(machines[static_cast<size_t>(machine)], 8192) > 0.02f);
+            expectFinite(machines[static_cast<size_t>(machine)]);
+        }
+        for (int first = 0; first < 4; ++first)
+            for (int second = first + 1; second < 4; ++second)
+                expect(difference(machines[static_cast<size_t>(first)],
+                                  machines[static_cast<size_t>(second)], 8192)
+                           > 0.001f,
+                       "Machines " + juce::String(first) + " and "
+                           + juce::String(second) + " were too similar");
+
+        beginTest("Mono processing stays finite and audible");
+        auto monoControls = defaults;
+        monoControls[10] = 1.0f;
+        const auto mono = render(monoControls, 1, 48000);
+        expectFinite(mono);
+        expect(rms(mono, 8192) > 0.01f);
+
+        beginTest("Bounded output under extreme settings");
+        auto extremeControls = defaults;
+        extremeControls[1] = 1.0f;
+        extremeControls[2] = 1.0f;
+        extremeControls[3] = 1.0f;
+        extremeControls[5] = 1.0f;
+        extremeControls[6] = 1.0f;
+        extremeControls[7] = 1.0f;
+        extremeControls[8] = 1.0f;
+        extremeControls[9] = 1.0f;
+        extremeControls[10] = 1.0f;
+        auto extreme = render(extremeControls, 2, 96000);
+        expectFinite(extreme);
+        expect(extreme.getMagnitude(0, extreme.getNumSamples()) < 8.0f);
+
+        beginTest("Machine automation has bounded transitions");
+        megadsp::AnalogTapeModule automated;
+        automated.prepare({ 48000.0, 256, 2 });
+        auto automatedControls = defaults;
+        automatedControls[10] = 0.85f;
+        float previous = 0.0f;
+        float maximumJump = 0.0f;
+        for (int block = 0; block < 120; ++block)
+        {
+            automatedControls[0] = megadsp::discreteValue(block % 4, 4);
+            automatedControls[4] = megadsp::discreteValue(block % 4, 4);
+            juce::AudioBuffer<float> audio(2, 256);
+            fillSignal(audio, block * 256);
+            automated.process(audio, automatedControls, {});
+            for (int sample = 0; sample < audio.getNumSamples(); ++sample)
+            {
+                const auto current = audio.getSample(0, sample);
+                maximumJump = juce::jmax(
+                    maximumJump, std::abs(current - previous));
+                previous = current;
+            }
+            expectFinite(audio);
+        }
+        expect(maximumJump < 0.5f);
+
+        beginTest("Automation steps stay bounded and finite");
+        megadsp::AnalogTapeModule stepAutomated;
+        stepAutomated.prepare({ 48000.0, 128, 2 });
+        auto stepped = defaults;
+        for (int offset = 0; offset < 96000; offset += 128)
+        {
+            stepped.fill((offset / 128) % 2 == 0 ? 0.0f : 1.0f);
+            stepped[0] = megadsp::discreteValue((offset / 128) % 4, 4);
+            stepped[4] = megadsp::discreteValue((offset / 128) % 4, 4);
+            juce::AudioBuffer<float> block(2, 128);
+            fillSignal(block, offset);
+            stepAutomated.process(block, stepped, { nullptr, 128.0 });
+            expectFinite(block);
+            expect(block.getMagnitude(0, block.getNumSamples()) < 8.0f);
+        }
+
+        beginTest("Supported sample rates remain finite and bounded");
+        for (const auto rate : { 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 })
+        {
+            megadsp::AnalogTapeModule rateTape;
+            rateTape.prepare({ rate, 4096, 2 });
+            auto rateControls = defaults;
+            rateControls[10] = 1.0f;
+            juce::AudioBuffer<float> rateBuffer(2, 4096);
+            for (int sample = 0; sample < rateBuffer.getNumSamples(); ++sample)
+            {
+                const auto value = 0.3f * std::sin(
+                    juce::MathConstants<float>::twoPi * 660.0f
+                    * static_cast<float>(sample) / static_cast<float>(rate));
+                rateBuffer.setSample(0, sample, value);
+                rateBuffer.setSample(1, sample, value);
+            }
+            rateTape.process(rateBuffer, rateControls, {});
+            expectFinite(rateBuffer);
+            expect(rateBuffer.getMagnitude(0, rateBuffer.getNumSamples()) < 8.0f,
+                   "Sample rate " + juce::String(rate, 0));
+        }
+
+        beginTest("Aliasing stays suppressed for a near-Nyquist drive tone");
+        megadsp::AnalogTapeModule aliasTape;
+        aliasTape.prepare({ 48000.0, 9600, 1 });
+        auto aliasControls = defaults;
+        aliasControls[0] = megadsp::discreteValue(3, 4);
+        aliasControls[1] = 1.0f;
+        aliasControls[2] = 1.0f;
+        aliasControls[3] = 0.8f;
+        aliasControls[4] = megadsp::discreteValue(3, 4);
+        aliasControls[5] = 0.0f;
+        aliasControls[6] = 0.0f;
+        aliasControls[7] = 0.0f;
+        aliasControls[8] = 0.0f;
+        aliasControls[9] = 0.0f;
+        aliasControls[10] = 1.0f;
+        juce::AudioBuffer<float> aliasBuffer(1, 9600);
+        for (int sample = 0; sample < aliasBuffer.getNumSamples(); ++sample)
+            aliasBuffer.setSample(0, sample, 0.8f * std::sin(
+                juce::MathConstants<float>::twoPi * 21600.0f
+                * static_cast<float>(sample) / 48000.0f));
+        aliasTape.process(aliasBuffer, aliasControls, {});
+        expectFinite(aliasBuffer);
+        std::vector<float> steadyState(
+            aliasBuffer.getReadPointer(0) + 4800,
+            aliasBuffer.getReadPointer(0) + 9600);
+        const auto fundamentalMagnitude =
+            goertzelMagnitude(steadyState, 48000.0, 21600.0f);
+        const auto aliasMagnitude =
+            goertzelMagnitude(steadyState, 48000.0, 4800.0f);
+        expect(fundamentalMagnitude > 0.03f,
+               "Fundamental magnitude: " + juce::String(fundamentalMagnitude, 4));
+        expect(aliasMagnitude < fundamentalMagnitude * 0.25f,
+               "Fundamental " + juce::String(fundamentalMagnitude, 4)
+                   + " alias " + juce::String(aliasMagnitude, 4));
+    }
+
+private:
+    static void fillSignal(juce::AudioBuffer<float>& buffer,
+                           int sampleOffset = 0)
+    {
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            const auto time = static_cast<float>(sample + sampleOffset)
+                              / 48000.0f;
+            const auto value = 0.22f * std::sin(
+                juce::MathConstants<float>::twoPi * 233.0f * time)
+                + 0.09f * std::sin(
+                    juce::MathConstants<float>::twoPi * 991.0f * time);
+            for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+                buffer.setSample(channel, sample,
+                                 channel == 0 ? value : value * 0.9f);
+        }
+    }
+
+    static juce::AudioBuffer<float> render(
+        const megadsp::ControlValues& controls, int channels, int samples)
+    {
+        megadsp::AnalogTapeModule tape;
+        tape.prepare({ 48000.0, static_cast<juce::uint32>(juce::jmax(512, samples)),
+                     static_cast<juce::uint32>(channels) });
+        juce::AudioBuffer<float> output(channels, samples);
+        fillSignal(output);
+        tape.process(output, controls, {});
+        return output;
+    }
+
+    static float rms(const juce::AudioBuffer<float>& buffer, int start)
+    {
+        double energy = 0.0;
+        int count = 0;
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            for (int sample = start; sample < buffer.getNumSamples(); ++sample)
+            {
+                const auto value = buffer.getSample(channel, sample);
+                energy += value * value;
+                ++count;
+            }
+        return static_cast<float>(std::sqrt(energy / juce::jmax(1, count)));
+    }
+
+    static float difference(const juce::AudioBuffer<float>& first,
+                            const juce::AudioBuffer<float>& second,
+                            int start)
+    {
+        double energy = 0.0;
+        int count = 0;
+        for (int channel = 0; channel < first.getNumChannels(); ++channel)
+            for (int sample = start; sample < first.getNumSamples(); ++sample)
+            {
+                const auto delta = first.getSample(channel, sample)
+                                   - second.getSample(channel, sample);
+                energy += delta * delta;
+                ++count;
+            }
+        return static_cast<float>(std::sqrt(energy / juce::jmax(1, count)));
+    }
+
+    static float goertzelMagnitude(
+        const std::vector<float>& samples, double sampleRate,
+        float targetFrequency)
+    {
+        const auto n = static_cast<int>(samples.size());
+        if (n <= 0)
+            return 0.0f;
+        const auto k = static_cast<int>(
+            0.5 + (static_cast<double>(n) * targetFrequency) / sampleRate);
+        const auto omega =
+            (2.0 * juce::MathConstants<double>::pi * k) / n;
+        const auto coefficient = 2.0 * std::cos(omega);
+        double first = 0.0;
+        double second = 0.0;
+        for (const auto sample : samples)
+        {
+            const auto current = sample + coefficient * first - second;
+            second = first;
+            first = current;
+        }
+        const auto real = first - second * std::cos(omega);
+        const auto imaginary = second * std::sin(omega);
+        return static_cast<float>(
+            std::sqrt(real * real + imaginary * imaginary) / (n * 0.5));
+    }
+
+    void expectFinite(const juce::AudioBuffer<float>& buffer)
+    {
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+                if (!std::isfinite(buffer.getSample(channel, sample)))
+                {
+                    expect(false, "Non-finite sample");
+                    return;
+                }
+    }
+};
+
+AnalogTapeTests analogTapeTests;
 } // namespace
 
 int main(int argc, char** argv)

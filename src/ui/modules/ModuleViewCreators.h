@@ -21,4 +21,5 @@ std::unique_ptr<ModuleView> createRotarySpeakerView(EffectGraph&);
 std::unique_ptr<ModuleView> createDynamicEqualizerView(EffectGraph&);
 std::unique_ptr<ModuleView> createRandomGranulizerView(EffectGraph&);
 std::unique_ptr<ModuleView> createVintageChorusView(EffectGraph&);
+std::unique_ptr<ModuleView> createAnalogTapeView(EffectGraph&);
 } // namespace megadsp::ui
