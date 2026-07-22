@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASE_VERSION: v0.23.1-beta.1
+
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -21,13 +24,13 @@ jobs:
         include:
           - name: macOS (VST3, AU, CLAP)
             os: macos-15
-            artifact: macOS
+            artifact: macOS-universal
           - name: Windows (VST3, CLAP)
-            os: windows-2025
-            artifact: Windows
+            os: windows-2022
+            artifact: Windows-x64
           - name: Linux (VST3, CLAP)
             os: ubuntu-24.04
-            artifact: Linux
+            artifact: Linux-x64
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -52,8 +55,16 @@ jobs:
             ninja-build \
             xvfb
 
-      - name: Configure (macOS and Linux)
-        if: runner.os != 'Windows'
+      - name: Configure (macOS universal)
+        if: runner.os == 'macOS'
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+          -DMEGADSP_ADHOC_SIGN=OFF
+
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMEGADSP_ADHOC_SIGN=OFF
 
       - name: Configure (Windows)
@@ -75,9 +86,36 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum ctest --test-dir build -C Release --output-on-failure
 
-      - name: Upload plugins
+      - name: Package plugins (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p package/megaDSP release
+          cp -R build/megaDSP_artefacts/Release/VST3 package/megaDSP/
+          cp -R build/megaDSP_artefacts/Release/AU package/megaDSP/
+          cp -R build/megaDSP_artefacts/Release/CLAP package/megaDSP/
+          tar -czf "release/megaDSP-${RELEASE_VERSION}-macOS-universal.tar.gz" -C package megaDSP
+
+      - name: Package plugins (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p package/megaDSP release
+          cp -R build/megaDSP_artefacts/Release/VST3 package/megaDSP/
+          cp -R build/megaDSP_artefacts/Release/CLAP package/megaDSP/
+          tar -czf "release/megaDSP-${RELEASE_VERSION}-Linux-x64.tar.gz" -C package megaDSP
+
+      - name: Package plugins (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package/megaDSP, release
+          Copy-Item build/megaDSP_artefacts/Release/VST3 package/megaDSP/VST3 -Recurse
+          Copy-Item build/megaDSP_artefacts/Release/CLAP package/megaDSP/CLAP -Recurse
+          Compress-Archive -Path package/megaDSP -DestinationPath "release/megaDSP-$env:RELEASE_VERSION-Windows-x64.zip"
+
+      - name: Upload release archive
         uses: actions/upload-artifact@v4
         with:
           name: megaDSP-${{ matrix.artifact }}
-          path: build/megaDSP_artefacts/Release
+          path: release/*
           if-no-files-found: error
+          compression-level: 0
