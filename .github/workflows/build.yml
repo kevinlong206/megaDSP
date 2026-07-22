@@ -52,8 +52,13 @@ jobs:
             ninja-build \
             xvfb
 
-      - name: Configure
+      - name: Configure (macOS and Linux)
+        if: runner.os != 'Windows'
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMEGADSP_ADHOC_SIGN=OFF
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DMEGADSP_ADHOC_SIGN=OFF
 
       - name: Build VST3, CLAP, and tests
         run: cmake --build build --config Release --target megaDSP_VST3 megaDSP_CLAP megaDSPTests --parallel 4
