@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "ui/GraphStyle.h"
 #include "ui/GuiLayout.h"
 
 MegaDSPAudioProcessor::MegaDSPAudioProcessor()
@@ -150,6 +151,39 @@ double MegaDSPAudioProcessor::currentBpm() const
 double MegaDSPAudioProcessor::getTailLengthSeconds() const
 {
     return rack.tailSeconds();
+}
+
+int MegaDSPAudioProcessor::getBackgroundThemeIndex() const
+{
+    return megadsp::ui::safeBackgroundThemeIndex(static_cast<int>(
+        parameters.state.getProperty("backgroundTheme", 0)));
+}
+
+void MegaDSPAudioProcessor::setBackgroundThemeIndex(int index)
+{
+    const auto safeIndex = megadsp::ui::safeBackgroundThemeIndex(index);
+    const auto storedIndex = static_cast<int>(
+        parameters.state.getProperty("backgroundTheme", 0));
+    if (safeIndex == storedIndex)
+        return;
+    parameters.state.setProperty("backgroundTheme", safeIndex, nullptr);
+    updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+}
+
+juce::String MegaDSPAudioProcessor::getInstanceName() const
+{
+    return megadsp::ui::normalizeInstanceName(
+        parameters.state.getProperty("instanceName").toString());
+}
+
+void MegaDSPAudioProcessor::setInstanceName(const juce::String& name)
+{
+    const auto normalized = megadsp::ui::normalizeInstanceName(name);
+    if (normalized
+        == parameters.state.getProperty("instanceName").toString())
+        return;
+    parameters.state.setProperty("instanceName", normalized, nullptr);
+    updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
 }
 
 void MegaDSPAudioProcessor::parameterChanged(
@@ -580,6 +614,16 @@ void MegaDSPAudioProcessor::refreshLatency()
 void MegaDSPAudioProcessor::restoreParameterState(const juce::ValueTree& state)
 {
     parameters.replaceState(state);
+    parameters.state.setProperty(
+        "instanceName",
+        megadsp::ui::normalizeInstanceName(
+            parameters.state.getProperty("instanceName").toString()),
+        nullptr);
+    parameters.state.setProperty(
+        "backgroundTheme",
+        megadsp::ui::safeBackgroundThemeIndex(static_cast<int>(
+            parameters.state.getProperty("backgroundTheme", 0))),
+        nullptr);
     for (const auto child : state)
     {
         const auto parameterId = child.getProperty("id").toString();

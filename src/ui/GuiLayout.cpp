@@ -68,6 +68,23 @@ bool isSemanticKeyboardControl(ModuleType type, int control)
 }
 } // namespace
 
+juce::String normalizeInstanceName(const juce::String& name)
+{
+    return name.replace("\r\n", " ")
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .replace("\t", " ")
+        .trim()
+        .substring(0, instanceNameMaximumLength);
+}
+
+IdentityHeaderLayout calculateIdentityHeaderLayout(int editorWidth)
+{
+    IdentityHeaderLayout layout;
+    layout.nameWidth = juce::jlimit(104, 150, editorWidth / 8);
+    return layout;
+}
+
 TogglePresentation togglePresentation(
     ModuleType type, int control, bool state,
     const juce::String& unavailableReason)

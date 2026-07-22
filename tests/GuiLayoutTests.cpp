@@ -1,4 +1,5 @@
 #include "ui/GuiLayout.h"
+#include "ui/GraphStyle.h"
 
 #include <juce_core/juce_core.h>
 
@@ -18,6 +19,40 @@ public:
     {
         using namespace megadsp;
         using namespace megadsp::ui;
+
+        beginTest("Instance names are normalized for saved display");
+        expectEquals(
+            normalizeInstanceName("  Vocal\nLead\t "),
+            juce::String("Vocal Lead"));
+        expectEquals(
+            normalizeInstanceName("Vocal\r\nLead"),
+            juce::String("Vocal Lead"));
+        expectEquals(
+            normalizeInstanceName(juce::String::repeatedString("x", 40)).length(),
+            instanceNameMaximumLength);
+        expect(normalizeInstanceName("\r\n\t").isEmpty());
+
+        beginTest("Legacy theme identities remain stable");
+        expectEquals(backgroundThemeCount(), 16);
+        expectEquals(
+            juce::String(backgroundTheme(0).name),
+            juce::String("Midnight Blue"));
+        expectEquals(
+            juce::String(backgroundTheme(9).name),
+            juce::String("Graphite"));
+        expectEquals(
+            static_cast<juce::int64>(
+                backgroundTheme(0).colour.getARGB()),
+            static_cast<juce::int64>(0xff101b2b));
+        expectEquals(safeBackgroundThemeIndex(-1), 0);
+        expectEquals(safeBackgroundThemeIndex(999), 15);
+
+        beginTest("Instance identity fits the minimum editor header");
+        const auto identity = calculateIdentityHeaderLayout(
+            editorMinimumWidth);
+        expectEquals(identity.nameWidth, 104);
+        expect(identity.usedWidth() <= editorMinimumWidth - 20);
+        expect(editorMinimumWidth - 20 - identity.usedWidth() >= 200);
 
         beginTest("Toggle text keeps semantic label and state together");
         expectEquals(

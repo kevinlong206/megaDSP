@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
+option(MEGADSP_CAPTURE_SCREENSHOTS
+       "Capture documentation images from the Standalone editor" OFF)
 
 include(FetchContent)
 
@@ -145,6 +147,10 @@ target_compile_definitions(megaDSP
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_USE_CURL=0
         JUCE_WEB_BROWSER=0)
+if(MEGADSP_CAPTURE_SCREENSHOTS)
+    target_compile_definitions(megaDSP PRIVATE
+        MEGADSP_CAPTURE_SCREENSHOTS=1)
+endif()
 
 target_link_libraries(megaDSP
     PRIVATE

@@ -12,6 +12,28 @@ inline constexpr int editorMinimumWidth = 820;
 inline constexpr int editorMinimumHeight = 620;
 inline constexpr int editorMaximumWidth = 1800;
 inline constexpr int editorMaximumHeight = 1200;
+inline constexpr int instanceNameMaximumLength = 32;
+
+juce::String normalizeInstanceName(const juce::String&);
+
+struct IdentityHeaderLayout
+{
+    int titleWidth = 112;
+    int labelWidth = 58;
+    int nameWidth = 104;
+    int themeWidth = 62;
+    int presetWidth = 132;
+    int saveWidth = 56;
+    int loadWidth = 56;
+
+    int usedWidth() const
+    {
+        return titleWidth + labelWidth + nameWidth + themeWidth
+               + presetWidth + saveWidth + loadWidth;
+    }
+};
+
+IdentityHeaderLayout calculateIdentityHeaderLayout(int editorWidth);
 
 struct TogglePresentation
 {

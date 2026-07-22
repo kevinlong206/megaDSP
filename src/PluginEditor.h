@@ -29,15 +29,24 @@ private:
     void removeSlot(int slot);
     void reorderSlot(int source, int destination);
     void choosePreset(bool save);
+    void commitInstanceName();
+    void showThemePalette();
+    void refreshIdentityPresentation();
     void showResult(const juce::Result&);
+#if defined(MEGADSP_CAPTURE_SCREENSHOTS)
+    void advanceScreenshotCapture();
+    void captureScreenshot(const juce::String&);
+#endif
 
     MegaDSPAudioProcessor& audioProcessor;
     juce::Label title;
+    juce::Label instanceLabel;
+    juce::TextEditor instanceName;
+    juce::TextButton themeButton { "COLOR" };
     juce::Label status;
     juce::TextButton saveButton { "Save" };
     juce::TextButton loadButton { "Load" };
     juce::ComboBox factoryPresets;
-    juce::ComboBox backgroundTheme;
     juce::Slider inputGain;
     juce::Slider outputGain;
     juce::Label inputLabel;
@@ -53,6 +62,12 @@ private:
     int selectedSlot = 0;
     int knownActiveSlots = -1;
     std::uint64_t knownTopologyGeneration = 0;
+    int knownThemeIndex = -1;
+#if defined(MEGADSP_CAPTURE_SCREENSHOTS)
+    int screenshotPhase = 0;
+    int screenshotDelay = 0;
+    std::unique_ptr<juce::Component> screenshotOverlay;
+#endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MegaDSPAudioProcessorEditor)
 };

@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  RELEASE_VERSION: v0.23.1-beta.1
+  RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('ci-{0}', github.sha) }}
 
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}

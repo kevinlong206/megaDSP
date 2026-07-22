@@ -95,22 +95,10 @@ public:
         selectedTab = juce::jlimit(0, juce::jmax(0, rack.activeSlotCount() - 1), tab);
         rack.visualizationData().setSelectedSlot(selectedTab);
     }
-    int getBackgroundThemeIndex() const
-    {
-        return juce::jlimit(
-            0, 9,
-            static_cast<int>(parameters.state.getProperty(
-                "backgroundTheme", 0)));
-    }
-    void setBackgroundThemeIndex(int index)
-    {
-        const auto safeIndex = juce::jlimit(0, 9, index);
-        if (safeIndex == getBackgroundThemeIndex())
-            return;
-        parameters.state.setProperty("backgroundTheme", safeIndex, nullptr);
-        updateHostDisplay(
-            ChangeDetails{}.withNonParameterStateChanged(true));
-    }
+    int getBackgroundThemeIndex() const;
+    void setBackgroundThemeIndex(int index);
+    juce::String getInstanceName() const;
+    void setInstanceName(const juce::String&);
     double getCurrentBpmForUI() const { return currentBpm(); }
     bool hasExternalSidechain() const
     {

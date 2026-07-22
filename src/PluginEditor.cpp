@@ -12,6 +12,91 @@ using megadsp::ui::inputColour;
 using megadsp::ui::outputColour;
 using megadsp::ui::reductionColour;
 
+class ThemePalette final : public juce::Component
+{
+public:
+    ThemePalette(int selectedTheme,
+                 std::function<void(int)> themeChosen)
+        : onThemeChosen(std::move(themeChosen))
+    {
+        setTitle("Background color");
+        setDescription("Choose a background color for this megaDSP instance.");
+        heading.setText("INSTANCE COLOR", juce::dontSendNotification);
+        heading.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+        heading.setColour(
+            juce::Label::textColourId, juce::Colours::white.withAlpha(0.9f));
+        addAndMakeVisible(heading);
+
+        for (int index = 0;
+             index < megadsp::ui::backgroundThemeCount(); ++index)
+        {
+            const auto& theme = megadsp::ui::backgroundTheme(index);
+            auto button = std::make_unique<juce::TextButton>(theme.name);
+            button->setTitle(theme.name);
+            button->setDescription(
+                "Use " + juce::String(theme.name) + " as the background color.");
+            button->setTooltip(
+                "Use " + juce::String(theme.name) + " as the background color.");
+            button->setColour(
+                juce::TextButton::buttonColourId, theme.colour.brighter(0.25f));
+            button->setColour(
+                juce::TextButton::buttonOnColourId,
+                theme.colour.brighter(0.48f));
+            button->setColour(
+                juce::TextButton::textColourOffId, juce::Colours::white);
+            button->setColour(
+                juce::TextButton::textColourOnId, juce::Colours::white);
+            button->setToggleState(
+                index == selectedTheme, juce::dontSendNotification);
+            button->onClick = [this, index]
+            {
+                onThemeChosen(index);
+                if (auto* callout =
+                        findParentComponentOfClass<juce::CallOutBox>())
+                    callout->dismiss();
+            };
+            addAndMakeVisible(*button);
+            buttons.push_back(std::move(button));
+        }
+        constexpr auto columns = 4;
+        const auto rows =
+            (megadsp::ui::backgroundThemeCount() + columns - 1)
+            / columns;
+        setSize(456, 44 + rows * 44);
+    }
+
+    void paint(juce::Graphics& graphics) override
+    {
+        graphics.fillAll(juce::Colour(0xff151b23));
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds().reduced(10);
+        heading.setBounds(area.removeFromTop(24));
+        constexpr auto columns = 4;
+        const auto rows =
+            (megadsp::ui::backgroundThemeCount() + columns - 1)
+            / columns;
+        const auto buttonHeight = area.getHeight() / rows;
+        for (int index = 0; index < static_cast<int>(buttons.size()); ++index)
+        {
+            const auto column = index % columns;
+            const auto row = index / columns;
+            auto bounds = juce::Rectangle<int>(
+                area.getX() + column * area.getWidth() / columns,
+                area.getY() + row * buttonHeight,
+                area.getWidth() / columns, buttonHeight);
+            buttons[static_cast<size_t>(index)]->setBounds(bounds.reduced(3));
+        }
+    }
+
+private:
+    std::function<void(int)> onThemeChosen;
+    juce::Label heading;
+    std::vector<std::unique_ptr<juce::TextButton>> buttons;
+};
+
 void configureSlider(juce::Slider& slider)
 {
     slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -866,6 +951,7 @@ public:
                         return count > 0 ? latest[0] : -60.0f;
                     });
                 }
+                slider.setDoubleClickReturnValue(true, defaults[index]);
                 sliderAttachments[index] = std::make_unique<SliderAttachment>(
                     processor.parameters,
                     megadsp::controlParameterId(slot, control),
@@ -882,7 +968,7 @@ public:
                         megadsp::parseControlValue(type, control, text)
                             .value_or(static_cast<float>(slider.getValue())));
                 };
-                slider.setDoubleClickReturnValue(true, defaults[index]);
+                slider.updateText();
             }
         }
         updateContext(true);
@@ -1167,6 +1253,52 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     title.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(title);
 
+    instanceLabel.setText("INSTANCE", juce::dontSendNotification);
+    instanceLabel.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+    instanceLabel.setJustificationType(juce::Justification::centredRight);
+    instanceLabel.setColour(
+        juce::Label::textColourId, juce::Colour(0xffa8b3c0));
+    addAndMakeVisible(instanceLabel);
+
+    instanceName.setTitle("Instance name");
+    instanceName.setDescription(
+        "A saved label for identifying this megaDSP instance.");
+    instanceName.setTooltip(
+        "Name this plugin instance, for example Vocal or Guitar.");
+    instanceName.setMultiLine(false);
+    instanceName.setReturnKeyStartsNewLine(false);
+    instanceName.setInputRestrictions(
+        megadsp::ui::instanceNameMaximumLength);
+    instanceName.setTextToShowWhenEmpty(
+        "Untitled", juce::Colour(0xff7f8b99));
+    instanceName.setColour(
+        juce::TextEditor::backgroundColourId, juce::Colour(0xff111821));
+    instanceName.setColour(
+        juce::TextEditor::outlineColourId, juce::Colour(0xff3a4553));
+    instanceName.setColour(
+        juce::TextEditor::focusedOutlineColourId, accent);
+    instanceName.setText(
+        audioProcessor.getInstanceName(), juce::dontSendNotification);
+    instanceName.onReturnKey = [this]
+    {
+        commitInstanceName();
+        instanceName.giveAwayKeyboardFocus();
+    };
+    instanceName.onEscapeKey = [this]
+    {
+        instanceName.setText(
+            audioProcessor.getInstanceName(), juce::dontSendNotification);
+        instanceName.giveAwayKeyboardFocus();
+    };
+    instanceName.onFocusLost = [this] { commitInstanceName(); };
+    addAndMakeVisible(instanceName);
+
+    themeButton.setTitle("Instance color");
+    themeButton.setDescription(
+        "Choose the background color for this megaDSP instance.");
+    themeButton.onClick = [this] { showThemePalette(); };
+    addAndMakeVisible(themeButton);
+
     status.setJustificationType(juce::Justification::centredRight);
     status.setColour(juce::Label::textColourId, juce::Colour(0xff9ba6b5));
     addAndMakeVisible(status);
@@ -1191,21 +1323,7 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     };
     addAndMakeVisible(factoryPresets);
 
-    backgroundTheme.addItemList(
-        { "Midnight Blue", "Crimson Red", "Espresso Brown", "Forest Green",
-          "Royal Purple", "Deep Teal", "Slate", "Aubergine",
-          "Burnished Copper", "Graphite" },
-        1);
-    backgroundTheme.setTooltip("Choose the plugin background color.");
-    backgroundTheme.setSelectedItemIndex(
-        audioProcessor.getBackgroundThemeIndex(), juce::dontSendNotification);
-    backgroundTheme.onChange = [this]
-    {
-        audioProcessor.setBackgroundThemeIndex(
-            backgroundTheme.getSelectedItemIndex());
-        repaint();
-    };
-    addAndMakeVisible(backgroundTheme);
+    refreshIdentityPresentation();
 
     configureSlider(inputGain);
     configureSlider(outputGain);
@@ -1253,6 +1371,14 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
         juce::jlimit(
             megadsp::ui::editorMinimumHeight,
             megadsp::ui::editorMaximumHeight, height));
+#if defined(MEGADSP_CAPTURE_SCREENSHOTS)
+    setSize(1100, 720);
+    audioProcessor.setInstanceName("Vocal Chain");
+    audioProcessor.setBackgroundThemeIndex(0);
+    audioProcessor.loadFactoryPreset(1);
+    selectedSlot = 0;
+    refreshTabs();
+#endif
     startTimerHz(15);
 }
 
@@ -1278,11 +1404,22 @@ void MegaDSPAudioProcessorEditor::resized()
     auto bounds = getLocalBounds();
     auto header = bounds.removeFromTop(92).reduced(10, 5);
     auto headerTop = header.removeFromTop(34);
-    title.setBounds(headerTop.removeFromLeft(150));
-    factoryPresets.setBounds(headerTop.removeFromLeft(145).reduced(2));
-    backgroundTheme.setBounds(headerTop.removeFromLeft(145).reduced(2));
-    saveButton.setBounds(headerTop.removeFromLeft(62).reduced(2));
-    loadButton.setBounds(headerTop.removeFromLeft(62).reduced(2));
+    const auto identityLayout =
+        megadsp::ui::calculateIdentityHeaderLayout(getWidth());
+    title.setBounds(
+        headerTop.removeFromLeft(identityLayout.titleWidth));
+    instanceLabel.setBounds(
+        headerTop.removeFromLeft(identityLayout.labelWidth));
+    instanceName.setBounds(
+        headerTop.removeFromLeft(identityLayout.nameWidth).reduced(2));
+    themeButton.setBounds(
+        headerTop.removeFromLeft(identityLayout.themeWidth).reduced(2));
+    factoryPresets.setBounds(
+        headerTop.removeFromLeft(identityLayout.presetWidth).reduced(2));
+    saveButton.setBounds(
+        headerTop.removeFromLeft(identityLayout.saveWidth).reduced(2));
+    loadButton.setBounds(
+        headerTop.removeFromLeft(identityLayout.loadWidth).reduced(2));
     status.setBounds(headerTop);
 
     auto headerBottom = header.reduced(0, 2);
@@ -1316,17 +1453,14 @@ void MegaDSPAudioProcessorEditor::timerCallback()
                            audioProcessor.getRack().outputMeterDb());
     for (auto& tab : tabs)
         tab->syncBypassState();
-    const auto selectedTheme = audioProcessor.getBackgroundThemeIndex();
-    if (backgroundTheme.getSelectedItemIndex() != selectedTheme)
-    {
-        backgroundTheme.setSelectedItemIndex(
-            selectedTheme, juce::dontSendNotification);
-        repaint();
-    }
+    refreshIdentityPresentation();
     if (knownActiveSlots != audioProcessor.getRack().activeSlotCount()
         || knownTopologyGeneration
                != audioProcessor.getTopologyGeneration())
         refreshTabs();
+#if defined(MEGADSP_CAPTURE_SCREENSHOTS)
+    advanceScreenshotCapture();
+#endif
 }
 
 void MegaDSPAudioProcessorEditor::selectSlot(int slot)
@@ -1396,6 +1530,125 @@ void MegaDSPAudioProcessorEditor::showModuleBrowser()
     callout.setDismissalMouseClicksAreAlwaysConsumed(true);
     browserPointer->focusSearch();
 }
+
+void MegaDSPAudioProcessorEditor::commitInstanceName()
+{
+    audioProcessor.setInstanceName(instanceName.getText());
+    instanceName.setText(
+        audioProcessor.getInstanceName(), juce::dontSendNotification);
+}
+
+void MegaDSPAudioProcessorEditor::showThemePalette()
+{
+    juce::Component::SafePointer<MegaDSPAudioProcessorEditor> safeThis(this);
+    auto palette = std::make_unique<ThemePalette>(
+        audioProcessor.getBackgroundThemeIndex(),
+        [safeThis](int index)
+        {
+            if (safeThis == nullptr)
+                return;
+            safeThis->audioProcessor.setBackgroundThemeIndex(index);
+            safeThis->refreshIdentityPresentation();
+            safeThis->repaint();
+        });
+    auto& callout = juce::CallOutBox::launchAsynchronously(
+        std::move(palette),
+        getLocalArea(&themeButton, themeButton.getLocalBounds()), this);
+    callout.setDismissalMouseClicksAreAlwaysConsumed(true);
+}
+
+void MegaDSPAudioProcessorEditor::refreshIdentityPresentation()
+{
+    if (!instanceName.hasKeyboardFocus(true))
+    {
+        const auto savedName = audioProcessor.getInstanceName();
+        if (instanceName.getText() != savedName)
+            instanceName.setText(savedName, juce::dontSendNotification);
+    }
+
+    const auto themeIndex = audioProcessor.getBackgroundThemeIndex();
+    const auto& theme = megadsp::ui::backgroundTheme(themeIndex);
+    themeButton.setTooltip(
+        "Instance color: " + juce::String(theme.name)
+        + ". Click to choose another background color.");
+    themeButton.setColour(
+        juce::TextButton::buttonColourId, theme.colour.brighter(0.32f));
+    themeButton.setColour(
+        juce::TextButton::buttonOnColourId, theme.colour.brighter(0.50f));
+    themeButton.repaint();
+    if (themeIndex != knownThemeIndex)
+    {
+        knownThemeIndex = themeIndex;
+        repaint();
+        if (modulePanel != nullptr)
+            modulePanel->repaint();
+    }
+}
+
+#if defined(MEGADSP_CAPTURE_SCREENSHOTS)
+void MegaDSPAudioProcessorEditor::captureScreenshot(
+    const juce::String& fileName)
+{
+    const auto outputDirectory = juce::File(
+        juce::SystemStats::getEnvironmentVariable(
+            "MEGADSP_SCREENSHOT_DIR", {}));
+    if (outputDirectory == juce::File())
+        return;
+    outputDirectory.createDirectory();
+    auto image = screenshotOverlay != nullptr
+                     && fileName == "module-browser.png"
+        ? screenshotOverlay->createComponentSnapshot(
+              screenshotOverlay->getLocalBounds(), true, 1.0f)
+        : createComponentSnapshot(getLocalBounds(), true, 1.0f);
+    auto stream = outputDirectory.getChildFile(fileName).createOutputStream();
+    if (stream != nullptr)
+        juce::PNGImageFormat().writeImageToStream(image, *stream);
+}
+
+void MegaDSPAudioProcessorEditor::advanceScreenshotCapture()
+{
+    if (++screenshotDelay < 8)
+        return;
+    screenshotDelay = 0;
+
+    switch (screenshotPhase++)
+    {
+        case 0:
+            captureScreenshot("rack-overview.png");
+            selectSlot(1);
+            break;
+        case 1:
+            captureScreenshot("visual-processing.png");
+            audioProcessor.setInstanceName("Ambient Space");
+            audioProcessor.setBackgroundThemeIndex(4);
+            audioProcessor.loadFactoryPreset(4);
+            selectedSlot = 1;
+            refreshTabs();
+            break;
+        case 2:
+            captureScreenshot("reverb-modulation.png");
+            audioProcessor.setInstanceName("Creative Bus");
+            audioProcessor.setBackgroundThemeIndex(5);
+            refreshIdentityPresentation();
+            screenshotOverlay =
+                std::make_unique<megadsp::ui::ModuleBrowser>(
+                    backgroundColour(
+                        audioProcessor.getBackgroundThemeIndex()),
+                    [](megadsp::ModuleType) {});
+            screenshotOverlay->setBounds(
+                getLocalBounds().withSizeKeepingCentre(680, 520));
+            addAndMakeVisible(*screenshotOverlay);
+            screenshotOverlay->toFront(false);
+            captureScreenshot("module-browser.png");
+            break;
+        case 3:
+            juce::JUCEApplicationBase::quit();
+            break;
+        default:
+            break;
+    }
+}
+#endif
 
 void MegaDSPAudioProcessorEditor::removeSlot(int slot)
 {

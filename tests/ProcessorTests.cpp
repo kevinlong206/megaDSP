@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "ui/GuiLayout.h"
 
 #include <juce_core/juce_core.h>
 
@@ -51,6 +52,26 @@ public:
     std::vector<juce::RangedAudioParameter*> watched;
     std::vector<std::vector<float>> values;
     std::vector<std::vector<bool>> gestures;
+};
+
+class ProcessorChangeRecorder final
+    : public juce::AudioProcessorListener
+{
+public:
+    void audioProcessorParameterChanged(
+        juce::AudioProcessor*, int, float) override
+    {
+    }
+
+    void audioProcessorChanged(
+        juce::AudioProcessor*,
+        const ChangeDetails& details) override
+    {
+        if (details.nonParameterStateChanged)
+            ++nonParameterChanges;
+    }
+
+    int nonParameterChanges = 0;
 };
 
 class ProcessorTopologyTests final : public juce::UnitTest
@@ -204,6 +225,56 @@ public:
         };
         exerciseTransition(false);
         exerciseTransition(true);
+
+        beginTest("Instance identity is normalized, notified, and restored");
+        MegaDSPAudioProcessor identityProcessor;
+        ProcessorChangeRecorder identityChanges;
+        identityProcessor.addListener(&identityChanges);
+        expect(identityProcessor.getInstanceName().isEmpty());
+        expectEquals(identityProcessor.getBackgroundThemeIndex(), 0);
+        identityProcessor.setInstanceName("  Vocal\nLead\t ");
+        identityProcessor.setBackgroundThemeIndex(15);
+        expectEquals(
+            identityProcessor.getInstanceName(), juce::String("Vocal Lead"));
+        expectEquals(identityProcessor.getBackgroundThemeIndex(), 15);
+        expectEquals(identityChanges.nonParameterChanges, 2);
+        identityProcessor.loadFactoryPreset(1);
+        expectEquals(
+            identityProcessor.getInstanceName(), juce::String("Vocal Lead"));
+        expectEquals(identityProcessor.getBackgroundThemeIndex(), 15);
+
+        juce::MemoryBlock identityState;
+        identityProcessor.getStateInformation(identityState);
+        MegaDSPAudioProcessor identityRestored;
+        identityRestored.setStateInformation(
+            identityState.getData(),
+            static_cast<int>(identityState.getSize()));
+        expectEquals(
+            identityRestored.getInstanceName(), juce::String("Vocal Lead"));
+        expectEquals(identityRestored.getBackgroundThemeIndex(), 15);
+
+        const auto presetFile =
+            juce::File::getSpecialLocation(
+                juce::File::tempDirectory)
+                .getNonexistentChildFile(
+                    "megaDSP-identity-test", ".megadsp", false);
+        expect(identityProcessor.savePreset(presetFile).wasOk());
+        MegaDSPAudioProcessor presetRestored;
+        expect(presetRestored.loadPreset(presetFile).wasOk());
+        expectEquals(
+            presetRestored.getInstanceName(), juce::String("Vocal Lead"));
+        expectEquals(presetRestored.getBackgroundThemeIndex(), 15);
+        expect(presetFile.deleteFile());
+
+        identityRestored.parameters.state.setProperty(
+            "backgroundTheme", 999, nullptr);
+        expectEquals(identityRestored.getBackgroundThemeIndex(), 15);
+        identityRestored.setInstanceName(
+            juce::String::repeatedString("x", 40));
+        expectEquals(
+            identityRestored.getInstanceName().length(),
+            megadsp::ui::instanceNameMaximumLength);
+        identityProcessor.removeListener(&identityChanges);
 
         beginTest(
             "Factory presets publish each parameter's final value exactly once");
