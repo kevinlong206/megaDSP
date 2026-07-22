@@ -1801,9 +1801,6 @@ VintageChorusTests vintageChorusTests;
 
 int main(int argc, char** argv)
 {
-    std::fprintf(stderr, "megaDSPTests entered main\n");
-    std::fflush(stderr);
-
     class TestLogger final : public juce::Logger
     {
         void logMessage(const juce::String& message) override

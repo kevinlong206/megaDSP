@@ -191,6 +191,9 @@ target_link_libraries(megaDSPTests PRIVATE
     juce::juce_dsp
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
+if(MSVC)
+    target_link_options(megaDSPTests PRIVATE "/STACK:8388608")
+endif()
 
 enable_testing()
 add_test(NAME megaDSPTests COMMAND megaDSPTests)

@@ -78,28 +78,9 @@ jobs:
         if: runner.os == 'macOS'
         run: cmake --build build --config Release --target megaDSP_AU --parallel 4
 
-      - name: Test (macOS)
-        if: runner.os == 'macOS'
+      - name: Test (macOS and Windows)
+        if: runner.os != 'Linux'
         run: ctest --test-dir build -C Release --output-on-failure
-
-      - name: Test (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $test = Resolve-Path build/megaDSPTests_artefacts/Release/megaDSPTests.exe
-          & $test
-          $code = $LASTEXITCODE
-          Write-Host ("megaDSPTests exit code: 0x{0:X8}" -f ($code -band 0xffffffff))
-          if ($code -ne 0) {
-            Get-WinEvent -FilterHashtable @{
-              LogName = "Application"
-              Level = 2
-              StartTime = (Get-Date).AddMinutes(-5)
-            } -ErrorAction SilentlyContinue |
-              Select-Object -First 5 TimeCreated, ProviderName, Message |
-              Format-List
-            exit $code
-          }
 
       - name: Test (Linux)
         if: runner.os == 'Linux'
