@@ -412,6 +412,251 @@ constexpr Metadata wavefoldGardenMetadata {{
     { "Output", ControlKind::level, true, "Output",
       "Adjusts level after the dry/wet blend." }
 }};
+constexpr Metadata gateExpanderMetadata {{
+    { "Threshold", ControlKind::level, true, "Dynamics",
+      "Sets the level where the gate opens." },
+    { "Range", ControlKind::level, true, "Dynamics",
+      "Sets the maximum attenuation while the gate is closed." },
+    { "Attack", ControlKind::horizontal, false, "Envelope",
+      "Sets how quickly the gate opens." },
+    { "Hold", ControlKind::horizontal, false, "Envelope",
+      "Keeps the gate open after the signal falls." },
+    { "Release", ControlKind::horizontal, false, "Envelope",
+      "Sets how quickly the gate closes." },
+    { "Hysteresis", ControlKind::horizontal, false, "Dynamics",
+      "Separates the opening and closing thresholds to prevent chatter." },
+    { "Low Cut", ControlKind::horizontal, false, "Detector",
+      "Removes low frequencies from the detector." },
+    { "High Cut", ControlKind::horizontal, false, "Detector",
+      "Removes high frequencies from the detector." },
+    { "External Sidechain", ControlKind::toggle, false, "Detector",
+      "Uses the external sidechain when one is connected." },
+    { "Listen", ControlKind::toggle, false, "Detector",
+      "Auditions the filtered detector signal." },
+    { "Stereo Link", ControlKind::horizontal, true, "Stereo",
+      "Links left and right detector action." },
+    unused
+}};
+constexpr Metadata transientDesignerMetadata {{
+    { "Attack", ControlKind::horizontal, true, "Shape",
+      "Cuts or emphasizes detected attacks." },
+    { "Sustain", ControlKind::horizontal, true, "Shape",
+      "Cuts or emphasizes sustained sound." },
+    { "Sensitivity", ControlKind::horizontal, true, "Detector",
+      "Sets how readily the processor identifies transients." },
+    { "Speed", ControlKind::horizontal, false, "Detector",
+      "Sets the separation between attack and sustain envelopes." },
+    { "Focus", ControlKind::horizontal, false, "Detector",
+      "Sets the frequency that most strongly triggers shaping." },
+    { "Clip Guard", ControlKind::toggle, true, "Output",
+      "Softly protects boosted transients from overload." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the shaped and original signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after transient shaping." },
+    unused, unused, unused, unused
+}};
+constexpr Metadata multibandCompressorMetadata {{
+    { "Low/Mid Crossover", ControlKind::horizontal, true, "Bands",
+      "Sets the split between low and mid bands." },
+    { "Mid/High Crossover", ControlKind::horizontal, true, "Bands",
+      "Sets the split between mid and high bands." },
+    { "Low Threshold", ControlKind::level, true, "Thresholds",
+      "Sets where low-band compression begins." },
+    { "Mid Threshold", ControlKind::level, true, "Thresholds",
+      "Sets where mid-band compression begins." },
+    { "High Threshold", ControlKind::level, true, "Thresholds",
+      "Sets where high-band compression begins." },
+    { "Ratio", ControlKind::horizontal, true, "Dynamics",
+      "Sets compression strength for all three bands." },
+    { "Attack", ControlKind::horizontal, false, "Timing",
+      "Sets how quickly compression reacts." },
+    { "Release", ControlKind::horizontal, false, "Timing",
+      "Sets how quickly compression lets go." },
+    { "Auto Makeup", ControlKind::toggle, true, "Recovery",
+      "Restores slow average level lost in each active band." },
+    { "Stereo Link", ControlKind::horizontal, false, "Stereo",
+      "Links left and right band detectors." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the compressed and original signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after multiband compression." }
+}};
+constexpr Metadata studioPhaserMetadata {{
+    { "Stages", ControlKind::choice, true, "Character",
+      "Selects the number of all-pass stages and response notches." },
+    { "Rate", ControlKind::horizontal, true, "Motion",
+      "Sets the free-running sweep rate." },
+    { "Sync", ControlKind::toggle, true, "Motion",
+      "Locks the sweep to host tempo." },
+    { "Division", ControlKind::choice, true, "Motion",
+      "Selects the tempo-synced sweep cycle." },
+    { "Depth", ControlKind::horizontal, true, "Motion",
+      "Sets the amount of phase movement." },
+    { "Center", ControlKind::horizontal, true, "Response",
+      "Sets the center of the swept notch field." },
+    { "Sweep", ControlKind::horizontal, true, "Response",
+      "Sets the swept range in octaves." },
+    { "Feedback", ControlKind::horizontal, true, "Character",
+      "Returns a signed, filtered signal around the all-pass chain." },
+    { "Stereo Phase", ControlKind::horizontal, false, "Stereo",
+      "Offsets the right-channel sweep phase." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the phased and original signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after phasing." },
+    unused
+}};
+constexpr Metadata studioFlangerMetadata {{
+    { "Model", ControlKind::choice, true, "Model",
+      "Selects Tape, Through-Zero, Jet, or BBD flanging." },
+    { "Rate", ControlKind::horizontal, true, "Motion",
+      "Sets the free-running flange rate." },
+    { "Sync", ControlKind::toggle, true, "Motion",
+      "Locks flange motion to host tempo." },
+    { "Division", ControlKind::choice, true, "Motion",
+      "Selects the tempo-synced flange cycle." },
+    { "Depth", ControlKind::horizontal, true, "Delay",
+      "Sets delay-time movement in milliseconds." },
+    { "Manual Delay", ControlKind::horizontal, true, "Delay",
+      "Sets the center delay of the comb response." },
+    { "Feedback", ControlKind::horizontal, true, "Character",
+      "Returns a signed, filtered flanged signal." },
+    { "Stereo Phase", ControlKind::horizontal, false, "Stereo",
+      "Offsets right-channel flange motion." },
+    { "Tone", ControlKind::horizontal, false, "Character",
+      "Sets the wet and feedback bandwidth." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the flanged and latency-aligned dry signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after flanging." },
+    unused
+}};
+constexpr Metadata diffusionDelayMetadata {{
+    { "Time", ControlKind::horizontal, true, "Timing",
+      "Sets the free-running primary repeat time." },
+    { "Sync", ControlKind::toggle, true, "Timing",
+      "Locks the primary repeat to host tempo." },
+    { "Division", ControlKind::choice, true, "Timing",
+      "Selects the tempo-synced repeat value." },
+    { "Feedback", ControlKind::horizontal, true, "Repeats",
+      "Sets how long the echo cloud continues." },
+    { "Diffusion", ControlKind::horizontal, true, "Cloud",
+      "Spreads each repeat into a denser echo cloud." },
+    { "Movement", ControlKind::horizontal, false, "Cloud",
+      "Adds shallow decorrelated motion to the cloud." },
+    { "Low Cut", ControlKind::horizontal, false, "Passband",
+      "Removes low frequencies from the wet path." },
+    { "High Cut", ControlKind::horizontal, false, "Passband",
+      "Removes high frequencies from the wet path." },
+    { "Width", ControlKind::horizontal, true, "Stereo",
+      "Sets cloud width; 100% is natural stereo." },
+    { "Ducking", ControlKind::horizontal, false, "Output",
+      "Reduces wet echoes while the input is active." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends dry input and the diffuse echo cloud." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the blend." }
+}};
+constexpr Metadata pitchBloomMetadata {{
+    { "Interval", ControlKind::choice, true, "Pitch",
+      "Selects the musical interval applied to blooming repeats." },
+    { "Fine", ControlKind::horizontal, false, "Pitch",
+      "Fine-tunes the shifted repeats in cents." },
+    { "Delay", ControlKind::horizontal, true, "Bloom",
+      "Sets time before each shifted repeat." },
+    { "Feedback", ControlKind::horizontal, true, "Bloom",
+      "Sets how many pitch-shifted repeats continue." },
+    { "Bloom", ControlKind::horizontal, true, "Bloom",
+      "Spreads shifted repeats into a denser field." },
+    { "Spread", ControlKind::horizontal, true, "Stereo",
+      "Spreads decorrelated pitch voices across stereo." },
+    { "Low Cut", ControlKind::horizontal, false, "Passband",
+      "Removes low frequencies from shifted repeats." },
+    { "High Cut", ControlKind::horizontal, false, "Passband",
+      "Removes high frequencies from shifted repeats." },
+    { "Ducking", ControlKind::horizontal, false, "Output",
+      "Reduces the bloom while the input is active." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned dry and pitch bloom." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the blend." },
+    unused
+}};
+constexpr Metadata frequencyLabMetadata {{
+    { "Shift", ControlKind::horizontal, true, "Frequency",
+      "Translates every frequency by a signed number of hertz." },
+    { "Fine", ControlKind::horizontal, true, "Frequency",
+      "Fine-tunes translation by up to 50 hertz." },
+    { "Feedback", ControlKind::horizontal, true, "Regeneration",
+      "Returns a signed, filtered shifted signal." },
+    { "LFO Rate", ControlKind::horizontal, false, "Motion",
+      "Sets frequency-shift modulation speed." },
+    { "LFO Depth", ControlKind::horizontal, false, "Motion",
+      "Sets frequency-shift modulation range in hertz." },
+    { "Stereo Offset", ControlKind::horizontal, true, "Stereo",
+      "Offsets left and right translations by a signed hertz amount." },
+    { "Low Cut", ControlKind::horizontal, false, "Passband",
+      "Removes low frequencies from the shifted path." },
+    { "High Cut", ControlKind::horizontal, false, "Passband",
+      "Removes high frequencies from the shifted path." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned dry and shifted signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after frequency shifting." },
+    unused, unused
+}};
+constexpr Metadata spatialOrbitMetadata {{
+    { "Path", ControlKind::choice, true, "Orbit",
+      "Selects Circle, Figure Eight, Pendulum, or Wander motion." },
+    { "Rate", ControlKind::horizontal, true, "Timing",
+      "Sets free-running orbit speed." },
+    { "Sync", ControlKind::toggle, true, "Timing",
+      "Locks orbit motion to host tempo." },
+    { "Division", ControlKind::choice, true, "Timing",
+      "Selects the tempo-synced orbit cycle." },
+    { "Azimuth Span", ControlKind::horizontal, true, "Orbit",
+      "Sets the horizontal path width in degrees." },
+    { "Width", ControlKind::horizontal, true, "Stereo",
+      "Sets output stereo width." },
+    { "Distance", ControlKind::horizontal, true, "Orbit",
+      "Sets virtual source distance from the listener." },
+    { "Doppler", ControlKind::horizontal, false, "Motion",
+      "Sets physical pitch movement from source motion." },
+    { "Air Damping", ControlKind::horizontal, false, "Distance",
+      "Darkens the source as distance increases." },
+    { "Mono Below", ControlKind::horizontal, false, "Foundation",
+      "Centers low frequencies below this crossover." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned dry and orbiting signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after spatial motion." }
+}};
+constexpr Metadata signalDecayMetadata {{
+    { "Resolution", ControlKind::horizontal, true, "Digital",
+      "Sets quantizer resolution in bits." },
+    { "Sample Rate", ControlKind::horizontal, true, "Digital",
+      "Sets the effective sample-and-hold rate." },
+    { "Jitter", ControlKind::horizontal, false, "Digital",
+      "Adds bounded clock-timing variation." },
+    { "Dropouts", ControlKind::horizontal, true, "Wear",
+      "Sets the rate and depth of smoothly windowed signal losses." },
+    { "Bandwidth", ControlKind::horizontal, true, "Wear",
+      "Sets the degraded signal bandwidth." },
+    { "Noise", ControlKind::level, false, "Wear",
+      "Sets deterministic noise level in dBFS." },
+    { "Wow", ControlKind::horizontal, false, "Motion",
+      "Adds slow pitch and timing drift." },
+    { "Flutter", ControlKind::horizontal, false, "Motion",
+      "Adds faster pitch and timing instability." },
+    { "Stereo Wear", ControlKind::horizontal, false, "Stereo",
+      "Introduces bounded differences between channel wear." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned dry and degraded signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after degradation." },
+    unused
+}};
 constexpr Names emptyNames { "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-" };
 constexpr Names eqNames {
     "Low Frequency", "Low Gain", "Low Q",
@@ -489,6 +734,47 @@ constexpr Names resonantMatrixNames {
 constexpr Names wavefoldGardenNames {
     "Character", "Drive", "Folds", "Symmetry", "Shape", "Dynamics", "Attack",
     "Release", "Tone", "Stereo Bloom", "Mix", "Output"
+};
+constexpr Names gateExpanderNames {
+    "Threshold", "Range", "Attack", "Hold", "Release", "Hysteresis",
+    "Low Cut", "High Cut", "External Sidechain", "Listen", "Stereo Link", "-"
+};
+constexpr Names transientDesignerNames {
+    "Attack", "Sustain", "Sensitivity", "Speed", "Focus", "Clip Guard",
+    "Mix", "Output", "-", "-", "-", "-"
+};
+constexpr Names multibandCompressorNames {
+    "Low/Mid Crossover", "Mid/High Crossover", "Low Threshold",
+    "Mid Threshold", "High Threshold", "Ratio", "Attack", "Release",
+    "Auto Makeup", "Stereo Link", "Mix", "Output"
+};
+constexpr Names studioPhaserNames {
+    "Stages", "Rate", "Sync", "Division", "Depth", "Center", "Sweep",
+    "Feedback", "Stereo Phase", "Mix", "Output", "-"
+};
+constexpr Names studioFlangerNames {
+    "Model", "Rate", "Sync", "Division", "Depth", "Manual Delay",
+    "Feedback", "Stereo Phase", "Tone", "Mix", "Output", "-"
+};
+constexpr Names diffusionDelayNames {
+    "Time", "Sync", "Division", "Feedback", "Diffusion", "Movement",
+    "Low Cut", "High Cut", "Width", "Ducking", "Mix", "Output"
+};
+constexpr Names pitchBloomNames {
+    "Interval", "Fine", "Delay", "Feedback", "Bloom", "Spread",
+    "Low Cut", "High Cut", "Ducking", "Mix", "Output", "-"
+};
+constexpr Names frequencyLabNames {
+    "Shift", "Fine", "Feedback", "LFO Rate", "LFO Depth", "Stereo Offset",
+    "Low Cut", "High Cut", "Mix", "Output", "-", "-"
+};
+constexpr Names spatialOrbitNames {
+    "Path", "Rate", "Sync", "Division", "Azimuth Span", "Width", "Distance",
+    "Doppler", "Air Damping", "Mono Below", "Mix", "Output"
+};
+constexpr Names signalDecayNames {
+    "Resolution", "Sample Rate", "Jitter", "Dropouts", "Bandwidth", "Noise",
+    "Wow", "Flutter", "Stereo Wear", "Mix", "Output", "-"
 };
 const std::array<std::array<float, 16>, 3> premiumEarlyMilliseconds {{
     { 11.3f, 18.7f, 27.1f, 37.9f, 51.7f, 69.1f, 79.3f, 88.7f,
@@ -689,6 +975,24 @@ ControlOptions optionsFor(ModuleType type, int control)
         return { { "Orbit", "Butterfly", "Spiral", "Scatter" }, 4 };
     if (type == ModuleType::wavefoldGarden && control == 0)
         return { { "Petal", "Prism", "Chebyshev", "Bloom" }, 4 };
+    if (type == ModuleType::studioPhaser && control == 0)
+        return { { "2", "4", "6", "8", "12" }, 5 };
+    if ((type == ModuleType::studioPhaser
+         || type == ModuleType::studioFlanger
+         || type == ModuleType::spatialOrbit)
+        && control == 3)
+        return { { "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8",
+                   "1/8.", "1/16" }, 8 };
+    if (type == ModuleType::studioFlanger && control == 0)
+        return { { "Tape", "Through-Zero", "Jet", "BBD" }, 4 };
+    if (type == ModuleType::diffusionDelay && control == 2)
+        return { { "1/32", "1/16", "1/16.", "1/8",
+                   "1/8.", "1/4", "1/4.", "1/2" }, 8 };
+    if (type == ModuleType::pitchBloom && control == 0)
+        return { { "Unison", "Fifth", "Octave", "Octave + Fifth",
+                   "Two Octaves" }, 5 };
+    if (type == ModuleType::spatialOrbit && control == 0)
+        return { { "Circle", "Figure Eight", "Pendulum", "Wander" }, 4 };
     return {};
 }
 
@@ -870,6 +1174,123 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 exponentialNormalized(500.0f, 20000.0f, 12000.0f),
                 0.20f, 0.45f,
                 linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::gateExpander:
+            values = {
+                linearNormalized(-80.0f, 0.0f, -36.0f),
+                linearNormalized(0.0f, 80.0f, 24.0f),
+                exponentialNormalized(0.05f, 100.0f, 2.0f),
+                linearNormalized(0.0f, 500.0f, 50.0f),
+                exponentialNormalized(5.0f, 2000.0f, 180.0f),
+                linearNormalized(0.0f, 18.0f, 6.0f),
+                exponentialNormalized(20.0f, 2000.0f, 80.0f),
+                exponentialNormalized(1000.0f, 20000.0f, 12000.0f),
+                0.0f, 0.0f, 1.0f, 0.5f
+            };
+            break;
+        case ModuleType::transientDesigner:
+            values = {
+                0.5f, 0.5f, 0.5f,
+                exponentialNormalized(5.0f, 200.0f, 40.0f),
+                exponentialNormalized(80.0f, 8000.0f, 1500.0f),
+                1.0f, 1.0f, linearNormalized(-18.0f, 18.0f, 0.0f),
+                0.5f, 0.5f, 0.5f, 0.5f
+            };
+            break;
+        case ModuleType::multibandCompressor:
+            values = {
+                exponentialNormalized(40.0f, 800.0f, 180.0f),
+                exponentialNormalized(1000.0f, 12000.0f, 3500.0f),
+                linearNormalized(-60.0f, 0.0f, -18.0f),
+                linearNormalized(-60.0f, 0.0f, -18.0f),
+                linearNormalized(-60.0f, 0.0f, -18.0f),
+                exponentialNormalized(1.0f, 20.0f, 3.0f),
+                exponentialNormalized(0.1f, 100.0f, 15.0f),
+                exponentialNormalized(20.0f, 2000.0f, 180.0f),
+                1.0f, 1.0f, 1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::studioPhaser:
+            values = {
+                discreteValue(2, 5),
+                exponentialNormalized(0.02f, 12.0f, 0.35f),
+                0.0f, discreteValue(4, 8), 0.6f,
+                exponentialNormalized(80.0f, 8000.0f, 900.0f),
+                exponentialNormalized(0.25f, 6.0f, 3.0f),
+                linearNormalized(-95.0f, 95.0f, 20.0f),
+                linearNormalized(0.0f, 180.0f, 90.0f),
+                0.5f, linearNormalized(-18.0f, 12.0f, 0.0f), 0.5f
+            };
+            break;
+        case ModuleType::studioFlanger:
+            values = {
+                discreteValue(0, 4),
+                exponentialNormalized(0.02f, 12.0f, 0.2f),
+                0.0f, discreteValue(4, 8),
+                linearNormalized(0.0f, 10.0f, 2.5f),
+                exponentialNormalized(0.1f, 15.0f, 3.0f),
+                linearNormalized(-90.0f, 90.0f, 15.0f),
+                linearNormalized(0.0f, 180.0f, 90.0f),
+                exponentialNormalized(1000.0f, 20000.0f, 12000.0f),
+                0.5f, linearNormalized(-18.0f, 12.0f, 0.0f), 0.5f
+            };
+            break;
+        case ModuleType::diffusionDelay:
+            values = {
+                exponentialNormalized(10.0f, 2000.0f, 500.0f),
+                1.0f, discreteValue(5, 8),
+                0.35f / 0.90f, 0.30f, 0.15f,
+                exponentialNormalized(20.0f, 2000.0f, 120.0f),
+                exponentialNormalized(1000.0f, 20000.0f, 10000.0f),
+                100.0f / 150.0f, 0.20f, 0.20f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::pitchBloom:
+            values = {
+                discreteValue(2, 5), 0.5f,
+                exponentialNormalized(20.0f, 500.0f, 120.0f),
+                0.30f / 0.85f, 0.35f, 0.75f,
+                exponentialNormalized(20.0f, 2000.0f, 180.0f),
+                exponentialNormalized(1000.0f, 20000.0f, 10000.0f),
+                0.20f, 0.15f,
+                linearNormalized(-18.0f, 12.0f, 0.0f), 0.5f
+            };
+            break;
+        case ModuleType::frequencyLab:
+            values = {
+                linearNormalized(-5000.0f, 5000.0f, 100.0f), 0.5f, 0.5f,
+                exponentialNormalized(0.02f, 20.0f, 0.2f), 0.0f, 0.5f,
+                exponentialNormalized(20.0f, 2000.0f, 40.0f),
+                exponentialNormalized(1000.0f, 20000.0f, 16000.0f),
+                1.0f, linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.5f, 0.5f
+            };
+            break;
+        case ModuleType::spatialOrbit:
+            values = {
+                discreteValue(0, 4),
+                exponentialNormalized(0.02f, 5.0f, 0.1f),
+                0.0f, discreteValue(2, 8),
+                linearNormalized(0.0f, 360.0f, 180.0f),
+                linearNormalized(0.0f, 200.0f, 100.0f),
+                exponentialNormalized(0.5f, 10.0f, 2.0f),
+                0.15f, 0.35f,
+                exponentialNormalized(20.0f, 500.0f, 120.0f),
+                1.0f, linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::signalDecay:
+            values = {
+                linearNormalized(4.0f, 24.0f, 16.0f),
+                exponentialNormalized(1.0f, 48.0f, 32.0f),
+                0.05f, 0.03f,
+                exponentialNormalized(1000.0f, 20000.0f, 14000.0f),
+                linearNormalized(-90.0f, -24.0f, -72.0f),
+                0.08f, 0.05f, 0.10f, 1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f), 0.5f
             };
             break;
         case ModuleType::empty: break;
@@ -1132,6 +1553,159 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 8)
                 return formatFrequency(exponential(500.0f, 20000.0f, value));
             if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::gateExpander:
+            if (control == 0) return juce::String(linear(-80.0f, 0.0f, value), 1) + " dB";
+            if (control == 1) return juce::String(linear(0.0f, 80.0f, value), 1) + " dB";
+            if (control == 2) return juce::String(exponential(0.05f, 100.0f, value), 2) + " ms";
+            if (control == 3) return juce::String(linear(0.0f, 500.0f, value), 0) + " ms";
+            if (control == 4) return formatGrainSize(exponential(5.0f, 2000.0f, value));
+            if (control == 5) return juce::String(linear(0.0f, 18.0f, value), 1) + " dB";
+            if (control == 6) return formatFrequency(exponential(20.0f, 2000.0f, value));
+            if (control == 7) return formatFrequency(exponential(1000.0f, 20000.0f, value));
+            if (control == 10) return juce::String(value * 100.0f, 0) + "%";
+            break;
+        case ModuleType::transientDesigner:
+            if (control == 0 || control == 1)
+            {
+                const auto amount = linear(-100.0f, 100.0f, value);
+                return (amount > 0.5f ? "+" : "")
+                       + juce::String(amount, 0) + "%";
+            }
+            if (control == 2 || control == 6)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 3)
+                return juce::String(exponential(5.0f, 200.0f, value), 1) + " ms";
+            if (control == 4)
+                return formatFrequency(exponential(80.0f, 8000.0f, value));
+            if (control == 7)
+                return juce::String(linear(-18.0f, 18.0f, value), 1) + " dB";
+            break;
+        case ModuleType::multibandCompressor:
+            if (control == 0) return formatFrequency(exponential(40.0f, 800.0f, value));
+            if (control == 1) return formatFrequency(exponential(1000.0f, 12000.0f, value));
+            if (control >= 2 && control <= 4)
+                return juce::String(linear(-60.0f, 0.0f, value), 1) + " dB";
+            if (control == 5) return juce::String(exponential(1.0f, 20.0f, value), 1) + ":1";
+            if (control == 6) return juce::String(exponential(0.1f, 100.0f, value), 1) + " ms";
+            if (control == 7) return formatGrainSize(exponential(20.0f, 2000.0f, value));
+            if (control == 9 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::studioPhaser:
+            if (control == 1) return juce::String(exponential(0.02f, 12.0f, value), 2) + " Hz";
+            if (control == 4 || control == 9)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 5) return formatFrequency(exponential(80.0f, 8000.0f, value));
+            if (control == 6) return juce::String(exponential(0.25f, 6.0f, value), 2) + " oct";
+            if (control == 7)
+            {
+                const auto feedback = linear(-95.0f, 95.0f, value);
+                return (feedback > 0.5f ? "+" : "")
+                       + juce::String(feedback, 0) + "%";
+            }
+            if (control == 8)
+                return juce::String(linear(0.0f, 180.0f, value), 0)
+                       + juce::String::charToString(0x00b0);
+            if (control == 10)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::studioFlanger:
+            if (control == 1) return juce::String(exponential(0.02f, 12.0f, value), 2) + " Hz";
+            if (control == 4) return juce::String(linear(0.0f, 10.0f, value), 2) + " ms";
+            if (control == 5) return juce::String(exponential(0.1f, 15.0f, value), 2) + " ms";
+            if (control == 6)
+            {
+                const auto feedback = linear(-90.0f, 90.0f, value);
+                return (feedback > 0.5f ? "+" : "")
+                       + juce::String(feedback, 0) + "%";
+            }
+            if (control == 7)
+                return juce::String(linear(0.0f, 180.0f, value), 0)
+                       + juce::String::charToString(0x00b0);
+            if (control == 8) return formatFrequency(exponential(1000.0f, 20000.0f, value));
+            if (control == 9) return juce::String(value * 100.0f, 0) + "%";
+            if (control == 10)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::diffusionDelay:
+            if (control == 0) return formatGrainSize(exponential(10.0f, 2000.0f, value));
+            if (control == 3) return juce::String(value * 90.0f, 0) + "%";
+            if (control == 4 || control == 5 || control == 9 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 6) return formatFrequency(exponential(20.0f, 2000.0f, value));
+            if (control == 7) return formatFrequency(exponential(1000.0f, 20000.0f, value));
+            if (control == 8) return juce::String(value * 150.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::pitchBloom:
+            if (control == 1)
+            {
+                const auto cents = linear(-50.0f, 50.0f, value);
+                return (cents > 0.05f ? "+" : "")
+                       + juce::String(cents, 1) + " cents";
+            }
+            if (control == 2) return juce::String(exponential(20.0f, 500.0f, value), 0) + " ms";
+            if (control == 3) return juce::String(value * 85.0f, 0) + "%";
+            if (control == 4 || control == 5 || control == 8 || control == 9)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 6) return formatFrequency(exponential(20.0f, 2000.0f, value));
+            if (control == 7) return formatFrequency(exponential(1000.0f, 20000.0f, value));
+            if (control == 10)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::frequencyLab:
+            if (control == 0 || control == 1 || control == 5)
+            {
+                const auto amount = control == 0
+                    ? linear(-5000.0f, 5000.0f, value)
+                    : control == 1 ? linear(-50.0f, 50.0f, value)
+                                   : linear(-500.0f, 500.0f, value);
+                return (amount > 0.05f ? "+" : "")
+                       + juce::String(amount, std::abs(amount) < 100.0f ? 1 : 0)
+                       + " Hz";
+            }
+            if (control == 2)
+            {
+                const auto feedback = linear(-80.0f, 80.0f, value);
+                return (feedback > 0.5f ? "+" : "")
+                       + juce::String(feedback, 0) + "%";
+            }
+            if (control == 3) return juce::String(exponential(0.02f, 20.0f, value), 2) + " Hz";
+            if (control == 4) return juce::String(value * 2000.0f, 0) + " Hz";
+            if (control == 6) return formatFrequency(exponential(20.0f, 2000.0f, value));
+            if (control == 7) return formatFrequency(exponential(1000.0f, 20000.0f, value));
+            if (control == 8) return juce::String(value * 100.0f, 0) + "%";
+            if (control == 9)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::spatialOrbit:
+            if (control == 1) return juce::String(exponential(0.02f, 5.0f, value), 2) + " Hz";
+            if (control == 4) return juce::String(linear(0.0f, 360.0f, value), 0) + juce::String::charToString(0x00b0);
+            if (control == 5) return juce::String(value * 200.0f, 0) + "%";
+            if (control == 6) return juce::String(exponential(0.5f, 10.0f, value), 2) + " m";
+            if (control == 7 || control == 8 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 9) return formatFrequency(exponential(20.0f, 500.0f, value));
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::signalDecay:
+            if (control == 0)
+            {
+                const auto bits = juce::roundToInt(linear(4.0f, 24.0f, value));
+                return juce::String(bits) + (bits == 1 ? " bit" : " bits");
+            }
+            if (control == 1) return juce::String(exponential(1.0f, 48.0f, value), 1) + " kHz";
+            if (control == 2 || control == 3 || (control >= 6 && control <= 9))
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 4) return formatFrequency(exponential(1000.0f, 20000.0f, value));
+            if (control == 5) return juce::String(linear(-90.0f, -24.0f, value), 1) + " dBFS";
+            if (control == 10)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::empty: break;
@@ -1399,6 +1973,127 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 11)
                 return linearNormalized(-18.0f, 12.0f, value);
             break;
+        case ModuleType::gateExpander:
+            if (control == 0) return linearNormalized(-80.0f, 0.0f, value);
+            if (control == 1) return linearNormalized(0.0f, 80.0f, value);
+            if (control == 2) return exponentialNormalized(0.05f, 100.0f, value);
+            if (control == 3) return linearNormalized(0.0f, 500.0f, parsedMilliseconds(text, value));
+            if (control == 4) return exponentialNormalized(5.0f, 2000.0f, parsedMilliseconds(text, value));
+            if (control == 5) return linearNormalized(0.0f, 18.0f, value);
+            if (control == 6) return exponentialNormalized(
+                20.0f, 2000.0f, parsedFrequency(text, value));
+            if (control == 7) return exponentialNormalized(
+                1000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 10) return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            break;
+        case ModuleType::transientDesigner:
+            if (control == 0 || control == 1)
+                return linearNormalized(-100.0f, 100.0f, value);
+            if (control == 2 || control == 6)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 3) return exponentialNormalized(5.0f, 200.0f, value);
+            if (control == 4) return exponentialNormalized(
+                80.0f, 8000.0f, parsedFrequency(text, value));
+            if (control == 7) return linearNormalized(-18.0f, 18.0f, value);
+            break;
+        case ModuleType::multibandCompressor:
+            if (control == 0) return exponentialNormalized(
+                40.0f, 800.0f, parsedFrequency(text, value));
+            if (control == 1) return exponentialNormalized(
+                1000.0f, 12000.0f, parsedFrequency(text, value));
+            if (control >= 2 && control <= 4)
+                return linearNormalized(-60.0f, 0.0f, value);
+            if (control == 5) return exponentialNormalized(1.0f, 20.0f, value);
+            if (control == 6) return exponentialNormalized(0.1f, 100.0f, value);
+            if (control == 7) return exponentialNormalized(
+                20.0f, 2000.0f, parsedMilliseconds(text, value));
+            if (control == 9 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::studioPhaser:
+            if (control == 1) return exponentialNormalized(0.02f, 12.0f, value);
+            if (control == 4 || control == 9)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 5) return exponentialNormalized(
+                80.0f, 8000.0f, parsedFrequency(text, value));
+            if (control == 6) return exponentialNormalized(0.25f, 6.0f, value);
+            if (control == 7) return linearNormalized(-95.0f, 95.0f, value);
+            if (control == 8) return linearNormalized(0.0f, 180.0f, value);
+            if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::studioFlanger:
+            if (control == 1) return exponentialNormalized(0.02f, 12.0f, value);
+            if (control == 4) return linearNormalized(0.0f, 10.0f, parsedMilliseconds(text, value));
+            if (control == 5) return exponentialNormalized(0.1f, 15.0f, parsedMilliseconds(text, value));
+            if (control == 6) return linearNormalized(-90.0f, 90.0f, value);
+            if (control == 7) return linearNormalized(0.0f, 180.0f, value);
+            if (control == 8) return exponentialNormalized(
+                1000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 9) return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::diffusionDelay:
+            if (control == 0) return exponentialNormalized(
+                10.0f, 2000.0f, parsedMilliseconds(text, value));
+            if (control == 3) return juce::jlimit(0.0f, 1.0f, value / 90.0f);
+            if (control == 4 || control == 5 || control == 9 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 6) return exponentialNormalized(
+                20.0f, 2000.0f, parsedFrequency(text, value));
+            if (control == 7) return exponentialNormalized(
+                1000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 8) return juce::jlimit(0.0f, 1.0f, value / 150.0f);
+            if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::pitchBloom:
+            if (control == 1) return linearNormalized(-50.0f, 50.0f, value);
+            if (control == 2) return exponentialNormalized(
+                20.0f, 500.0f, parsedMilliseconds(text, value));
+            if (control == 3) return juce::jlimit(0.0f, 1.0f, value / 85.0f);
+            if (control == 4 || control == 5 || control == 8 || control == 9)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 6) return exponentialNormalized(
+                20.0f, 2000.0f, parsedFrequency(text, value));
+            if (control == 7) return exponentialNormalized(
+                1000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::frequencyLab:
+            if (control == 0) return linearNormalized(-5000.0f, 5000.0f, value);
+            if (control == 1) return linearNormalized(-50.0f, 50.0f, value);
+            if (control == 2) return linearNormalized(-80.0f, 80.0f, value);
+            if (control == 3) return exponentialNormalized(0.02f, 20.0f, value);
+            if (control == 4) return juce::jlimit(0.0f, 1.0f, value / 2000.0f);
+            if (control == 5) return linearNormalized(-500.0f, 500.0f, value);
+            if (control == 6) return exponentialNormalized(
+                20.0f, 2000.0f, parsedFrequency(text, value));
+            if (control == 7) return exponentialNormalized(
+                1000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 8) return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 9) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::spatialOrbit:
+            if (control == 1) return exponentialNormalized(0.02f, 5.0f, value);
+            if (control == 4) return linearNormalized(0.0f, 360.0f, value);
+            if (control == 5) return juce::jlimit(0.0f, 1.0f, value / 200.0f);
+            if (control == 6) return exponentialNormalized(0.5f, 10.0f, value);
+            if (control == 7 || control == 8 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 9) return exponentialNormalized(
+                20.0f, 500.0f, parsedFrequency(text, value));
+            if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::signalDecay:
+            if (control == 0) return linearNormalized(4.0f, 24.0f, value);
+            if (control == 1) return exponentialNormalized(1.0f, 48.0f, value);
+            if (control == 2 || control == 3 || (control >= 6 && control <= 9))
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 4) return exponentialNormalized(
+                1000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 5) return linearNormalized(-90.0f, -24.0f, value);
+            if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
+            break;
         case ModuleType::empty: break;
     }
     return juce::jlimit(0.0f, 1.0f, value / 100.0f);
@@ -1460,6 +2155,20 @@ bool isControlContextuallyVisible(
                 || control == 10 || control == 11)
                 return false;
             break;
+        case ModuleType::studioPhaser:
+        case ModuleType::studioFlanger:
+        case ModuleType::spatialOrbit:
+            if (control == 1)
+                return values[2] < 0.5f;
+            if (control == 3)
+                return values[2] >= 0.5f;
+            break;
+        case ModuleType::diffusionDelay:
+            if (control == 0)
+                return values[1] < 0.5f;
+            if (control == 2)
+                return values[1] >= 0.5f;
+            break;
         case ModuleType::empty:
         case ModuleType::equalizer:
         case ModuleType::saturator:
@@ -1472,6 +2181,12 @@ bool isControlContextuallyVisible(
         case ModuleType::spectralPrism:
         case ModuleType::resonantMatrix:
         case ModuleType::wavefoldGarden:
+        case ModuleType::gateExpander:
+        case ModuleType::transientDesigner:
+        case ModuleType::multibandCompressor:
+        case ModuleType::pitchBloom:
+        case ModuleType::frequencyLab:
+        case ModuleType::signalDecay:
             break;
     }
     return true;
@@ -1489,6 +2204,8 @@ bool isControlContextuallyEnabled(
     if (type == ModuleType::delay && control == 4)
         return hasStereoOutput;
     if (type == ModuleType::dynamicEqualizer && control == 9)
+        return hasExternalSidechain;
+    if (type == ModuleType::gateExpander && control == 8)
         return hasExternalSidechain;
     return true;
 }
@@ -1660,7 +2377,90 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "Grow animated antialiased harmonics with dynamic wavefolding.",
             "wavefold distortion nonlinear harmonics envelope creative",
             wavefoldGardenNames, wavefoldGardenMetadata,
-            &makeModule<WavefoldGardenModule>)
+            &makeModule<WavefoldGardenModule>),
+        makeDefinition(
+            ModuleType::gateExpander, ModulePresentation::gateExpander,
+            "Gate / Expander", ModuleCategory::dynamics,
+            "Control noise and ambience with smooth downward expansion.",
+            "gate expander noise dynamics sidechain envelope",
+            gateExpanderNames, gateExpanderMetadata,
+            &makeModule<GateExpanderModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::transientDesigner,
+            ModulePresentation::transientDesigner, "Transient Designer",
+            ModuleCategory::dynamics,
+            "Shape attack and sustain without depending on input level.",
+            "transient shaper attack sustain punch dynamics",
+            transientDesignerNames, transientDesignerMetadata,
+            &makeModule<TransientDesignerModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::multibandCompressor,
+            ModulePresentation::multibandCompressor, "Multiband Compressor",
+            ModuleCategory::dynamics,
+            "Control low, mid, and high dynamics independently.",
+            "multiband compressor crossover low mid high dynamics",
+            multibandCompressorNames, multibandCompressorMetadata,
+            &makeModule<MultibandCompressorModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::studioPhaser, ModulePresentation::studioPhaser,
+            "Studio Phaser", ModuleCategory::modulation,
+            "Sweep classic all-pass notches from subtle motion to deep resonance.",
+            "phaser allpass phase sweep stages modulation",
+            studioPhaserNames, studioPhaserMetadata,
+            &makeModule<StudioPhaserModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::studioFlanger, ModulePresentation::studioFlanger,
+            "Studio Flanger", ModuleCategory::modulation,
+            "Create tape, through-zero, jet, and BBD comb movement.",
+            "flanger tape through zero jet bbd comb modulation",
+            studioFlangerNames, studioFlangerMetadata,
+            &makeModule<StudioFlangerModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::diffusionDelay, ModulePresentation::diffusionDelay,
+            "Diffusion Delay", ModuleCategory::delayAndEcho,
+            "Let distinct echoes bloom into a moving diffuse cloud.",
+            "diffusion delay echo cloud smear ambient feedback",
+            diffusionDelayNames, diffusionDelayMetadata,
+            &makeModule<DiffusionDelayModule>,
+            ModuleCapability::eventTelemetry),
+        makeDefinition(
+            ModuleType::pitchBloom, ModulePresentation::pitchBloom,
+            "Pitch Bloom", ModuleCategory::reverbAndSpace,
+            "Grow pitch-shifted repeats into rising harmonic spaces.",
+            "pitch bloom shimmer octave fifth feedback space",
+            pitchBloomNames, pitchBloomMetadata,
+            &makeModule<PitchBloomModule>,
+            ModuleCapability::eventTelemetry),
+        makeDefinition(
+            ModuleType::frequencyLab, ModulePresentation::frequencyLab,
+            "Frequency Lab", ModuleCategory::glitchAndCreative,
+            "Translate frequencies in hertz with animated stereo feedback.",
+            "frequency shifter hilbert sideband ring metallic creative",
+            frequencyLabNames, frequencyLabMetadata,
+            &makeModule<FrequencyLabModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::spatialOrbit, ModulePresentation::spatialOrbit,
+            "Spatial Orbit", ModuleCategory::stereoAndUtility,
+            "Move sound through paths with distance, air, and Doppler cues.",
+            "spatial orbit autopan doppler trajectory stereo motion",
+            spatialOrbitNames, spatialOrbitMetadata,
+            &makeModule<SpatialOrbitModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::signalDecay, ModulePresentation::signalDecay,
+            "Signal Decay", ModuleCategory::saturationAndColor,
+            "Add controlled digital, transmission, and mechanical wear.",
+            "lofi bitcrush sample rate jitter dropout wow flutter noise",
+            signalDecayNames, signalDecayMetadata,
+            &makeModule<SignalDecayModule>,
+            ModuleCapability::continuousTelemetry
+                | ModuleCapability::eventTelemetry)
     }};
     return definitions;
 }
@@ -1753,13 +2553,14 @@ juce::StringArray validateModuleRegistry()
 {
     juce::StringArray errors;
     std::array<int, moduleTypeCount> typeCounts {};
+    std::array<int, moduleTypeCount> presentationCounts {};
     for (const auto& definition : registryStorage())
     {
         const auto stableType = static_cast<int>(definition.type);
         if (!juce::isPositiveAndBelow(stableType, moduleTypeCount)
             && stableType != 0)
         {
-            errors.add("Module type is outside the stable 0..18 range.");
+            errors.add("Module type is outside the stable 0..28 range.");
             continue;
         }
         ++typeCounts[static_cast<size_t>(stableType)];
@@ -1770,6 +2571,8 @@ juce::StringArray validateModuleRegistry()
         const auto presentationIsValid =
             presentation >= 0
             && presentation < static_cast<int>(ModulePresentation::count);
+        if (presentationIsValid)
+            ++presentationCounts[static_cast<size_t>(presentation)];
         if (!presentationIsValid
             || (active
                     ? definition.presentation == ModulePresentation::none
@@ -1837,9 +2640,14 @@ juce::StringArray validateModuleRegistry()
         }
     }
     for (int type = 0; type < moduleTypeCount; ++type)
+    {
         if (typeCounts[static_cast<size_t>(type)] != 1)
             errors.add("Stable module type " + juce::String(type)
                        + " does not have exactly one definition.");
+        if (presentationCounts[static_cast<size_t>(type)] != 1)
+            errors.add("UI presentation " + juce::String(type)
+                       + " does not have exactly one definition.");
+    }
     return errors;
 }
 

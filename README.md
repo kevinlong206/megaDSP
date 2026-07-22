@@ -2,7 +2,7 @@
 
 [![Build and test](https://github.com/kevinlong206/megaDSP/actions/workflows/build.yml/badge.svg)](https://github.com/kevinlong206/megaDSP/actions/workflows/build.yml)
 
-An eight-slot modular effects rack with eighteen purpose-built processors,
+An eight-slot modular effects rack with twenty-eight purpose-built processors,
 interactive graphs, realtime analysis, and controls that match the musical
 quantity they edit. Available as VST3, AU, and CLAP.
 
@@ -85,6 +85,9 @@ megaDSP.clap → ~/.clap
 | **Compressor** | Draggable threshold with 10-second input/output history, real-time gain-reduction overlay, primary Auto Makeup, and secondary Manual Trim |
 | **Limiter** | Knob-free graph with separate Threshold and Ceiling handles, 10-second level traces, full GR overlay, integrated Release/Lookahead tracks, and Auto Gain |
 | **Dynamic EQ / De-Esser** | Single-band stackable processor — drag frequency/range/threshold in the graph, mouse-wheel Q, 10-second gain history, external sidechain with fallback, and Listen |
+| **Gate / Expander** | Hysteresis, detector passband, sidechain audition, and DSP-synchronized detector/envelope/attenuation/open telemetry |
+| **Transient Designer** | Level-independent Attack and Sustain shaping with DSP fast/slow and shaping-component telemetry |
+| **Multiband Compressor** | Three reconstructing bands with direct editing and actual per-band reduction/state telemetry |
 
 ### EQ & Filtering
 
@@ -97,15 +100,18 @@ megaDSP.clap → ~/.clap
 | Module | What it does |
 |---|---|
 | **Saturator** | Transfer curve with input/output waveforms; level-compensated auto-gain keeps density and harmonics audible without loudness jumps |
+| **Signal Decay** | Measured degradation waveforms plus DSP-synchronized clock, stereo-wear, and dropout state |
 
 ### Time-Based
 
 | Module | What it does |
 |---|---|
 | **Delay** | Editable tap timeline plus a 2D Rate/Depth Movement field; Sync toggles between free Time and synced Division |
+| **Diffusion Delay** | Tempo-aware echoes with DSP-synchronized primary/cloud activity, energy, progress, and stereo placement |
 | **Algorithmic Reverb** | 16-line feedback network with Hall, Chamber, and Plate modes; interactive early-reflection field, Decay, Room Scale (Compact → Vast), and independent Dry/Wet |
 | **Convolution Reverb** | WAV/AIFF/FLAC IR loading and drag-and-drop, waveform preview, draggable wet Low/High Cut, and independent Dry/Wet rails |
 | **Resonant Matrix** | Tuned resonators routed through evolving signed feedback patterns for pitched, metallic spaces |
+| **Pitch Bloom** | Musical interval shifting with actual repeat-event arcs for interval, progress, energy, pan, and spread |
 
 ### Modulation
 
@@ -114,6 +120,8 @@ megaDSP.clap → ~/.clap
 | **Tremolo** | Amplitude, Harmonic, and Vibrato algorithms; Rate syncs to host divisions; Vibrato shows depth in cents |
 | **Vintage Chorus** | Four distinct topologies (Vintage BBD, Dimension, Tri-Chorus, String Ensemble), animated voice-trajectory field, and six-tap Density |
 | **Rotary Speaker** | Dual-rotor Doppler model with Brake/Chorale/Tremolo speeds, virtual microphone distance and spread, Cabinet Color, and Drive |
+| **Studio Phaser** | 2–12 stage all-pass sweeps with DSP-synchronized notch phases and topology crossfades |
+| **Studio Flanger** | Tape, Through-Zero, Jet, and BBD models with DSP-synchronized comb and model transitions |
 
 ### Glitch & Creative
 
@@ -123,13 +131,15 @@ megaDSP.clap → ~/.clap
 | **Beat Permuter** | Rearranges recent tempo-locked slices into precise repeats, reverses, scatters, and rhythmic glitches |
 | **Spectral Prism** | Bends, shifts, smears, and freezes sound around a visual spectral pivot |
 | **Wavefold Garden** | Grows animated antialiased harmonics with envelope-responsive wavefolding |
+| **Frequency Lab** | Measured spectra with actual DSP-smoothed translated hertz, stereo offset, and LFO position |
 
-### Stereo
+### Stereo & Utility
 
 | Module | What it does |
 |---|---|
 | **Stereo Width** | Frequency-dependent M/S scaling, mono-compatible all-pass Dimension field, Mono Below threshold, and dynamic correlation protection |
 | **M/S Decoder** | Reconstructs L/R from encoded Mid/Side input; live vectorscope with Mid, Side, Left, and Right orientation |
+| **Spatial Orbit** | DSP-reported Circle, Figure Eight, Pendulum, and deterministic Wander position/trails |
 
 ![Compressor graph with level history, gain reduction, threshold, and musical controls](docs/images/visual-processing.png)
 ![Algorithmic reverb early-reflection and decay editor in the Ambient Space instance](docs/images/reverb-modulation.png)

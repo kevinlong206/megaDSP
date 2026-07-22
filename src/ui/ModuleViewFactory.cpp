@@ -44,7 +44,17 @@ constexpr std::array<ViewCreator,
         &createBeatPermuterView,
         &createSpectralPrismView,
         &createResonantMatrixView,
-        &createWavefoldGardenView
+        &createWavefoldGardenView,
+        &createGateExpanderView,
+        &createTransientDesignerView,
+        &createMultibandCompressorView,
+        &createStudioPhaserView,
+        &createStudioFlangerView,
+        &createDiffusionDelayView,
+        &createPitchBloomView,
+        &createFrequencyLabView,
+        &createSpatialOrbitView,
+        &createSignalDecayView
     };
 
 static_assert([]

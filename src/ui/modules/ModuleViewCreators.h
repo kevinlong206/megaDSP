@@ -25,4 +25,14 @@ std::unique_ptr<ModuleView> createBeatPermuterView(EffectGraph&);
 std::unique_ptr<ModuleView> createSpectralPrismView(EffectGraph&);
 std::unique_ptr<ModuleView> createResonantMatrixView(EffectGraph&);
 std::unique_ptr<ModuleView> createWavefoldGardenView(EffectGraph&);
+std::unique_ptr<ModuleView> createGateExpanderView(EffectGraph&);
+std::unique_ptr<ModuleView> createTransientDesignerView(EffectGraph&);
+std::unique_ptr<ModuleView> createMultibandCompressorView(EffectGraph&);
+std::unique_ptr<ModuleView> createStudioPhaserView(EffectGraph&);
+std::unique_ptr<ModuleView> createStudioFlangerView(EffectGraph&);
+std::unique_ptr<ModuleView> createDiffusionDelayView(EffectGraph&);
+std::unique_ptr<ModuleView> createPitchBloomView(EffectGraph&);
+std::unique_ptr<ModuleView> createFrequencyLabView(EffectGraph&);
+std::unique_ptr<ModuleView> createSpatialOrbitView(EffectGraph&);
+std::unique_ptr<ModuleView> createSignalDecayView(EffectGraph&);
 } // namespace megadsp::ui

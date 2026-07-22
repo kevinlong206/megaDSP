@@ -21,7 +21,7 @@ public:
         ControlValues controls;
         controls.fill(0.5f);
         ProcessEnvironment environment;
-        std::array<std::unique_ptr<DspModule>, 18> modules {
+        std::array<std::unique_ptr<DspModule>, 28> modules {
             std::make_unique<EqualizerModule>(),
             std::make_unique<CompressorModule>(),
             std::make_unique<SaturatorModule>(),
@@ -39,7 +39,17 @@ public:
             std::make_unique<BeatPermuterModule>(),
             std::make_unique<SpectralPrismModule>(),
             std::make_unique<ResonantMatrixModule>(),
-            std::make_unique<WavefoldGardenModule>()
+            std::make_unique<WavefoldGardenModule>(),
+            std::make_unique<GateExpanderModule>(),
+            std::make_unique<TransientDesignerModule>(),
+            std::make_unique<MultibandCompressorModule>(),
+            std::make_unique<StudioPhaserModule>(),
+            std::make_unique<StudioFlangerModule>(),
+            std::make_unique<DiffusionDelayModule>(),
+            std::make_unique<PitchBloomModule>(),
+            std::make_unique<FrequencyLabModule>(),
+            std::make_unique<SpatialOrbitModule>(),
+            std::make_unique<SignalDecayModule>()
         };
 
         for (auto& module : modules)
@@ -1897,6 +1907,861 @@ public:
     }
 };
 
+class NextTenDspAcceptanceTests final : public juce::UnitTest
+{
+public:
+    NextTenDspAcceptanceTests()
+        : juce::UnitTest("Next ten DSP acceptance", "megaDSP")
+    {
+    }
+
+    void runTest() override
+    {
+        constexpr double rate = 48000.0;
+        const juce::dsp::ProcessSpec stereoSpec { rate, 257, 2 };
+
+        beginTest("Neutral and dry paths preserve input with declared latency");
+        for (int moduleIndex = 0; moduleIndex < moduleCount; ++moduleIndex)
+        {
+            auto module = makeModule(moduleIndex);
+            module->prepare(stereoSpec);
+            auto controls = neutralControls(moduleIndex);
+            juce::AudioBuffer<float> rendered(2, 4096);
+            rendered.clear();
+            rendered.setSample(0, 0, 0.75f);
+            rendered.setSample(1, 3, -0.4f);
+            module->process(rendered, controls, {});
+            const auto latency = module->latencySamples();
+            expect(latency >= 0 && latency < rendered.getNumSamples(),
+                   name(moduleIndex) + " invalid latency");
+            for (int channel = 0; channel < rendered.getNumChannels();
+                 ++channel)
+            {
+                for (int sample = 0; sample < rendered.getNumSamples();
+                     ++sample)
+                {
+                    const auto source = sample >= latency
+                        ? (channel == 0 && sample - latency == 0 ? 0.75f
+                           : channel == 1 && sample - latency == 3 ? -0.4f
+                                                                    : 0.0f)
+                        : 0.0f;
+                    expectWithinAbsoluteError(
+                        rendered.getSample(channel, sample), source, 0.00001f,
+                        name(moduleIndex) + " dry alignment");
+                }
+            }
+        }
+
+        beginTest("All new modules survive silence, channel shapes, rates, reset, and automation");
+        for (int moduleIndex = 0; moduleIndex < moduleCount; ++moduleIndex)
+        {
+            for (const auto sampleRate : { 8000.0, 44100.0, 96000.0 })
+            {
+                auto module = makeModule(moduleIndex);
+                module->prepare({ sampleRate, 257, 1 });
+                juce::AudioBuffer<float> silence(1, 521);
+                silence.clear();
+                ControlValues controls {};
+                controls.fill(0.5f);
+                module->process(silence, controls, { nullptr, 0.0 });
+                expectFinite(silence, name(moduleIndex));
+                auto monoSignal = makeSine(
+                    1, 1024, 347.0f, 0.1f, sampleRate);
+                module->process(monoSignal, controls, { nullptr, 120.0 });
+                expectFinite(monoSignal, name(moduleIndex) + " mono");
+
+                module->prepare({ sampleRate, 257, 2 });
+                juce::AudioBuffer<float> automated(2, 4096);
+                for (int offset = 0; offset < automated.getNumSamples();
+                     offset += 64)
+                {
+                    const auto samples = juce::jmin(
+                        64, automated.getNumSamples() - offset);
+                    for (int sample = 0; sample < samples; ++sample)
+                    {
+                        const auto absoluteSample = offset + sample;
+                        automated.setSample(
+                            0, absoluteSample,
+                            0.12f * std::sin(
+                                juce::MathConstants<float>::twoPi * 173.0f
+                                * static_cast<float>(absoluteSample)
+                                / static_cast<float>(sampleRate)));
+                        automated.setSample(
+                            1, absoluteSample,
+                            0.07f * std::sin(
+                                juce::MathConstants<float>::twoPi * 911.0f
+                                * static_cast<float>(absoluteSample)
+                                / static_cast<float>(sampleRate)));
+                    }
+                    std::array<float*, 2> pointers {
+                        automated.getWritePointer(0, offset),
+                        automated.getWritePointer(1, offset)
+                    };
+                    juce::AudioBuffer<float> block(
+                        pointers.data(), 2, samples);
+                    controls.fill(
+                        (offset / 64) % 2 == 0 ? 0.0f : 1.0f);
+                    module->process(
+                        block, controls,
+                        { nullptr, (offset / 64) % 3 == 0
+                                       ? std::numeric_limits<double>::quiet_NaN()
+                                       : 37.0 });
+                }
+                expectFinite(automated, name(moduleIndex));
+                expect(automated.getMagnitude(
+                           0, automated.getNumSamples()) < 32.0f,
+                       name(moduleIndex) + " unbounded automation");
+            }
+
+            auto module = makeModule(moduleIndex);
+            module->prepare(stereoSpec);
+            auto controls = stressControls(moduleIndex);
+            auto first = makeAsymmetricSignal(2, 4096, rate);
+            module->process(first, controls, { nullptr, 93.0 });
+            module->reset();
+            auto second = makeAsymmetricSignal(2, 4096, rate);
+            module->process(second, controls, { nullptr, 93.0 });
+            expect(maxDifference(first, second) < 0.000001f,
+                   name(moduleIndex) + " reset is not deterministic");
+        }
+
+        beginTest("Gate range, hold, and hysteresis have objective timing");
+        GateExpanderModule gate;
+        gate.prepare(stereoSpec);
+        ControlValues gateControls {};
+        gateControls[0] = 0.70f;
+        gateControls[1] = 1.0f;
+        gateControls[2] = 0.0f;
+        gateControls[3] = 0.10f;
+        gateControls[4] = 0.0f;
+        gateControls[5] = 0.67f;
+        gateControls[6] = 0.0f;
+        gateControls[7] = 1.0f;
+        gateControls[10] = 1.0f;
+        auto gateBlock = makeSine(2, 12000, 1000.0f, 0.0f, rate);
+        gate.process(gateBlock, gateControls, {});
+        gateBlock = makeSine(2, 6000, 1000.0f, 0.005f, rate);
+        gate.process(gateBlock, gateControls, {});
+        const auto closedRms = rms(gateBlock, 4000, 6000);
+        gateBlock = makeSine(2, 6000, 1000.0f, 0.5f, rate);
+        gate.process(gateBlock, gateControls, {});
+        gateBlock = makeSine(2, 4800, 1000.0f, 0.04f, rate);
+        gate.process(gateBlock, gateControls, {});
+        expect(rms(gateBlock, 2400, 4800) > 0.020f,
+               "Gate closed inside its hysteresis window");
+        gateBlock = makeSine(2, 6000, 1000.0f, 0.005f, rate);
+        gate.process(gateBlock, gateControls, {});
+        const auto heldRms = rms(gateBlock, 256, 1024);
+        const auto releasedRms = rms(gateBlock, 5000, 6000);
+        expect(heldRms > 0.002f, "Gate hold ended too early");
+        expect(releasedRms < heldRms * 0.08f,
+               "Gate hold/release did not close");
+        expect(closedRms < 0.0005f && releasedRms < 0.0005f,
+               "Gate range is too shallow");
+        expect(gate.meterValue() > 20.0f && gate.meterValue() <= 80.01f,
+               "Gate reduction meter outside range: "
+                   + juce::String(gate.meterValue(), 2));
+
+        beginTest("Transient shaping is neutral and directional");
+        auto transientControls = neutralControls(transientDesigner);
+        transientControls[6] = 1.0f;
+        auto transientInput = makeTransientTrain(2, 24000);
+        auto neutralTransient = transientInput;
+        TransientDesignerModule neutralDesigner;
+        neutralDesigner.prepare(stereoSpec);
+        neutralDesigner.process(neutralTransient, transientControls, {});
+        expect(maxDifference(neutralTransient, transientInput) < 0.000001f);
+        auto positiveTransient = transientInput;
+        auto positiveControls = transientControls;
+        positiveControls[0] = 1.0f;
+        TransientDesignerModule positiveDesigner;
+        positiveDesigner.prepare(stereoSpec);
+        positiveDesigner.process(positiveTransient, positiveControls, {});
+        auto negativeTransient = transientInput;
+        auto negativeControls = transientControls;
+        negativeControls[0] = 0.0f;
+        TransientDesignerModule negativeDesigner;
+        negativeDesigner.prepare(stereoSpec);
+        negativeDesigner.process(negativeTransient, negativeControls, {});
+        expect(rms(positiveTransient, 2000, 24000)
+                   > rms(neutralTransient, 2000, 24000) * 1.08f,
+               "Positive transient direction did not boost attacks");
+        expect(rms(negativeTransient, 2000, 24000)
+                   < rms(neutralTransient, 2000, 24000) * 0.92f,
+               "Negative transient direction did not reduce attacks");
+
+        beginTest("Multiband ratio 1 reconstructs all bands at flat gain");
+        for (const auto frequency : { 100.0f, 1200.0f, 8000.0f })
+        {
+            MultibandCompressorModule multiband;
+            multiband.prepare(stereoSpec);
+            auto controls = neutralControls(multibandCompressor);
+            controls[5] = 0.0f;
+            controls[10] = 1.0f;
+            auto signal = makeSine(2, 48000, frequency, 0.2f, rate);
+            const auto referenceRms = rms(signal, 24000, 48000);
+            multiband.process(signal, controls, {});
+            const auto ratio = rms(signal, 24000, 48000) / referenceRms;
+            expect(ratio > 0.985f && ratio < 1.015f,
+                   "Flat reconstruction at " + juce::String(frequency, 0)
+                       + " Hz: " + juce::String(ratio, 4));
+        }
+
+        beginTest("Phaser and flanger transitions are bounded and tempo fallback is stable");
+        checkModulatorTransitions<StudioPhaserModule>(
+            studioPhaser, 0, 5, 9, 10, stereoSpec);
+        checkModulatorTransitions<StudioFlangerModule>(
+            studioFlanger, 0, 4, 9, 10, stereoSpec);
+        checkTempoFallback<StudioPhaserModule>(
+            studioPhaser, 2, 3, 9, 10, stereoSpec);
+        checkTempoFallback<StudioFlangerModule>(
+            studioFlanger, 2, 3, 9, 10, stereoSpec);
+        checkTempoFallback<SpatialOrbitModule>(
+            spatialOrbit, 2, 3, 10, 11, stereoSpec);
+
+        beginTest("Creative telemetry is capture-gated, coherent, and resettable");
+        const ProcessEnvironment captureTelemetry { nullptr, 120.0, true };
+        const ProcessEnvironment noTelemetry { nullptr, 120.0, false };
+        for (const auto type : {
+                 ModuleType::studioPhaser, ModuleType::studioFlanger,
+                 ModuleType::frequencyLab, ModuleType::spatialOrbit,
+                 ModuleType::signalDecay })
+        {
+            auto module = createDspModule(type);
+            module->prepare(stereoSpec);
+            auto* capability = module->continuousTelemetryCapability();
+            expect(capability != nullptr);
+            ContinuousTelemetrySnapshot before;
+            expect(capability != nullptr
+                   && capability->readContinuousTelemetry(before));
+            expect(before.sequence == 0);
+
+            auto controls = moduleDefaults(type);
+            auto uncaptured = makeSine(2, 512, 347.0f, 0.15f, rate);
+            module->process(uncaptured, controls, noTelemetry);
+            ContinuousTelemetrySnapshot afterUncaptured;
+            expect(capability->readContinuousTelemetry(afterUncaptured));
+            expect(afterUncaptured.sequence == 0);
+
+            auto captured = makeSine(2, 512, 347.0f, 0.15f, rate);
+            module->process(captured, controls, captureTelemetry);
+            ContinuousTelemetrySnapshot published;
+            expect(capability->readContinuousTelemetry(published));
+            expect(published.sequence == 1);
+            expect(published.valueCount > 0
+                   && published.valueCount
+                          <= continuousTelemetryValueCapacity);
+            for (std::uint32_t index = 0; index < published.valueCount; ++index)
+                expect(std::isfinite(
+                    published.values[static_cast<size_t>(index)]));
+
+            auto heldSequence = published.sequence;
+            module->process(captured, controls, noTelemetry);
+            expect(capability->readContinuousTelemetry(published));
+            expect(published.sequence == heldSequence);
+            module->reset();
+            expect(capability->readContinuousTelemetry(published));
+            expect(published.sequence == 0);
+        }
+
+        beginTest("Modulation telemetry reports DSP phase and crossfade weights");
+        {
+            StudioPhaserModule module;
+            module.prepare(stereoSpec);
+            auto controls = moduleDefaults(ModuleType::studioPhaser);
+            controls[0] = discreteValue(4, StudioPhaserModule::topologyCount);
+            auto block = makeSine(2, 2048, 317.0f, 0.15f, rate);
+            module.process(block, controls, captureTelemetry);
+            ContinuousTelemetrySnapshot snapshot;
+            expect(module.readContinuousTelemetry(snapshot));
+            expectEquals(
+                juce::roundToInt(
+                    snapshot.values[StudioPhaserModule::targetTopology]),
+                4);
+            auto mixSum = 0.0f;
+            for (int index = 0; index < StudioPhaserModule::topologyCount;
+                 ++index)
+                mixSum += snapshot.values[static_cast<size_t>(
+                    StudioPhaserModule::topologyMix0 + index)];
+            expect(std::abs(mixSum - 1.0f) < 0.0001f);
+        }
+        {
+            StudioFlangerModule module;
+            module.prepare(stereoSpec);
+            auto controls = moduleDefaults(ModuleType::studioFlanger);
+            controls[0] = discreteValue(3, StudioFlangerModule::modelCount);
+            auto block = makeSine(2, 2048, 317.0f, 0.15f, rate);
+            module.process(block, controls, captureTelemetry);
+            ContinuousTelemetrySnapshot snapshot;
+            expect(module.readContinuousTelemetry(snapshot));
+            expectEquals(
+                juce::roundToInt(
+                    snapshot.values[StudioFlangerModule::targetModel]),
+                3);
+            auto mixSum = 0.0f;
+            for (int index = 0; index < StudioFlangerModule::modelCount;
+                 ++index)
+                mixSum += snapshot.values[static_cast<size_t>(
+                    StudioFlangerModule::modelMix0 + index)];
+            expect(std::abs(mixSum - 1.0f) < 0.0001f);
+            expect(snapshot.values[StudioFlangerModule::selectedDelayMs]
+                   >= 0.0f);
+        }
+
+        beginTest("Wander telemetry is deterministic and carries actual history");
+        {
+            auto controls = moduleDefaults(ModuleType::spatialOrbit);
+            controls[0] = discreteValue(3, 4);
+            SpatialOrbitModule module;
+            module.prepare(stereoSpec);
+            auto first = makeSine(2, 4096, 271.0f, 0.15f, rate);
+            module.process(first, controls, captureTelemetry);
+            ContinuousTelemetrySnapshot firstSnapshot;
+            expect(module.readContinuousTelemetry(firstSnapshot));
+            expectEquals(
+                static_cast<int>(firstSnapshot.historyValueCount),
+                static_cast<int>(
+                    SpatialOrbitModule::telemetryHistoryValueCount));
+            expect(firstSnapshot.historyCount == 1);
+            module.reset();
+            auto second = makeSine(2, 4096, 271.0f, 0.15f, rate);
+            module.process(second, controls, captureTelemetry);
+            ContinuousTelemetrySnapshot secondSnapshot;
+            expect(module.readContinuousTelemetry(secondSnapshot));
+            for (const auto index : {
+                     SpatialOrbitModule::xPosition,
+                     SpatialOrbitModule::yPosition,
+                     SpatialOrbitModule::distanceMetres })
+                expectEquals(firstSnapshot.values[index],
+                             secondSnapshot.values[index]);
+        }
+
+        beginTest("Signal Decay reports clock, wear, and actual dropout events");
+        {
+            auto controls = moduleDefaults(ModuleType::signalDecay);
+            controls[1] = 0.0f;
+            controls[3] = 1.0f;
+            controls[8] = 1.0f;
+            SignalDecayModule module;
+            module.prepare(stereoSpec);
+            auto block = makeSine(2, 48000, 293.0f, 0.15f, rate);
+            module.process(block, controls, captureTelemetry);
+            ContinuousTelemetrySnapshot state;
+            EventTelemetrySnapshot events;
+            expect(module.readContinuousTelemetry(state));
+            expect(module.readEventTelemetry(events));
+            expect(state.values[SignalDecayModule::currentSampleRate]
+                   >= 1000.0f);
+            expect(state.values[SignalDecayModule::leftClockPhase] >= 0.0f
+                   && state.values[SignalDecayModule::leftClockPhase] < 1.0f);
+            expect(events.eventCount > 0);
+            if (events.eventCount > 0)
+                expectEquals(
+                    static_cast<int>(events.events[0].kind),
+                    static_cast<int>(SignalDecayModule::dropoutStarted));
+        }
+
+        beginTest("Diffusion delay sync, fallback, feedback, and tail are bounded");
+        ControlValues diffusionControls {};
+        diffusionControls[0] = 0.0f;
+        diffusionControls[1] = 1.0f;
+        diffusionControls[2] = 0.0f;
+        diffusionControls[3] = 0.0f;
+        diffusionControls[4] = 0.0f;
+        diffusionControls[6] = 0.0f;
+        diffusionControls[7] = 1.0f;
+        diffusionControls[10] = 1.0f;
+        diffusionControls[11] = 0.6f;
+        const auto diffusionAt120 = renderImpulse<DiffusionDelayModule>(
+            diffusionControls, 120.0, 16000, stereoSpec);
+        const auto diffusionFallback = renderImpulse<DiffusionDelayModule>(
+            diffusionControls,
+            std::numeric_limits<double>::quiet_NaN(), 16000, stereoSpec);
+        expect(maxDifference(diffusionAt120, diffusionFallback) == 0.0f);
+        checkTempoFallback<DiffusionDelayModule>(
+            diffusionDelay, 1, 2, 10, 11, stereoSpec);
+        const auto firstDiffusionEcho = firstAbove(
+            diffusionAt120, 0, 0.0001f);
+        expect(std::abs(firstDiffusionEcho - 3000) <= 2,
+               "Unexpected synced delay: "
+                   + juce::String(firstDiffusionEcho));
+        DiffusionDelayModule diffusion;
+        diffusion.prepare(stereoSpec);
+        const auto shortDiffusionTail = diffusion.tailSeconds(
+            diffusionControls);
+        diffusionControls[3] = 0.85f;
+        diffusionControls[4] = 1.0f;
+        const auto longDiffusionTail = diffusion.tailSeconds(
+            diffusionControls);
+        expect(longDiffusionTail > shortDiffusionTail
+               && longDiffusionTail <= 120.0);
+        auto diffusionFeedback = makeSine(
+            2, 96000, 317.0f, 0.15f, rate);
+        diffusion.process(diffusionFeedback, diffusionControls, { nullptr, 120.0 });
+        expectFinite(diffusionFeedback, "Diffusion Delay feedback");
+        expect(diffusionFeedback.getMagnitude(
+                   0, diffusionFeedback.getNumSamples()) < 3.0f);
+
+        beginTest("Pitch bloom shifts pitch and reports bounded feedback tails");
+        ControlValues pitchControls {};
+        pitchControls[0] = 0.5f;
+        pitchControls[1] = 0.5f;
+        pitchControls[2] = 0.0f;
+        pitchControls[3] = 0.0f;
+        pitchControls[4] = 0.0f;
+        pitchControls[6] = 0.0f;
+        pitchControls[7] = 1.0f;
+        pitchControls[9] = 1.0f;
+        pitchControls[10] = 0.6f;
+        PitchBloomModule pitch;
+        pitch.prepare(stereoSpec);
+        auto pitched = makeSine(2, 48000, 440.0f, 0.2f, rate);
+        pitch.process(pitched, pitchControls, {});
+        const auto shiftedFrequency =
+            estimateFrequency(pitched, 0, 20000, 47000, rate);
+        expect(shiftedFrequency > 820.0f && shiftedFrequency < 940.0f,
+               "Measured octave pitch: "
+                   + juce::String(shiftedFrequency, 2));
+        const auto shortPitchTail = pitch.tailSeconds(pitchControls);
+        pitchControls[3] = 1.0f;
+        pitchControls[4] = 1.0f;
+        const auto longPitchTail = pitch.tailSeconds(pitchControls);
+        expect(longPitchTail > shortPitchTail && longPitchTail <= 120.0);
+        pitch.reset();
+        auto pitchFeedback = makeSine(
+            2, 72000, 293.0f, 0.12f, rate);
+        pitch.process(pitchFeedback, pitchControls, {});
+        expectFinite(pitchFeedback, "Pitch Bloom feedback");
+        expect(pitchFeedback.getMagnitude(
+                   0, pitchFeedback.getNumSamples()) < 3.0f);
+
+        beginTest("Frequency Lab translates a sinusoid by the requested hertz");
+        ControlValues frequencyControls {};
+        frequencyControls[0] = 0.55f;
+        frequencyControls[1] = 0.5f;
+        frequencyControls[2] = 0.5f;
+        frequencyControls[3] = 0.0f;
+        frequencyControls[4] = 0.0f;
+        frequencyControls[5] = 0.5f;
+        frequencyControls[6] = 0.0f;
+        frequencyControls[7] = 1.0f;
+        frequencyControls[8] = 1.0f;
+        frequencyControls[9] = 0.6f;
+        FrequencyLabModule frequencyLab;
+        frequencyLab.prepare(stereoSpec);
+        auto translated = makeSine(2, 48000, 1000.0f, 0.2f, rate);
+        frequencyLab.process(translated, frequencyControls, {});
+        const auto translatedFrequency =
+            estimateFrequency(translated, 0, 10000, 47000, rate);
+        expect(translatedFrequency > 1440.0f
+                   && translatedFrequency < 1560.0f,
+               "Measured translated frequency: "
+                   + juce::String(translatedFrequency, 2));
+
+        beginTest("Spatial Orbit mono and wander are safe and deterministic");
+        auto orbitControls = stressControls(spatialOrbit);
+        orbitControls[0] = 1.0f;
+        orbitControls[10] = 1.0f;
+        orbitControls[11] = 0.6f;
+        SpatialOrbitModule orbit;
+        orbit.prepare({ rate, 257, 1 });
+        auto firstOrbit = makeSine(1, 48000, 271.0f, 0.2f, rate);
+        orbit.process(firstOrbit, orbitControls, { nullptr, 0.0 });
+        orbit.reset();
+        auto secondOrbit = makeSine(1, 48000, 271.0f, 0.2f, rate);
+        orbit.process(secondOrbit, orbitControls, { nullptr, 120.0 });
+        expect(maxDifference(firstOrbit, secondOrbit) == 0.0f,
+               "Orbit wander/reset is not deterministic");
+        expectFinite(firstOrbit, "Spatial Orbit mono");
+        expect(firstOrbit.getMagnitude(0, firstOrbit.getNumSamples()) < 1.0f);
+        SpatialOrbitModule stereoOrbit;
+        stereoOrbit.prepare(stereoSpec);
+        auto asymmetricOrbit = makeAsymmetricSignal(2, 48000, rate);
+        stereoOrbit.process(
+            asymmetricOrbit, orbitControls, { nullptr, 120.0 });
+        expect(channelDifference(asymmetricOrbit, 4000) > 0.001f,
+               "Orbit collapsed asymmetric stereo input");
+
+        beginTest("Signal Decay is deterministic and near-transparent at quality limits");
+        ControlValues decayControls {};
+        decayControls[0] = 1.0f;
+        decayControls[1] = 1.0f;
+        decayControls[2] = 0.0f;
+        decayControls[3] = 0.0f;
+        decayControls[4] = 1.0f;
+        decayControls[5] = 0.0f;
+        decayControls[6] = 0.0f;
+        decayControls[7] = 0.0f;
+        decayControls[8] = 0.0f;
+        decayControls[9] = 1.0f;
+        decayControls[10] = 0.6f;
+        SignalDecayModule decay;
+        decay.prepare(stereoSpec);
+        auto decayInput = makeAsymmetricSignal(2, 48000, rate);
+        auto firstDecay = decayInput;
+        decay.process(firstDecay, decayControls, {});
+        decay.reset();
+        auto secondDecay = decayInput;
+        decay.process(secondDecay, decayControls, {});
+        expect(maxDifference(firstDecay, secondDecay) == 0.0f,
+               "Signal Decay reset did not restore its random sequence");
+        const auto decayLatency = decay.latencySamples();
+        double decayError = 0.0;
+        double decayReference = 0.0;
+        for (int channel = 0; channel < 2; ++channel)
+            for (int sample = decayLatency + 4000;
+                 sample < firstDecay.getNumSamples(); ++sample)
+            {
+                const auto reference =
+                    decayInput.getSample(channel, sample - decayLatency);
+                const auto difference =
+                    firstDecay.getSample(channel, sample) - reference;
+                decayError += static_cast<double>(difference) * difference;
+                decayReference += static_cast<double>(reference) * reference;
+            }
+        const auto normalizedDecayError = std::sqrt(
+            decayError / juce::jmax(1.0e-20, decayReference));
+        expect(normalizedDecayError < 0.08,
+               "Signal Decay quality-limit error: "
+                   + juce::String(normalizedDecayError, 4));
+        expect(firstDecay.getMagnitude(
+                   0, firstDecay.getNumSamples()) < 0.5f);
+    }
+
+private:
+    enum ModuleIndex
+    {
+        gateExpander,
+        transientDesigner,
+        multibandCompressor,
+        studioPhaser,
+        studioFlanger,
+        diffusionDelay,
+        pitchBloom,
+        frequencyLab,
+        spatialOrbit,
+        signalDecay,
+        moduleCount
+    };
+
+    static juce::String name(int index)
+    {
+        constexpr std::array<const char*, moduleCount> names {
+            "Gate Expander", "Transient Designer", "Multiband Compressor",
+            "Studio Phaser", "Studio Flanger", "Diffusion Delay",
+            "Pitch Bloom", "Frequency Lab", "Spatial Orbit", "Signal Decay"
+        };
+        return names[static_cast<size_t>(index)];
+    }
+
+    static std::unique_ptr<DspModule> makeModule(int index)
+    {
+        switch (index)
+        {
+            case gateExpander: return std::make_unique<GateExpanderModule>();
+            case transientDesigner:
+                return std::make_unique<TransientDesignerModule>();
+            case multibandCompressor:
+                return std::make_unique<MultibandCompressorModule>();
+            case studioPhaser: return std::make_unique<StudioPhaserModule>();
+            case studioFlanger: return std::make_unique<StudioFlangerModule>();
+            case diffusionDelay: return std::make_unique<DiffusionDelayModule>();
+            case pitchBloom: return std::make_unique<PitchBloomModule>();
+            case frequencyLab: return std::make_unique<FrequencyLabModule>();
+            case spatialOrbit: return std::make_unique<SpatialOrbitModule>();
+            default: return std::make_unique<SignalDecayModule>();
+        }
+    }
+
+    static ControlValues neutralControls(int index)
+    {
+        ControlValues controls {};
+        if (index == transientDesigner)
+        {
+            controls[0] = controls[1] = 0.5f;
+            controls[6] = 1.0f;
+            controls[7] = 0.5f;
+        }
+        else if (index == multibandCompressor)
+        {
+            controls[5] = 0.0f;
+            controls[10] = 0.0f;
+            controls[11] = 0.6f;
+        }
+        else if (index == studioPhaser)
+            controls[10] = 0.6f;
+        else if (index == studioFlanger)
+            controls[10] = 0.6f;
+        else if (index == diffusionDelay)
+            controls[11] = 0.6f;
+        else if (index == pitchBloom)
+            controls[10] = 0.6f;
+        else if (index == frequencyLab)
+            controls[9] = 0.6f;
+        else if (index == spatialOrbit)
+            controls[11] = 0.6f;
+        else if (index == signalDecay)
+            controls[10] = 0.6f;
+        return controls;
+    }
+
+    static ControlValues stressControls(int index)
+    {
+        ControlValues controls {};
+        controls.fill(0.73f);
+        if (index == transientDesigner)
+            controls[7] = 0.5f;
+        else if (index == multibandCompressor)
+            controls[11] = 0.6f;
+        else if (index == studioPhaser)
+            controls[10] = 0.6f;
+        else if (index == studioFlanger)
+            controls[10] = 0.6f;
+        else if (index == diffusionDelay)
+            controls[11] = 0.6f;
+        else if (index == pitchBloom)
+            controls[10] = 0.6f;
+        else if (index == frequencyLab)
+            controls[9] = 0.6f;
+        else if (index == spatialOrbit)
+            controls[11] = 0.6f;
+        else if (index == signalDecay)
+            controls[10] = 0.6f;
+        return controls;
+    }
+
+    static juce::AudioBuffer<float> makeSine(
+        int channels, int samples, float frequency, float amplitude,
+        double sampleRate)
+    {
+        juce::AudioBuffer<float> result(channels, samples);
+        for (int sample = 0; sample < samples; ++sample)
+        {
+            const auto value = amplitude * std::sin(
+                juce::MathConstants<float>::twoPi * frequency
+                * static_cast<float>(sample / sampleRate));
+            for (int channel = 0; channel < channels; ++channel)
+                result.setSample(channel, sample, value);
+        }
+        return result;
+    }
+
+    static juce::AudioBuffer<float> makeAsymmetricSignal(
+        int channels, int samples, double sampleRate)
+    {
+        juce::AudioBuffer<float> result(channels, samples);
+        for (int sample = 0; sample < samples; ++sample)
+        {
+            const auto left = 0.15f * std::sin(
+                juce::MathConstants<float>::twoPi * 233.0f
+                * static_cast<float>(sample / sampleRate));
+            result.setSample(0, sample, left);
+            if (channels > 1)
+                result.setSample(
+                    1, sample,
+                    0.09f * std::sin(
+                        juce::MathConstants<float>::twoPi * 877.0f
+                        * static_cast<float>(sample / sampleRate)));
+        }
+        return result;
+    }
+
+    static juce::AudioBuffer<float> makeTransientTrain(
+        int channels, int samples)
+    {
+        juce::AudioBuffer<float> result(channels, samples);
+        result.clear();
+        for (int start = 512; start < samples; start += 1200)
+            for (int offset = 0; offset < 160 && start + offset < samples;
+                 ++offset)
+            {
+                const auto envelope = std::exp(
+                    -static_cast<float>(offset) / 24.0f);
+                const auto value = 0.55f * envelope
+                    * std::sin(
+                        juce::MathConstants<float>::twoPi * 2200.0f
+                        * static_cast<float>(offset) / 48000.0f);
+                for (int channel = 0; channel < channels; ++channel)
+                    result.setSample(channel, start + offset, value);
+            }
+        return result;
+    }
+
+    static float rms(const juce::AudioBuffer<float>& buffer,
+                     int start, int end)
+    {
+        double energy = 0.0;
+        int count = 0;
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            for (int sample = start;
+                 sample < juce::jmin(end, buffer.getNumSamples()); ++sample)
+            {
+                const auto value = buffer.getSample(channel, sample);
+                energy += static_cast<double>(value) * value;
+                ++count;
+            }
+        return static_cast<float>(std::sqrt(
+            energy / static_cast<double>(juce::jmax(1, count))));
+    }
+
+    static float maxDifference(const juce::AudioBuffer<float>& first,
+                               const juce::AudioBuffer<float>& second)
+    {
+        auto maximum = 0.0f;
+        for (int channel = 0; channel < first.getNumChannels(); ++channel)
+            for (int sample = 0; sample < first.getNumSamples(); ++sample)
+                maximum = juce::jmax(
+                    maximum,
+                    std::abs(first.getSample(channel, sample)
+                             - second.getSample(channel, sample)));
+        return maximum;
+    }
+
+    static float channelDifference(
+        const juce::AudioBuffer<float>& buffer, int start)
+    {
+        double energy = 0.0;
+        for (int sample = start; sample < buffer.getNumSamples(); ++sample)
+        {
+            const auto difference =
+                buffer.getSample(0, sample) - buffer.getSample(1, sample);
+            energy += static_cast<double>(difference) * difference;
+        }
+        return static_cast<float>(std::sqrt(
+            energy / juce::jmax(1, buffer.getNumSamples() - start)));
+    }
+
+    static int firstAbove(const juce::AudioBuffer<float>& buffer,
+                          int channel, float threshold)
+    {
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            if (std::abs(buffer.getSample(channel, sample)) > threshold)
+                return sample;
+        return -1;
+    }
+
+    static float estimateFrequency(
+        const juce::AudioBuffer<float>& buffer, int channel,
+        int start, int end, double sampleRate)
+    {
+        int crossings = 0;
+        auto previous = buffer.getSample(channel, start);
+        for (int sample = start + 1;
+             sample < juce::jmin(end, buffer.getNumSamples()); ++sample)
+        {
+            const auto current = buffer.getSample(channel, sample);
+            if (previous <= 0.0f && current > 0.0f)
+                ++crossings;
+            previous = current;
+        }
+        return static_cast<float>(
+            crossings * sampleRate
+            / static_cast<double>(juce::jmax(1, end - start)));
+    }
+
+    template <typename Module>
+    static juce::AudioBuffer<float> renderImpulse(
+        const ControlValues& controls, double bpm, int samples,
+        const juce::dsp::ProcessSpec& spec)
+    {
+        Module module;
+        module.prepare(spec);
+        juce::AudioBuffer<float> response(2, samples);
+        response.clear();
+        response.setSample(0, 0, 1.0f);
+        response.setSample(1, 0, 1.0f);
+        module.process(response, controls, { nullptr, bpm });
+        return response;
+    }
+
+    template <typename Module>
+    void checkModulatorTransitions(
+        int moduleIndex, int modelControl, int modelCount,
+        int mixControl, int outputControl,
+        const juce::dsp::ProcessSpec& spec)
+    {
+        Module module;
+        module.prepare(spec);
+        auto controls = stressControls(moduleIndex);
+        controls[static_cast<size_t>(modelControl)] = 0.0f;
+        controls[static_cast<size_t>(mixControl)] = 1.0f;
+        controls[static_cast<size_t>(outputControl)] = 0.6f;
+        float previous = 0.0f;
+        float maximum = 0.0f;
+        float maximumJump = 0.0f;
+        int absoluteSample = 0;
+        for (int blockIndex = 0; blockIndex < 100; ++blockIndex)
+        {
+            controls[static_cast<size_t>(modelControl)] =
+                (static_cast<float>(blockIndex % modelCount) + 0.1f)
+                / static_cast<float>(modelCount);
+            juce::AudioBuffer<float> block(2, 127);
+            for (int sample = 0; sample < block.getNumSamples(); ++sample)
+            {
+                const auto value = 0.18f * std::sin(
+                    juce::MathConstants<float>::twoPi * 311.0f
+                    * static_cast<float>(absoluteSample++) / 48000.0f);
+                block.setSample(0, sample, value);
+                block.setSample(1, sample, value * 0.83f);
+            }
+            module.process(block, controls, { nullptr, 120.0 });
+            expectFinite(block, name(moduleIndex));
+            for (int sample = 0; sample < block.getNumSamples(); ++sample)
+            {
+                const auto value = block.getSample(0, sample);
+                maximum = juce::jmax(maximum, std::abs(value));
+                maximumJump =
+                    juce::jmax(maximumJump, std::abs(value - previous));
+                previous = value;
+            }
+        }
+        expect(maximum < 2.0f, name(moduleIndex) + " transition magnitude");
+        expect(maximumJump < 0.6f, name(moduleIndex) + " transition jump");
+    }
+
+    template <typename Module>
+    void checkTempoFallback(
+        int moduleIndex, int syncControl, int divisionControl,
+        int mixControl, int outputControl,
+        const juce::dsp::ProcessSpec& spec)
+    {
+        auto controls = stressControls(moduleIndex);
+        controls[static_cast<size_t>(syncControl)] = 1.0f;
+        controls[static_cast<size_t>(divisionControl)] = 0.43f;
+        controls[static_cast<size_t>(mixControl)] = 1.0f;
+        controls[static_cast<size_t>(outputControl)] = 0.6f;
+        auto render = [&](double bpm)
+        {
+            Module module;
+            module.prepare(spec);
+            auto signal = makeSine(2, 24000, 281.0f, 0.14f, spec.sampleRate);
+            module.process(signal, controls, { nullptr, bpm });
+            return signal;
+        };
+        const auto at120 = render(120.0);
+        const auto invalid = render(
+            std::numeric_limits<double>::quiet_NaN());
+        const auto at60 = render(60.0);
+        expect(maxDifference(at120, invalid) == 0.0f,
+               name(moduleIndex) + " tempo fallback");
+        expect(maxDifference(at120, at60) > 0.001f,
+               name(moduleIndex) + " tempo sync ignored BPM");
+    }
+
+    void expectFinite(
+        const juce::AudioBuffer<float>& buffer, const juce::String& context)
+    {
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+                if (!std::isfinite(buffer.getSample(channel, sample)))
+                {
+                    expect(false, context + " produced a non-finite sample");
+                    return;
+                }
+    }
+};
+
 DspSanityTests dspSanityTests;
+NextTenDspAcceptanceTests nextTenDspAcceptanceTests;
 } // namespace
 } // namespace megadsp

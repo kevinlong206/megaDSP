@@ -265,11 +265,40 @@ void ModuleView::cycleChoice(int control, int optionCount)
     }
 }
 
+void ModuleView::resetToDefault(int control)
+{
+    if (auto* target = parameter(control))
+    {
+        graph.focusKeyboardControl(control);
+        const auto gestureIsActive =
+            control == dragPrimary || control == dragSecondary;
+        if (!gestureIsActive)
+            target->beginChangeGesture();
+        target->setValueNotifyingHost(
+            moduleDefaults(type)[static_cast<size_t>(control)]);
+        if (!gestureIsActive)
+            target->endChangeGesture();
+        repaint();
+    }
+}
+
 void ModuleView::updateDefaultDragReadout()
 {
     dragReadout = juce::String(controlMetadata(type, dragPrimary).label)
         + "  " + formatControlValue(type, dragPrimary, value(dragPrimary));
     repaint();
+}
+
+bool ModuleView::readContinuousTelemetry(
+    ContinuousTelemetrySnapshot& snapshot) const noexcept
+{
+    return processor.readContinuousTelemetry(slot, snapshot);
+}
+
+bool ModuleView::readEventTelemetry(
+    EventTelemetrySnapshot& snapshot) const noexcept
+{
+    return processor.readEventTelemetry(slot, snapshot);
 }
 
 float ModuleView::dbToY(float db, juce::Rectangle<float> area)

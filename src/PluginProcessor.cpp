@@ -213,7 +213,10 @@ void MegaDSPAudioProcessor::finishTopologyMutation(
     const auto compacted = compact && rack.compactSlots();
     const auto modulesChanged = rack.synchronizeModules(false);
     if (resetRack || compacted || modulesChanged)
+    {
         rack.reset();
+        rack.visualizationData().clear();
+    }
     selectedTab = juce::jlimit(
         0, juce::jmax(0, rack.activeSlotCount() - 1), selectedTab);
     suspendProcessing(false);
@@ -395,6 +398,7 @@ void MegaDSPAudioProcessor::resetModuleToDefaults(int slot)
         }
     }
     rack.reset();
+    rack.visualizationData().slotData(slot).clear();
     suspendProcessing(false);
     refreshLatency();
 }

@@ -83,6 +83,16 @@ public:
     {
         return rack.impulseResponsePreview(slot);
     }
+    bool readContinuousTelemetry(
+        int slot, megadsp::ContinuousTelemetrySnapshot& snapshot) const noexcept
+    {
+        return rack.readContinuousTelemetry(slot, snapshot);
+    }
+    bool readEventTelemetry(
+        int slot, megadsp::EventTelemetrySnapshot& snapshot) const noexcept
+    {
+        return rack.readEventTelemetry(slot, snapshot);
+    }
     void topologyChanged();
     std::uint64_t getTopologyGeneration() const noexcept
     {
@@ -92,7 +102,11 @@ public:
     int getSelectedTab() const { return selectedTab; }
     void setSelectedTab(int tab)
     {
-        selectedTab = juce::jlimit(0, juce::jmax(0, rack.activeSlotCount() - 1), tab);
+        const auto nextTab = juce::jlimit(
+            0, juce::jmax(0, rack.activeSlotCount() - 1), tab);
+        if (rack.visualizationData().getSelectedSlot() != nextTab)
+            rack.visualizationData().slotData(nextTab).clear();
+        selectedTab = nextTab;
         rack.visualizationData().setSelectedSlot(selectedTab);
     }
     int getBackgroundThemeIndex() const;

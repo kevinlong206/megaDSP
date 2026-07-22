@@ -83,6 +83,66 @@ public:
         expectEquals(
             unavailable.accessibilityDescription,
             unavailable.buttonText);
+        expectEquals(
+            togglePresentation(ModuleType::gateExpander, 9, true).buttonText,
+            juce::String("Listen: On"));
+        expectEquals(
+            togglePresentation(
+                ModuleType::transientDesigner, 5, false).buttonText,
+            juce::String("Clip Guard: Off"));
+        expectEquals(
+            togglePresentation(
+                ModuleType::multibandCompressor, 8, true).buttonText,
+            juce::String("Auto Makeup: On"));
+        expectEquals(
+            togglePresentation(ModuleType::studioPhaser, 2, true).buttonText,
+            juce::String("Sync: Tempo"));
+        expectEquals(
+            togglePresentation(
+                ModuleType::diffusionDelay, 1, false).buttonText,
+            juce::String("Sync: Free"));
+
+        beginTest("Next-ten choices and readouts use musical language");
+        expectEquals(
+            controlOptions(ModuleType::studioPhaser, 0)[2],
+            juce::String("6"));
+        expectEquals(
+            controlOptions(ModuleType::studioFlanger, 0)[1],
+            juce::String("Through-Zero"));
+        expectEquals(
+            controlOptions(ModuleType::pitchBloom, 0)[3],
+            juce::String("Octave + Fifth"));
+        expectEquals(
+            controlOptions(ModuleType::spatialOrbit, 0)[1],
+            juce::String("Figure Eight"));
+        expect(formatControlValue(
+                   ModuleType::gateExpander, 0,
+                   moduleDefaults(ModuleType::gateExpander)[0])
+                   .endsWith("dB"));
+        expect(formatControlValue(
+                   ModuleType::studioFlanger, 5,
+                   moduleDefaults(ModuleType::studioFlanger)[5])
+                   .endsWith("ms"));
+        expect(formatControlValue(
+                   ModuleType::frequencyLab, 0,
+                   moduleDefaults(ModuleType::frequencyLab)[0])
+                   .endsWith("Hz"));
+        expect(formatControlValue(
+                   ModuleType::spatialOrbit, 6,
+                   moduleDefaults(ModuleType::spatialOrbit)[6])
+                   .endsWith("m"));
+        expect(formatControlValue(
+                   ModuleType::signalDecay, 0,
+                   moduleDefaults(ModuleType::signalDecay)[0])
+                   .endsWith("bits"));
+
+        beginTest("Minimum editor leaves a usable full-panel graph");
+        const auto modulePanelWidth = editorMinimumWidth - 20;
+        const auto modulePanelHeight = editorMinimumHeight - 92 - 52 - 12;
+        const auto graphWidth = modulePanelWidth - 28;
+        const auto graphHeight = modulePanelHeight - 28 - 34 - 6;
+        expect(graphWidth >= 760);
+        expect(graphHeight >= 390);
 
         beginTest("Full-panel keyboard order includes every active control");
         const auto eq = keyboardControlOrder(
@@ -125,12 +185,75 @@ public:
                 ModuleType::beatPermuter,
                 ModuleType::spectralPrism,
                 ModuleType::resonantMatrix,
-                ModuleType::wavefoldGarden })
+                ModuleType::wavefoldGarden,
+                ModuleType::multibandCompressor })
         {
             const auto creative = keyboardControlOrder(
                 type, moduleDefaults(type), true, true);
             expectEquals(static_cast<int>(creative.size()), controlsPerSlot);
         }
+        expectEquals(static_cast<int>(keyboardControlOrder(
+            ModuleType::gateExpander,
+            moduleDefaults(ModuleType::gateExpander), true, true).size()), 11);
+        expectEquals(static_cast<int>(keyboardControlOrder(
+            ModuleType::transientDesigner,
+            moduleDefaults(ModuleType::transientDesigner), true, true).size()), 8);
+        for (const auto type : {
+                ModuleType::diffusionDelay,
+                ModuleType::pitchBloom,
+                ModuleType::spatialOrbit,
+                ModuleType::signalDecay })
+            expectEquals(static_cast<int>(keyboardControlOrder(
+                type, moduleDefaults(type), true, true).size()), 11);
+        for (const auto type : {
+                ModuleType::studioPhaser,
+                ModuleType::studioFlanger })
+            expectEquals(static_cast<int>(keyboardControlOrder(
+                type, moduleDefaults(type), true, true).size()), 10);
+        expectEquals(static_cast<int>(keyboardControlOrder(
+            ModuleType::frequencyLab,
+            moduleDefaults(ModuleType::frequencyLab), true, true).size()), 10);
+
+        beginTest("Next-ten keyboard order follows each visual workflow");
+        expect(keyboardControlOrder(
+                   ModuleType::gateExpander,
+                   moduleDefaults(ModuleType::gateExpander), true, true)
+               == std::vector<int>(
+                   { 0, 1, 8, 9, 2, 3, 4, 5, 6, 7, 10 }));
+        expect(keyboardControlOrder(
+                   ModuleType::transientDesigner,
+                   moduleDefaults(ModuleType::transientDesigner), true, true)
+               == std::vector<int>({ 0, 1, 5, 2, 3, 4, 6, 7 }));
+        expect(keyboardControlOrder(
+                   ModuleType::multibandCompressor,
+                   moduleDefaults(ModuleType::multibandCompressor), true, true)
+               == std::vector<int>(
+                   { 0, 1, 2, 3, 4, 8, 5, 6, 7, 9, 10, 11 }));
+        expect(keyboardControlOrder(
+                   ModuleType::studioPhaser,
+                   moduleDefaults(ModuleType::studioPhaser), true, true)
+               == std::vector<int>(
+                   { 0, 5, 6, 4, 1, 2, 7, 8, 9, 10 }));
+        expect(keyboardControlOrder(
+                   ModuleType::studioFlanger,
+                   moduleDefaults(ModuleType::studioFlanger), true, true)
+               == std::vector<int>(
+                   { 0, 5, 4, 1, 2, 6, 7, 8, 9, 10 }));
+        expect(keyboardControlOrder(
+                   ModuleType::diffusionDelay,
+                   moduleDefaults(ModuleType::diffusionDelay), true, true)
+               == std::vector<int>(
+                   { 1, 2, 4, 3, 5, 6, 7, 8, 9, 10, 11 }));
+        expect(keyboardControlOrder(
+                   ModuleType::pitchBloom,
+                   moduleDefaults(ModuleType::pitchBloom), true, true)
+               == std::vector<int>(
+                   { 0, 2, 4, 3, 5, 1, 6, 7, 8, 9, 10 }));
+        expect(keyboardControlOrder(
+                   ModuleType::spatialOrbit,
+                   moduleDefaults(ModuleType::spatialOrbit), true, true)
+               == std::vector<int>(
+                   { 0, 4, 6, 5, 1, 2, 7, 8, 9, 10, 11 }));
 
         beginTest("Keyboard order respects contextual availability");
         const auto dynamicValues =
@@ -146,6 +269,44 @@ public:
                != withSidechain.end());
         expectEquals(
             static_cast<int>(withSidechain.size()), controlsPerSlot);
+        const auto gateValues = moduleDefaults(ModuleType::gateExpander);
+        const auto gateWithoutSidechain = keyboardControlOrder(
+            ModuleType::gateExpander, gateValues, true, false);
+        const auto gateWithSidechain = keyboardControlOrder(
+            ModuleType::gateExpander, gateValues, true, true);
+        expect(std::find(gateWithoutSidechain.begin(),
+                         gateWithoutSidechain.end(), 8)
+               == gateWithoutSidechain.end());
+        expect(std::find(gateWithSidechain.begin(),
+                         gateWithSidechain.end(), 8)
+               != gateWithSidechain.end());
+
+        auto syncedPhaserValues = moduleDefaults(ModuleType::studioPhaser);
+        syncedPhaserValues[2] = 1.0f;
+        const auto syncedPhaser = keyboardControlOrder(
+            ModuleType::studioPhaser, syncedPhaserValues, true, true);
+        expect(std::find(syncedPhaser.begin(), syncedPhaser.end(), 1)
+               == syncedPhaser.end());
+        expect(std::find(syncedPhaser.begin(), syncedPhaser.end(), 3)
+               != syncedPhaser.end());
+
+        auto freeDelayValues = moduleDefaults(ModuleType::diffusionDelay);
+        freeDelayValues[1] = 0.0f;
+        const auto freeDiffusion = keyboardControlOrder(
+            ModuleType::diffusionDelay, freeDelayValues, true, true);
+        expect(std::find(freeDiffusion.begin(), freeDiffusion.end(), 0)
+               != freeDiffusion.end());
+        expect(std::find(freeDiffusion.begin(), freeDiffusion.end(), 2)
+               == freeDiffusion.end());
+
+        auto syncedOrbitValues = moduleDefaults(ModuleType::spatialOrbit);
+        syncedOrbitValues[2] = 1.0f;
+        const auto syncedOrbit = keyboardControlOrder(
+            ModuleType::spatialOrbit, syncedOrbitValues, true, true);
+        expect(std::find(syncedOrbit.begin(), syncedOrbit.end(), 1)
+               == syncedOrbit.end());
+        expect(std::find(syncedOrbit.begin(), syncedOrbit.end(), 3)
+               != syncedOrbit.end());
 
         const auto tremoloValues =
             moduleDefaults(ModuleType::tremolo);

@@ -54,7 +54,11 @@ protected:
     juce::Rectangle<int> getLocalBounds() const;
     void toggleParameter(int control);
     void cycleChoice(int control, int optionCount);
+    void resetToDefault(int control);
     void updateDefaultDragReadout();
+    bool readContinuousTelemetry(
+        ContinuousTelemetrySnapshot&) const noexcept;
+    bool readEventTelemetry(EventTelemetrySnapshot&) const noexcept;
 
     static float dbToY(float db, juce::Rectangle<float>);
     void drawSpectrum(juce::Graphics&, juce::Rectangle<float>,

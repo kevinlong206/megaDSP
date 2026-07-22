@@ -20,7 +20,8 @@ juce::String toggleLabel(ModuleType type, int control)
         return "Low Mode";
     if (type == ModuleType::equalizer && control == 11)
         return "High Mode";
-    if (type == ModuleType::dynamicEqualizer && control == 9)
+    if ((type == ModuleType::dynamicEqualizer && control == 9)
+        || (type == ModuleType::gateExpander && control == 8))
         return "Sidechain";
     return controlMetadata(type, control).label;
 }
@@ -35,13 +36,18 @@ juce::String toggleState(
     if (type == ModuleType::compressor && control == 7)
         return state ? "External" : "Internal";
     if ((type == ModuleType::delay && control == 5)
-        || (type == ModuleType::tremolo && control == 2))
+        || (type == ModuleType::tremolo && control == 2)
+        || ((type == ModuleType::studioPhaser
+             || type == ModuleType::studioFlanger
+             || type == ModuleType::spatialOrbit) && control == 2)
+        || (type == ModuleType::diffusionDelay && control == 1))
         return state ? "Tempo" : "Free";
     if (type == ModuleType::midSideDecoder && control == 1)
         return state ? "Swapped" : "Normal";
     if (type == ModuleType::midSideDecoder && control == 2)
         return state ? "Muted" : "Open";
-    if (type == ModuleType::dynamicEqualizer && control == 9)
+    if ((type == ModuleType::dynamicEqualizer && control == 9)
+        || (type == ModuleType::gateExpander && control == 8))
         return state ? "External" : "Internal";
     if (type == ModuleType::limiter && control == 4)
         return state ? "Matched" : "Off";
@@ -142,6 +148,16 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::spectralPrism: return "Prism";
         case ModuleType::resonantMatrix: return "Matrix";
         case ModuleType::wavefoldGarden: return "Fold";
+        case ModuleType::gateExpander: return "Gate";
+        case ModuleType::transientDesigner: return "Transient";
+        case ModuleType::multibandCompressor: return "MultiComp";
+        case ModuleType::studioPhaser: return "Phaser";
+        case ModuleType::studioFlanger: return "Flanger";
+        case ModuleType::diffusionDelay: return "Diffuse";
+        case ModuleType::pitchBloom: return "Bloom";
+        case ModuleType::frequencyLab: return "FreqLab";
+        case ModuleType::spatialOrbit: return "Orbit";
+        case ModuleType::signalDecay: return "Decay";
         case ModuleType::empty:
         case ModuleType::delay:
         case ModuleType::limiter:
@@ -190,6 +206,30 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::wavefoldGarden:
             candidates = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
             break;
+        case ModuleType::gateExpander:
+            candidates = { 0, 1, 8, 9, 2, 3, 4, 5, 6, 7, 10, 11 };
+            break;
+        case ModuleType::transientDesigner:
+            candidates = { 0, 1, 5, 2, 3, 4, 6, 7, 8, 9, 10, 11 };
+            break;
+        case ModuleType::multibandCompressor:
+            candidates = { 0, 1, 2, 3, 4, 8, 5, 6, 7, 9, 10, 11 };
+            break;
+        case ModuleType::studioPhaser:
+            candidates = { 0, 5, 6, 4, 1, 3, 2, 7, 8, 9, 10, 11 };
+            break;
+        case ModuleType::studioFlanger:
+            candidates = { 0, 5, 4, 1, 3, 2, 6, 7, 8, 9, 10, 11 };
+            break;
+        case ModuleType::diffusionDelay:
+            candidates = { 1, 0, 2, 4, 3, 5, 6, 7, 8, 9, 10, 11 };
+            break;
+        case ModuleType::pitchBloom:
+            candidates = { 0, 2, 4, 3, 5, 1, 6, 7, 8, 9, 10, 11 };
+            break;
+        case ModuleType::spatialOrbit:
+            candidates = { 0, 4, 6, 5, 1, 3, 2, 7, 8, 9, 10, 11 };
+            break;
         case ModuleType::empty:
         case ModuleType::compressor:
         case ModuleType::saturator:
@@ -202,6 +242,8 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::rotarySpeaker:
         case ModuleType::convolutionReverb:
         case ModuleType::dynamicEqualizer:
+        case ModuleType::frequencyLab:
+        case ModuleType::signalDecay:
             break;
     }
 

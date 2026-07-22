@@ -64,6 +64,10 @@ public:
     ImpulseResponsePreview impulseResponsePreview(int slot) const;
     GrainVisualEvents grainVisualEvents(int slot) const;
     BeatPermutationVisualEvents beatPermutationVisualEvents(int slot) const;
+    bool readContinuousTelemetry(
+        int slot, ContinuousTelemetrySnapshot&) const noexcept;
+    bool readEventTelemetry(
+        int slot, EventTelemetrySnapshot&) const noexcept;
 
 private:
     struct Slot

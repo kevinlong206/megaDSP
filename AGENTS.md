@@ -9,9 +9,10 @@ serial slots and twelve fixed generic controls per slot.
 ## Non-negotiable compatibility rules
 
 - Preserve existing `ModuleType` integer values. Append new module types.
-- Current appended values include M/S Decoder 8, Tremolo 9, and Rotary Speaker
-  10, Convolution Reverb 11, Dynamic EQ / De-Esser 12, Random Granulizer 13,
-  and Vintage Chorus 14.
+- Current appended values continue through Wavefold Garden 18, Gate / Expander
+  19, Transient Designer 20, Multiband Compressor 21, Studio Phaser 22, Studio
+  Flanger 23, Diffusion Delay 24, Pitch Bloom 25, Frequency Lab 26, Spatial
+  Orbit 27, and Signal Decay 28.
 - Preserve the eight-slot, twelve-control host parameter topology and existing
   parameter IDs.
 - Keep state migration compatible with schema 2 through current schema 7.
@@ -96,6 +97,28 @@ parsing/formatting, and tests.
   controls are smoothed. Feedback is filtered and sub-unity at both polarities;
   Age character is deterministic and signal-energy gated; Width modifies a
   mono-cancelling wet side field; Mix 0% is exactly dry apart from Output.
+- Gate / Expander uses separate open/close thresholds, detector Low/High Cut,
+  Hold, and bounded dB-domain attenuation. External sidechain must fall back to
+  internal input when unavailable; Listen auditions only the detector path.
+- Transient Designer detection may be frequency-focused, but gain shaping is
+  broadband. Neutral Attack/Sustain and Mix 0% remain transparent; Clip Guard
+  is never a substitute for bounded gain design.
+- Multiband Compressor uses reconstructing crossover bands and one independent
+  detector per band. Ratio 1:1 must reconstruct flat; crossover automation is
+  click-safe and Auto Makeup never boosts an inactive band.
+- Studio Phaser and Studio Flanger keep their modulation phase across Sync and
+  structural changes. Stage/model changes crossfade prepared paths; signed
+  feedback remains filtered and sub-unity. Flanger reports one fixed maximum
+  latency and aligns dry audio in every model.
+- Diffusion Delay keeps the requested primary repeat time independent of
+  diffusion density. Pitch Bloom uses ratio pitch shifting, not Hz-domain
+  translation. Both use filtered bounded feedback and conservative measured
+  tails. Their event telemetry is emitted only for the selected capture slot
+  and visualizes measured DSP activity rather than control-derived events.
+- Frequency Lab translates the analytic signal in hertz and delay-aligns dry
+  audio to its fixed Hilbert group delay. Spatial Orbit preserves incoming side
+  information and mono fold-down while applying bounded Doppler. Signal Decay
+  uses a resettable deterministic PRNG and a fixed aligned modulation latency.
 
 ## Build and test
 

@@ -271,7 +271,6 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
     retainPeak(inputMeter,
                juce::Decibels::gainToDecibels(inputPeak, -100.0f));
 
-    const ProcessEnvironment environment { sidechain, bpm };
     for (int slotIndex = 0; slotIndex < slotCount; ++slotIndex)
     {
         auto& slot = slots[static_cast<size_t>(slotIndex)];
@@ -281,6 +280,9 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
 
         const auto captureVisualization =
             visualization.getSelectedSlot() == slotIndex;
+        const ProcessEnvironment environment {
+            sidechain, bpm, captureVisualization
+        };
         if (captureVisualization)
             visualization.captureInput(slotIndex, main);
 
@@ -783,5 +785,35 @@ BeatPermutationVisualEvents EffectRack::beatPermutationVisualEvents(
             return visualizationCapability->beatPermutationVisualEvents();
     }
     return {};
+}
+
+bool EffectRack::readContinuousTelemetry(
+    int slot, ContinuousTelemetrySnapshot& snapshot) const noexcept
+{
+    if (visualization.getSelectedSlot() != slot
+        || !activeModuleHasCapability(
+            slot, ModuleCapability::continuousTelemetry))
+        return false;
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    const auto* module = selectedModule(rackSlot);
+    const auto* capability =
+        module != nullptr ? module->continuousTelemetryCapability() : nullptr;
+    return capability != nullptr
+           && capability->readContinuousTelemetry(snapshot);
+}
+
+bool EffectRack::readEventTelemetry(
+    int slot, EventTelemetrySnapshot& snapshot) const noexcept
+{
+    if (visualization.getSelectedSlot() != slot
+        || !activeModuleHasCapability(
+            slot, ModuleCapability::eventTelemetry))
+        return false;
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    const auto* module = selectedModule(rackSlot);
+    const auto* capability =
+        module != nullptr ? module->eventTelemetryCapability() : nullptr;
+    return capability != nullptr
+           && capability->readEventTelemetry(snapshot);
 }
 } // namespace megadsp

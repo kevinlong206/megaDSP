@@ -1,6 +1,10 @@
 # Effects reference
 
-Detailed control and interaction notes for each of megaDSP's eighteen modules. For installation and a quick overview see the [README](../README.md).
+Detailed control and interaction notes for each of megaDSP's twenty-eight modules. For installation and a quick overview see the [README](../README.md).
+
+Runtime-specific graphs show **DSP telemetry waiting** until the selected slot
+has processed an audio block. After capture begins, an empty event field means
+the DSP reported no event activity; it is not filled from an editor clock.
 
 ---
 
@@ -154,3 +158,119 @@ and pitched spaces while bounded feedback keeps transitions controlled.
 Creates animated antialiased harmonics with dynamic wavefolding. Drive,
 fold shape, envelope response, motion, tone, and mix turn level and gesture
 into evolving nonlinear color rather than static distortion.
+
+---
+
+## Gate / Expander
+
+Uses a filtered peak/RMS detector, separate opening and closing thresholds,
+Hold, and smooth downward expansion. The graph directly edits Threshold and
+Range and shows the selected DSP slot's detector level, gain envelope,
+attenuation, and open state alongside input and output. A two-handle detector
+passband, external-sidechain status, Listen, and Stereo Link remain close to the
+history they affect.
+
+---
+
+## Transient Designer
+
+Separates fast attack energy from slower sustain without tying the result to
+absolute input level. Large bipolar Attack and Sustain handles sit on a live
+component view sourced from the DSP's actual fast/slow envelopes and attack/
+sustain shaping terms; Sensitivity, Speed, and Focus shape detection. Focus
+changes what triggers the broadband gain movement rather than applying a static
+EQ.
+
+---
+
+## Multiband Compressor
+
+Splits audio into three reconstructing Linkwitz-Riley bands. Two horizontal
+crossover handles and three vertical threshold handles define the result
+directly on the spectrum, with DSP-reported gain-reduction histories and active
+state for each band. Ratio, timing, Auto Makeup, Stereo Link, Mix, and Output
+are shared to keep the processor readable.
+
+---
+
+## Studio Phaser
+
+Cascades 2, 4, 6, 8, or 12 stable all-pass stages with click-safe topology
+changes. The response graph shows the moving notches and directly edits Center,
+Sweep, Rate, and Depth. Motion runs freely in hertz or follows musical host
+divisions; signed Feedback and Stereo Phase broaden the available character.
+Notch motion and topology-transition status use the DSP's captured LFO phases
+and crossfade weights rather than an editor clock.
+
+---
+
+## Studio Flanger
+
+Provides distinct Tape, Through-Zero, Jet, and BBD paths over one direct comb
+display. Delay and Depth determine visible tooth spacing and movement. Rate can
+run freely or sync to tempo, while signed Feedback, Stereo Phase, and Tone
+shape the model. Every model uses one fixed reported latency so automation
+never changes host timing. Tooth spacing and model-transition status follow the
+captured delay trajectory and model crossfade actually used by the DSP.
+
+---
+
+## Diffusion Delay
+
+Feeds a precise primary repeat into a modulated all-pass diffusion field.
+Increasing Diffusion turns repeats into a denser stereo cloud without changing
+the requested repeat time. While this slot is selected, the graph's moving
+repeat and cloud marks are published by the audio DSP: progress follows the
+processed repeat clock, brightness follows measured energy, and vertical
+placement follows measured stereo balance. Silence produces no activity marks.
+The graph owns Time or Division, cloud extent, wet passband, Width, and Ducking;
+Feedback remains filtered and strictly bounded.
+
+---
+
+## Pitch Bloom
+
+Shifts feedback repeats by Unison, Fifth, Octave, Octave + Fifth, or Two
+Octaves, with a cents Fine control. Delay, Feedback, Bloom, Spread, wet
+passband, and Ducking shape the result. Rising arcs are not inferred from those
+controls: the selected slot publishes actual pitch-shifted repeat events with
+their smoothed interval, repeat-clock progress, measured energy, pan, and stereo
+spread. The dry path is aligned to the fixed overlapping-window shifter latency.
+
+---
+
+## Frequency Lab
+
+Translates the spectrum by a signed hertz amount rather than resampling it by a
+musical ratio. Coarse Shift, Fine, LFO motion, and channel Stereo Offset are
+shown as source-to-destination lines over the spectrogram. A linear-phase
+Hilbert path provides fixed latency; filtered signed Feedback remains bounded.
+The spectrogram remains truthful through the rack's generic measured input and
+output histories, while the marker and channel lines use the current
+DSP-smoothed translated hertz and LFO state.
+
+---
+
+## Spatial Orbit
+
+Moves mono or stereo material through Circle, Figure Eight, Pendulum, and
+deterministic Wander paths. The top-down field directly edits Azimuth Span,
+Distance, and Width while showing current position. Air Damping, bounded
+Doppler, and Mono Below provide distance and foundation cues without sacrificing
+mono compatibility. The source and trail use captured x/y/distance/path state;
+Wander therefore displays the same deterministic resettable trajectory heard in
+the audio rather than a separate UI random path.
+
+---
+
+## Signal Decay
+
+Combines dithered bit-depth reduction, band-limited sample-and-hold, clock
+Jitter, smoothly windowed Dropouts, deterministic Noise, Wow, Flutter, and
+Stereo Wear. The original/degraded waveform and error lane make the mechanisms
+visually distinct. Transparent endpoints and one fixed aligned modulation
+latency keep parallel Mix predictable.
+The waveforms remain the rack's generic measured input/output histories (no
+module-specific copy is needed). DSP telemetry adds actual clock phases, stereo
+wear, dropout gain, and dropout-start events; no editor-clock animation implies
+audio synchronization.

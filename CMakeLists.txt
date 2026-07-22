@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(megaDSP VERSION 0.24.0 LANGUAGES C CXX)
+project(megaDSP VERSION 0.25.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -53,19 +53,29 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/Compressor.cpp
     src/modules/ConvolutionReverb.cpp
     src/modules/Delay.cpp
+    src/modules/DiffusionDelay.cpp
     src/modules/DspHelpers.cpp
     src/modules/DynamicEqualizer.cpp
     src/modules/Equalizer.cpp
+    src/modules/FrequencyLab.cpp
+    src/modules/GateExpander.cpp
     src/modules/Limiter.cpp
     src/modules/MidSideDecoder.cpp
     src/modules/ModuleRegistry.cpp
+    src/modules/MultibandCompressor.cpp
+    src/modules/PitchBloom.cpp
     src/modules/RandomGranulizer.cpp
     src/modules/ResonantMatrix.cpp
     src/modules/RotarySpeaker.cpp
     src/modules/Saturator.cpp
     src/modules/StereoWidth.cpp
     src/modules/SpectralPrism.cpp
+    src/modules/SignalDecay.cpp
+    src/modules/SpatialOrbit.cpp
+    src/modules/StudioFlanger.cpp
+    src/modules/StudioPhaser.cpp
     src/modules/Tremolo.cpp
+    src/modules/TransientDesigner.cpp
     src/modules/VintageChorus.cpp
     src/modules/WavefoldGarden.cpp)
 
@@ -76,21 +86,32 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/Compressor.h
     src/modules/ConvolutionReverb.h
     src/modules/Delay.h
+    src/modules/DiffusionDelay.h
     src/modules/DspHelpers.h
     src/modules/DspModule.h
+    src/modules/DspSafety.h
     src/modules/DynamicEqualizer.h
     src/modules/Equalizer.h
+    src/modules/FrequencyLab.h
+    src/modules/GateExpander.h
     src/modules/Limiter.h
     src/modules/MidSideDecoder.h
     src/modules/ModuleCapabilities.h
     src/modules/ModuleRegistry.h
+    src/modules/MultibandCompressor.h
+    src/modules/PitchBloom.h
     src/modules/RandomGranulizer.h
     src/modules/ResonantMatrix.h
     src/modules/RotarySpeaker.h
     src/modules/Saturator.h
     src/modules/StereoWidth.h
     src/modules/SpectralPrism.h
+    src/modules/SignalDecay.h
+    src/modules/SpatialOrbit.h
+    src/modules/StudioFlanger.h
+    src/modules/StudioPhaser.h
     src/modules/Tremolo.h
+    src/modules/TransientDesigner.h
     src/modules/VintageChorus.h
     src/modules/WavefoldGarden.h)
 
@@ -111,18 +132,28 @@ set(MEGADSP_UI_SOURCES
     src/ui/modules/CompressorModuleView.cpp
     src/ui/modules/ConvolutionReverbModuleView.cpp
     src/ui/modules/DelayModuleView.cpp
+    src/ui/modules/DiffusionDelayModuleView.cpp
     src/ui/modules/DynamicEqualizerModuleView.cpp
     src/ui/modules/EqualizerModuleView.cpp
+    src/ui/modules/FrequencyLabModuleView.cpp
+    src/ui/modules/GateExpanderModuleView.cpp
     src/ui/modules/LimiterModuleView.cpp
     src/ui/modules/MidSideDecoderModuleView.cpp
     src/ui/modules/ModuleViewCreators.h
+    src/ui/modules/MultibandCompressorModuleView.cpp
+    src/ui/modules/PitchBloomModuleView.cpp
     src/ui/modules/RandomGranulizerModuleView.cpp
     src/ui/modules/ResonantMatrixModuleView.cpp
     src/ui/modules/RotarySpeakerModuleView.cpp
     src/ui/modules/SaturatorModuleView.cpp
     src/ui/modules/StereoWidthModuleView.cpp
     src/ui/modules/SpectralPrismModuleView.cpp
+    src/ui/modules/SignalDecayModuleView.cpp
+    src/ui/modules/SpatialOrbitModuleView.cpp
+    src/ui/modules/StudioFlangerModuleView.cpp
+    src/ui/modules/StudioPhaserModuleView.cpp
     src/ui/modules/TremoloModuleView.cpp
+    src/ui/modules/TransientDesignerModuleView.cpp
     src/ui/modules/VintageChorusModuleView.cpp
     src/ui/modules/WavefoldGardenModuleView.cpp)
 
@@ -169,7 +200,7 @@ clap_juce_extensions_plugin(
 if(APPLE)
     option(MEGADSP_ADHOC_SIGN "Ad-hoc sign local development plugin bundles" ON)
     if(MEGADSP_ADHOC_SIGN)
-        foreach(bundle_target megaDSP_VST3 megaDSP_AU megaDSP_CLAP)
+        foreach(bundle_target megaDSP_VST3 megaDSP_AU megaDSP_CLAP megaDSP_Standalone)
             add_custom_command(TARGET ${bundle_target} POST_BUILD
                 COMMAND codesign --force --deep --sign -
                         "$<TARGET_BUNDLE_DIR:${bundle_target}>"
@@ -183,6 +214,9 @@ juce_add_console_app(megaDSPTests PRODUCT_NAME "megaDSP Tests")
 target_sources(megaDSPTests PRIVATE
     tests/TestMain.cpp
     tests/DspModuleTests.cpp
+    tests/DynamicsTelemetryTests.cpp
+    tests/TelemetryFoundationTests.cpp
+    tests/TimeTelemetryTests.cpp
     tests/GuiLayoutTests.cpp
     tests/ModuleBrowserTests.cpp
     tests/ProcessorTests.cpp

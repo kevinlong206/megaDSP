@@ -13,7 +13,7 @@ namespace megadsp
 constexpr int slotCount = 8;
 constexpr int controlsPerSlot = 12;
 constexpr int stateSchemaVersion = 7;
-constexpr int moduleTypeCount = 19;
+constexpr int moduleTypeCount = 29;
 
 enum class ModuleType
 {
@@ -35,7 +35,17 @@ enum class ModuleType
     beatPermuter = 15,
     spectralPrism = 16,
     resonantMatrix = 17,
-    wavefoldGarden = 18
+    wavefoldGarden = 18,
+    gateExpander = 19,
+    transientDesigner = 20,
+    multibandCompressor = 21,
+    studioPhaser = 22,
+    studioFlanger = 23,
+    diffusionDelay = 24,
+    pitchBloom = 25,
+    frequencyLab = 26,
+    spatialOrbit = 27,
+    signalDecay = 28
 };
 
 enum class ModuleCategory
@@ -72,8 +82,21 @@ enum class ModulePresentation
     spectralPrism,
     resonantMatrix,
     wavefoldGarden,
+    gateExpander,
+    transientDesigner,
+    multibandCompressor,
+    studioPhaser,
+    studioFlanger,
+    diffusionDelay,
+    pitchBloom,
+    frequencyLab,
+    spatialOrbit,
+    signalDecay,
     count
 };
+
+static_assert(static_cast<int>(ModuleType::signalDecay) + 1 == moduleTypeCount);
+static_assert(static_cast<int>(ModulePresentation::count) == moduleTypeCount);
 
 enum class ControlKind
 {

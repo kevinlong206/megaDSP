@@ -18,6 +18,7 @@ struct ProcessEnvironment
 {
     const juce::AudioBuffer<float>* sidechain = nullptr;
     double bpm = 120.0;
+    bool captureTelemetry = false;
 };
 
 class DspModule
@@ -62,6 +63,26 @@ public:
     {
         return nullptr;
     }
+    virtual ContinuousTelemetryCapability*
+        continuousTelemetryCapability() noexcept
+    {
+        return nullptr;
+    }
+    virtual const ContinuousTelemetryCapability*
+        continuousTelemetryCapability() const noexcept
+    {
+        return nullptr;
+    }
+    virtual EventTelemetryCapability*
+        eventTelemetryCapability() noexcept
+    {
+        return nullptr;
+    }
+    virtual const EventTelemetryCapability*
+        eventTelemetryCapability() const noexcept
+    {
+        return nullptr;
+    }
     ModuleCapability capabilities() const noexcept
     {
         auto result = ModuleCapability::none;
@@ -72,6 +93,10 @@ public:
         if (beatPermutationVisualizationCapability() != nullptr)
             result = result
                      | ModuleCapability::beatPermutationVisualization;
+        if (continuousTelemetryCapability() != nullptr)
+            result = result | ModuleCapability::continuousTelemetry;
+        if (eventTelemetryCapability() != nullptr)
+            result = result | ModuleCapability::eventTelemetry;
         return result;
     }
 };

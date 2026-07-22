@@ -116,6 +116,30 @@ public:
                != nullptr);
         expect(processor.getTopologyGeneration() > firstGeneration);
 
+        beginTest("Capture histories clear on topology, selection, and reset");
+        std::array<float, 1> captured {};
+        processor.getVisualizationData().slotData(0).input.push(0.75f);
+        setType(processor, 0, megadsp::ModuleType::equalizer);
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(static_cast<int>(
+            processor.getVisualizationData().slotData(0)
+                .input.copyLatest(captured)), 0);
+
+        setType(processor, 1, megadsp::ModuleType::compressor);
+        processor.flushPendingUpdatesForTesting();
+        processor.setSelectedTab(0);
+        processor.getVisualizationData().slotData(1).input.push(0.5f);
+        processor.setSelectedTab(1);
+        expectEquals(static_cast<int>(
+            processor.getVisualizationData().slotData(1)
+                .input.copyLatest(captured)), 0);
+
+        processor.getVisualizationData().slotData(1).input.push(0.25f);
+        processor.resetModuleToDefaults(1);
+        expectEquals(static_cast<int>(
+            processor.getVisualizationData().slotData(1)
+                .input.copyLatest(captured)), 0);
+
         beginTest(
             "Sparse restored state compacts in signal-flow order");
         MegaDSPAudioProcessor restoredProcessor;

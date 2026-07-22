@@ -3,7 +3,9 @@
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
+#include <array>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace
@@ -47,17 +49,85 @@ public:
         expectOnly("m/S", megadsp::ModuleType::midSideDecoder);
 
         beginTest("Category matching supports multiple tokens");
-        expectOnly("SATURATION & color", megadsp::ModuleType::saturator);
+        const auto colorModules = flatten(
+            megadsp::ui::filterAndGroupModules("SATURATION & color"));
+        expectEquals(static_cast<int>(colorModules.size()), 2);
+        expect(std::find(colorModules.begin(), colorModules.end(),
+                         megadsp::ModuleType::saturator)
+               != colorModules.end());
+        expect(std::find(colorModules.begin(), colorModules.end(),
+                         megadsp::ModuleType::signalDecay)
+               != colorModules.end());
 
         beginTest("Description matching finds module copy");
         expectOnly("evolving randomized", megadsp::ModuleType::randomGranulizer);
 
         beginTest("Search tag matching finds module");
-        expectOnly("BBD", megadsp::ModuleType::vintageChorus);
+        const auto bbdModules = flatten(
+            megadsp::ui::filterAndGroupModules("BBD"));
+        expectEquals(static_cast<int>(bbdModules.size()), 2);
+        expect(std::find(bbdModules.begin(), bbdModules.end(),
+                         megadsp::ModuleType::vintageChorus)
+               != bbdModules.end());
+        expect(std::find(bbdModules.begin(), bbdModules.end(),
+                         megadsp::ModuleType::studioFlanger)
+               != bbdModules.end());
         expectOnly("stutter reverse", megadsp::ModuleType::beatPermuter);
         expectOnly("phase freeze", megadsp::ModuleType::spectralPrism);
         expectOnly("tuned metallic", megadsp::ModuleType::resonantMatrix);
         expectOnly("nonlinear envelope", megadsp::ModuleType::wavefoldGarden);
+
+        beginTest("Next-ten search identities are unique");
+        const std::array nextTenSearches {
+            std::pair { "noise sidechain envelope",
+                        megadsp::ModuleType::gateExpander },
+            std::pair { "transient punch",
+                        megadsp::ModuleType::transientDesigner },
+            std::pair { "multiband crossover",
+                        megadsp::ModuleType::multibandCompressor },
+            std::pair { "allpass stages",
+                        megadsp::ModuleType::studioPhaser },
+            std::pair { "through zero jet",
+                        megadsp::ModuleType::studioFlanger },
+            std::pair { "diffusion echo cloud",
+                        megadsp::ModuleType::diffusionDelay },
+            std::pair { "shimmer octave fifth",
+                        megadsp::ModuleType::pitchBloom },
+            std::pair { "hilbert sideband",
+                        megadsp::ModuleType::frequencyLab },
+            std::pair { "autopan trajectory",
+                        megadsp::ModuleType::spatialOrbit },
+            std::pair { "bitcrush dropout",
+                        megadsp::ModuleType::signalDecay }
+        };
+        for (const auto& [query, expected] : nextTenSearches)
+            expectOnly(query, expected);
+
+        beginTest("Next-ten browser categories match the approved roster");
+        const std::array nextTenCategories {
+            std::pair { megadsp::ModuleType::gateExpander,
+                        megadsp::ModuleCategory::dynamics },
+            std::pair { megadsp::ModuleType::transientDesigner,
+                        megadsp::ModuleCategory::dynamics },
+            std::pair { megadsp::ModuleType::multibandCompressor,
+                        megadsp::ModuleCategory::dynamics },
+            std::pair { megadsp::ModuleType::studioPhaser,
+                        megadsp::ModuleCategory::modulation },
+            std::pair { megadsp::ModuleType::studioFlanger,
+                        megadsp::ModuleCategory::modulation },
+            std::pair { megadsp::ModuleType::diffusionDelay,
+                        megadsp::ModuleCategory::delayAndEcho },
+            std::pair { megadsp::ModuleType::pitchBloom,
+                        megadsp::ModuleCategory::reverbAndSpace },
+            std::pair { megadsp::ModuleType::frequencyLab,
+                        megadsp::ModuleCategory::glitchAndCreative },
+            std::pair { megadsp::ModuleType::spatialOrbit,
+                        megadsp::ModuleCategory::stereoAndUtility },
+            std::pair { megadsp::ModuleType::signalDecay,
+                        megadsp::ModuleCategory::saturationAndColor }
+        };
+        for (const auto& [type, expected] : nextTenCategories)
+            expect(megadsp::moduleDefinition(type).category == expected);
 
         beginTest("No matches returns no groups");
         expect(megadsp::ui::filterAndGroupModules(

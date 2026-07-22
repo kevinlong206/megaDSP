@@ -1084,10 +1084,14 @@ private:
     {
         auto& button = toggles[static_cast<size_t>(control)];
         juce::String unavailableReason;
-        if (type == megadsp::ModuleType::compressor && control == 7
+        if (((type == megadsp::ModuleType::compressor && control == 7)
+             || (type == megadsp::ModuleType::dynamicEqualizer
+                 && control == 9)
+             || (type == megadsp::ModuleType::gateExpander
+                 && control == 8))
             && !processor.hasExternalSidechain())
             unavailableReason =
-                "External sidechain is unavailable; the compressor "
+                "External sidechain is unavailable; the processor "
                 "continues to use its internal detector.";
         else if (type == megadsp::ModuleType::delay && control == 4
                  && !processor.hasStereoOutput())
@@ -1473,12 +1477,8 @@ void MegaDSPAudioProcessorEditor::selectSlot(int slot)
         audioProcessor.getVisualizationData().setSelectedSlot(-1);
         return;
     }
-    const auto previousSlot = selectedSlot;
     selectedSlot = juce::jlimit(0, active - 1, slot);
-    if (selectedSlot != previousSlot)
-        audioProcessor.getVisualizationData().slotData(selectedSlot).clear();
     audioProcessor.setSelectedTab(selectedSlot);
-    audioProcessor.getVisualizationData().setSelectedSlot(selectedSlot);
     modulePanel = std::make_unique<ModulePanel>(audioProcessor, selectedSlot);
     addAndMakeVisible(*modulePanel);
     for (int index = 0; index < static_cast<int>(tabs.size()); ++index)
