@@ -1183,8 +1183,10 @@ public:
             expect(std::isfinite(rotaryStereo.getSample(1, sample)));
         }
         expect(stereoDifference / 48000.0f > 0.005f);
-        expect(rotaryStereo.getMagnitude(0, 96000) < 2.0f);
-        expect(rotaryStereo.getMagnitude(1, 96000) < 2.0f);
+        expect(rotaryStereo.getMagnitude(
+                   0, 0, rotaryStereo.getNumSamples()) < 2.0f);
+        expect(rotaryStereo.getMagnitude(
+                   1, 0, rotaryStereo.getNumSamples()) < 2.0f);
 
         rotary.reset();
         juce::AudioBuffer<float> rotaryMono(1, 4096);
