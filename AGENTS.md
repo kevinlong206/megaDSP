@@ -12,7 +12,7 @@ serial slots and twelve fixed generic controls per slot.
 - Current appended values continue through Wavefold Garden 18, Gate / Expander
   19, Transient Designer 20, Multiband Compressor 21, Studio Phaser 22, Studio
   Flanger 23, Diffusion Delay 24, Pitch Bloom 25, Frequency Lab 26, Spatial
-  Orbit 27, and Signal Decay 28.
+  Orbit 27, Signal Decay 28, and Analog Tape 29.
 - Preserve the eight-slot, twelve-control host parameter topology and existing
   parameter IDs.
 - Keep state migration compatible with schema 2 through current schema 7.
@@ -119,6 +119,11 @@ parsing/formatting, and tests.
   audio to its fixed Hilbert group delay. Spatial Orbit preserves incoming side
   information and mono fold-down while applying bounded Doppler. Signal Decay
   uses a resettable deterministic PRNG and a fixed aligned modulation latency.
+- Analog Tape uses its prepared 4x oversampled nonlinear path and one fixed,
+  latency-aligned transport delay for every machine and speed. Its deterministic
+  hiss stays energy-gated, feedback-free wear remains bounded, and the reel,
+  modulation, dropout, and signal visuals use capture-gated DSP telemetry rather
+  than editor-clock animation.
 
 ## Build and test
 

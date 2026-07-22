@@ -158,6 +158,7 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::frequencyLab: return "FreqLab";
         case ModuleType::spatialOrbit: return "Orbit";
         case ModuleType::signalDecay: return "Decay";
+        case ModuleType::analogTape: return "Tape";
         case ModuleType::empty:
         case ModuleType::delay:
         case ModuleType::limiter:
@@ -244,6 +245,7 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::dynamicEqualizer:
         case ModuleType::frequencyLab:
         case ModuleType::signalDecay:
+        case ModuleType::analogTape:
             break;
     }
 

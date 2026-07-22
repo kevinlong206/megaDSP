@@ -2,7 +2,7 @@
 
 [![Build and test](https://github.com/kevinlong206/megaDSP/actions/workflows/build.yml/badge.svg)](https://github.com/kevinlong206/megaDSP/actions/workflows/build.yml)
 
-An eight-slot modular effects rack with twenty-eight purpose-built processors,
+An eight-slot modular effects rack with twenty-nine purpose-built processors,
 interactive graphs, realtime analysis, and controls that match the musical
 quantity they edit. Available as VST3, AU, and CLAP.
 
@@ -101,6 +101,7 @@ megaDSP.clap → ~/.clap
 |---|---|
 | **Saturator** | Transfer curve with input/output waveforms; level-compensated auto-gain keeps density and harmonics audible without loudness jumps |
 | **Signal Decay** | Measured degradation waveforms plus DSP-synchronized clock, stereo-wear, and dropout state |
+| **Analog Tape** | Four cassette/reel machines with oversampled saturation, bias, head bump, wow/flutter, wear, hiss, and DSP-synchronized transport motion |
 
 ### Time-Based
 

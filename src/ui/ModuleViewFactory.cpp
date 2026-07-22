@@ -54,7 +54,8 @@ constexpr std::array<ViewCreator,
         &createPitchBloomView,
         &createFrequencyLabView,
         &createSpatialOrbitView,
-        &createSignalDecayView
+        &createSignalDecayView,
+        &createAnalogTapeView
     };
 
 static_assert([]

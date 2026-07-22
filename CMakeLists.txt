@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(megaDSP VERSION 0.25.0 LANGUAGES C CXX)
+project(megaDSP VERSION 0.26.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -49,6 +49,7 @@ juce_add_plugin(megaDSP
 
 set(MEGADSP_MODULE_SOURCES
     src/modules/AlgorithmicReverb.cpp
+    src/modules/AnalogTape.cpp
     src/modules/BeatPermuter.cpp
     src/modules/Compressor.cpp
     src/modules/ConvolutionReverb.cpp
@@ -82,6 +83,7 @@ set(MEGADSP_MODULE_SOURCES
 set(MEGADSP_MODULE_HEADERS
     src/DspModules.h
     src/modules/AlgorithmicReverb.h
+    src/modules/AnalogTape.h
     src/modules/BeatPermuter.h
     src/modules/Compressor.h
     src/modules/ConvolutionReverb.h
@@ -128,6 +130,7 @@ set(MEGADSP_UI_SOURCES
     src/ui/ModuleBrowser.cpp
     src/ui/ModuleBrowser.h
     src/ui/modules/AlgorithmicReverbModuleView.cpp
+    src/ui/modules/AnalogTapeModuleView.cpp
     src/ui/modules/BeatPermuterModuleView.cpp
     src/ui/modules/CompressorModuleView.cpp
     src/ui/modules/ConvolutionReverbModuleView.cpp

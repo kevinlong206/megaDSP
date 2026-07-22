@@ -657,6 +657,32 @@ constexpr Metadata signalDecayMetadata {{
       "Adjusts level after degradation." },
     unused
 }};
+constexpr Metadata analogTapeMetadata {{
+    { "Machine", ControlKind::choice, true, "Machine",
+      "Selects Worn Cassette, Consumer Reel, Ampex-Style Deck, or Studer-Style Deck character." },
+    { "Input", ControlKind::level, true, "Level",
+      "Sets the level printed to the tape before saturation and compression." },
+    { "Drive", ControlKind::horizontal, true, "Character",
+      "Adds tape saturation and compression intensity independent of level." },
+    { "Bias", ControlKind::horizontal, false, "Character",
+      "Moves from brighter underbias to darker overbias." },
+    { "Tape Speed", ControlKind::choice, true, "Machine",
+      "Selects transport speed from 3.75 to 30 ips." },
+    { "Head Bump", ControlKind::horizontal, false, "Character",
+      "Sets the playback-head low-frequency resonance." },
+    { "Wow", ControlKind::horizontal, false, "Transport",
+      "Sets slow transport pitch drift." },
+    { "Flutter", ControlKind::horizontal, false, "Transport",
+      "Sets fast transport pitch variation." },
+    { "Wear", ControlKind::horizontal, false, "Transport",
+      "Adds hysteresis smear, high-frequency loss, and gentle dropout modulation." },
+    { "Noise", ControlKind::horizontal, false, "Character",
+      "Sets energy-gated tape hiss." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned dry and tape-processed signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the blend." }
+}};
 constexpr Names emptyNames { "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-" };
 constexpr Names eqNames {
     "Low Frequency", "Low Gain", "Low Q",
@@ -775,6 +801,10 @@ constexpr Names spatialOrbitNames {
 constexpr Names signalDecayNames {
     "Resolution", "Sample Rate", "Jitter", "Dropouts", "Bandwidth", "Noise",
     "Wow", "Flutter", "Stereo Wear", "Mix", "Output", "-"
+};
+constexpr Names analogTapeNames {
+    "Machine", "Input", "Drive", "Bias", "Tape Speed", "Head Bump", "Wow",
+    "Flutter", "Wear", "Noise", "Mix", "Output"
 };
 const std::array<std::array<float, 16>, 3> premiumEarlyMilliseconds {{
     { 11.3f, 18.7f, 27.1f, 37.9f, 51.7f, 69.1f, 79.3f, 88.7f,
@@ -993,6 +1023,11 @@ ControlOptions optionsFor(ModuleType type, int control)
                    "Two Octaves" }, 5 };
     if (type == ModuleType::spatialOrbit && control == 0)
         return { { "Circle", "Figure Eight", "Pendulum", "Wander" }, 4 };
+    if (type == ModuleType::analogTape && control == 0)
+        return { { "Worn Cassette", "Consumer Reel", "Ampex-Style Deck",
+                   "Studer-Style Deck" }, 4 };
+    if (type == ModuleType::analogTape && control == 4)
+        return { { "3.75 ips", "7.5 ips", "15 ips", "30 ips" }, 4 };
     return {};
 }
 
@@ -1291,6 +1326,15 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 linearNormalized(-90.0f, -24.0f, -72.0f),
                 0.08f, 0.05f, 0.10f, 1.0f,
                 linearNormalized(-18.0f, 12.0f, 0.0f), 0.5f
+            };
+            break;
+        case ModuleType::analogTape:
+            values = {
+                discreteValue(1, 4),
+                linearNormalized(-18.0f, 18.0f, 0.0f),
+                0.30f, 0.5f, discreteValue(2, 4),
+                0.35f, 0.20f, 0.20f, 0.15f, 0.20f, 1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
             };
             break;
         case ModuleType::empty: break;
@@ -1708,6 +1752,23 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 10)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
+        case ModuleType::analogTape:
+            if (control == 1)
+                return juce::String(linear(-18.0f, 18.0f, value), 1) + " dB";
+            if (control == 2 || control == 5 || control == 6 || control == 7
+                || control == 8 || control == 9 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 3)
+            {
+                const auto bias = linear(-100.0f, 100.0f, value);
+                if (std::abs(bias) < 1.0f)
+                    return "Neutral";
+                return (bias < 0.0f ? "Under " : "Over ")
+                       + juce::String(std::abs(bias), 0) + "%";
+            }
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
         case ModuleType::empty: break;
     }
     return juce::String(value * 100.0f, 0) + "%";
@@ -1731,6 +1792,9 @@ std::optional<float> parseControlValue(ModuleType type, int control,
         return 0.5f;
     if (type == ModuleType::rotarySpeaker && control == 2
         && text.trim().equalsIgnoreCase("equal"))
+        return 0.5f;
+    if (type == ModuleType::analogTape && control == 3
+        && text.trim().equalsIgnoreCase("neutral"))
         return 0.5f;
     if (type == ModuleType::algorithmicReverb && control == 1)
         if (const auto named = namedRoomScale(text))
@@ -2094,6 +2158,22 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 5) return linearNormalized(-90.0f, -24.0f, value);
             if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
             break;
+        case ModuleType::analogTape:
+            if (control == 1) return linearNormalized(-18.0f, 18.0f, value);
+            if (control == 2 || control == 5 || control == 6 || control == 7
+                || control == 8 || control == 9 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 3)
+            {
+                const auto amount = juce::jlimit(0.0f, 100.0f, value);
+                if (text.containsIgnoreCase("under"))
+                    return linearNormalized(-100.0f, 100.0f, -amount);
+                if (text.containsIgnoreCase("over"))
+                    return linearNormalized(-100.0f, 100.0f, amount);
+                return linearNormalized(-100.0f, 100.0f, value);
+            }
+            if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
+            break;
         case ModuleType::empty: break;
     }
     return juce::jlimit(0.0f, 1.0f, value / 100.0f);
@@ -2187,6 +2267,7 @@ bool isControlContextuallyVisible(
         case ModuleType::pitchBloom:
         case ModuleType::frequencyLab:
         case ModuleType::signalDecay:
+        case ModuleType::analogTape:
             break;
     }
     return true;
@@ -2460,7 +2541,15 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             signalDecayNames, signalDecayMetadata,
             &makeModule<SignalDecayModule>,
             ModuleCapability::continuousTelemetry
-                | ModuleCapability::eventTelemetry)
+                | ModuleCapability::eventTelemetry),
+        makeDefinition(
+            ModuleType::analogTape, ModulePresentation::analogTape,
+            "Analog Tape", ModuleCategory::saturationAndColor,
+            "Print through a worn cassette or a finely tuned studio reel deck.",
+            "tape saturation reel cassette wow flutter analog warmth",
+            analogTapeNames, analogTapeMetadata,
+            &makeModule<AnalogTapeModule>,
+            ModuleCapability::continuousTelemetry)
     }};
     return definitions;
 }
@@ -2560,7 +2649,7 @@ juce::StringArray validateModuleRegistry()
         if (!juce::isPositiveAndBelow(stableType, moduleTypeCount)
             && stableType != 0)
         {
-            errors.add("Module type is outside the stable 0..28 range.");
+            errors.add("Module type is outside the stable 0..29 range.");
             continue;
         }
         ++typeCounts[static_cast<size_t>(stableType)];

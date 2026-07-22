@@ -35,4 +35,5 @@ std::unique_ptr<ModuleView> createPitchBloomView(EffectGraph&);
 std::unique_ptr<ModuleView> createFrequencyLabView(EffectGraph&);
 std::unique_ptr<ModuleView> createSpatialOrbitView(EffectGraph&);
 std::unique_ptr<ModuleView> createSignalDecayView(EffectGraph&);
+std::unique_ptr<ModuleView> createAnalogTapeView(EffectGraph&);
 } // namespace megadsp::ui

@@ -51,12 +51,15 @@ public:
         beginTest("Category matching supports multiple tokens");
         const auto colorModules = flatten(
             megadsp::ui::filterAndGroupModules("SATURATION & color"));
-        expectEquals(static_cast<int>(colorModules.size()), 2);
+        expectEquals(static_cast<int>(colorModules.size()), 3);
         expect(std::find(colorModules.begin(), colorModules.end(),
                          megadsp::ModuleType::saturator)
                != colorModules.end());
         expect(std::find(colorModules.begin(), colorModules.end(),
                          megadsp::ModuleType::signalDecay)
+               != colorModules.end());
+        expect(std::find(colorModules.begin(), colorModules.end(),
+                        megadsp::ModuleType::analogTape)
                != colorModules.end());
 
         beginTest("Description matching finds module copy");
@@ -76,6 +79,7 @@ public:
         expectOnly("phase freeze", megadsp::ModuleType::spectralPrism);
         expectOnly("tuned metallic", megadsp::ModuleType::resonantMatrix);
         expectOnly("nonlinear envelope", megadsp::ModuleType::wavefoldGarden);
+        expectOnly("reel cassette warmth", megadsp::ModuleType::analogTape);
 
         beginTest("Next-ten search identities are unique");
         const std::array nextTenSearches {

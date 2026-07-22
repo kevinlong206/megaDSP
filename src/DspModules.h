@@ -29,3 +29,4 @@
 #include "modules/FrequencyLab.h"
 #include "modules/SpatialOrbit.h"
 #include "modules/SignalDecay.h"
+#include "modules/AnalogTape.h"

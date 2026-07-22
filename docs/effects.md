@@ -1,6 +1,6 @@
 # Effects reference
 
-Detailed control and interaction notes for each of megaDSP's twenty-eight modules. For installation and a quick overview see the [README](../README.md).
+Detailed control and interaction notes for each of megaDSP's twenty-nine modules. For installation and a quick overview see the [README](../README.md).
 
 Runtime-specific graphs show **DSP telemetry waiting** until the selected slot
 has processed an audio block. After capture begins, an empty event field means
@@ -274,3 +274,19 @@ The waveforms remain the rack's generic measured input/output histories (no
 module-specific copy is needed). DSP telemetry adds actual clock phases, stereo
 wear, dropout gain, and dropout-start events; no editor-clock animation implies
 audio synchronization.
+
+---
+
+## Analog Tape
+
+Models four distinct transports: Worn Cassette, Consumer Reel, Ampex-Style
+Deck, and Studer-Style Deck. Input and Drive set tape level and density; Bias,
+Tape Speed, Head Bump, Wow, Flutter, Wear, and energy-gated Noise shape the
+machine before the latency-aligned Mix and Output stages.
+
+The nonlinear print path runs at 4x oversampling. A cubic transport delay,
+machine/speed voicing, hysteresis-inspired memory, deterministic hiss, and
+bounded wear modulation provide movement and age without runtime allocation.
+The reel graphic follows captured DSP transport phase and reports actual
+wow/flutter offset, dropout gain, and signal envelope rather than advancing on
+the editor timer.

@@ -13,7 +13,7 @@ namespace megadsp
 constexpr int slotCount = 8;
 constexpr int controlsPerSlot = 12;
 constexpr int stateSchemaVersion = 7;
-constexpr int moduleTypeCount = 29;
+constexpr int moduleTypeCount = 30;
 
 enum class ModuleType
 {
@@ -45,7 +45,8 @@ enum class ModuleType
     pitchBloom = 25,
     frequencyLab = 26,
     spatialOrbit = 27,
-    signalDecay = 28
+    signalDecay = 28,
+    analogTape = 29
 };
 
 enum class ModuleCategory
@@ -92,10 +93,11 @@ enum class ModulePresentation
     frequencyLab,
     spatialOrbit,
     signalDecay,
+    analogTape,
     count
 };
 
-static_assert(static_cast<int>(ModuleType::signalDecay) + 1 == moduleTypeCount);
+static_assert(static_cast<int>(ModuleType::analogTape) + 1 == moduleTypeCount);
 static_assert(static_cast<int>(ModulePresentation::count) == moduleTypeCount);
 
 enum class ControlKind

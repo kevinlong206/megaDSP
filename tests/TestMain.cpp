@@ -1135,11 +1135,18 @@ public:
             0.08f, 0.05f, 0.10f, 1.0f,
             linearDefault(-18.0f, 12.0f, 0.0f), 0.5f
         });
+        expectDefaults(megadsp::ModuleType::analogTape, {
+            megadsp::discreteValue(1, 4),
+            linearDefault(-18.0f, 18.0f, 0.0f),
+            0.30f, 0.5f, megadsp::discreteValue(2, 4),
+            0.35f, 0.20f, 0.20f, 0.15f, 0.20f, 1.0f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
 
         beginTest("Host parameter contract remains fixed");
-        expectEquals(megadsp::moduleTypeCount, 29);
+        expectEquals(megadsp::moduleTypeCount, 30);
         expectEquals(megadsp::stateSchemaVersion, 7);
-        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 29);
+        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 30);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
         expectEquals(static_cast<int>(megadsp::ModuleType::compressor), 2);
@@ -1187,7 +1194,9 @@ public:
                          megadsp::ModuleType::spatialOrbit), 27);
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::signalDecay), 28);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 29);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::analogTape), 29);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 30);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1205,7 +1214,8 @@ public:
         expect(moduleChoice != nullptr);
         if (moduleChoice != nullptr)
         {
-            for (int stableType = 0; stableType < 29; ++stableType)
+            for (int stableType = 0;
+                 stableType < megadsp::moduleTypeCount; ++stableType)
             {
                 moduleChoice->setValueNotifyingHost(
                     moduleChoice->convertTo0to1(
@@ -1219,7 +1229,7 @@ public:
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 29);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 30);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1251,6 +1261,7 @@ public:
                               || type == megadsp::ModuleType::studioFlanger
                               || type == megadsp::ModuleType::frequencyLab
                               || type == megadsp::ModuleType::spatialOrbit
+                              || type == megadsp::ModuleType::analogTape
                               || type == megadsp::ModuleType::gateExpander
                               || type == megadsp::ModuleType::transientDesigner
                               || type
@@ -1354,6 +1365,26 @@ public:
         expect(megadsp::controlOptions(
                    megadsp::ModuleType::spatialOrbit, 3)
                == tempoDivisions);
+        expect(megadsp::controlOptions(
+                  megadsp::ModuleType::analogTape, 0)
+               == juce::StringArray {
+                     "Worn Cassette", "Consumer Reel", "Ampex-Style Deck",
+                     "Studer-Style Deck" });
+        expect(megadsp::controlOptions(
+                  megadsp::ModuleType::analogTape, 4)
+               == juce::StringArray {
+                     "3.75 ips", "7.5 ips", "15 ips", "30 ips" });
+        const auto tapeDefaults =
+            megadsp::moduleDefaults(megadsp::ModuleType::analogTape);
+        expectEquals(megadsp::formatControlValue(
+                        megadsp::ModuleType::analogTape, 3,
+                        tapeDefaults[3]),
+                    juce::String("Neutral"));
+        const auto parsedTapeBias = megadsp::parseControlValue(
+            megadsp::ModuleType::analogTape, 3, "Under 50%");
+        expect(parsedTapeBias.has_value());
+        if (parsedTapeBias.has_value())
+            expectWithinAbsoluteError(*parsedTapeBias, 0.25f, 0.0001f);
         const auto transientDefaults =
             megadsp::moduleDefaults(megadsp::ModuleType::transientDesigner);
         expectEquals(megadsp::formatControlValue(
@@ -1456,6 +1487,9 @@ public:
                       megadsp::ModuleCategory::saturationAndColor,
                       "Saturation & Color");
         expectCategory(megadsp::ModuleType::signalDecay,
+                      megadsp::ModuleCategory::saturationAndColor,
+                      "Saturation & Color");
+        expectCategory(megadsp::ModuleType::analogTape,
                       megadsp::ModuleCategory::saturationAndColor,
                       "Saturation & Color");
         expectCategory(megadsp::ModuleType::delay,

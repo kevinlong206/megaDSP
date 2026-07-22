@@ -2125,7 +2125,7 @@ public:
         for (const auto type : {
                  ModuleType::studioPhaser, ModuleType::studioFlanger,
                  ModuleType::frequencyLab, ModuleType::spatialOrbit,
-                 ModuleType::signalDecay })
+                 ModuleType::signalDecay, ModuleType::analogTape })
         {
             auto module = createDspModule(type);
             module->prepare(stereoSpec);
@@ -2137,13 +2137,13 @@ public:
             expect(before.sequence == 0);
 
             auto controls = moduleDefaults(type);
-            auto uncaptured = makeSine(2, 512, 347.0f, 0.15f, rate);
+            auto uncaptured = makeSine(2, 256, 347.0f, 0.15f, rate);
             module->process(uncaptured, controls, noTelemetry);
             ContinuousTelemetrySnapshot afterUncaptured;
             expect(capability->readContinuousTelemetry(afterUncaptured));
             expect(afterUncaptured.sequence == 0);
 
-            auto captured = makeSine(2, 512, 347.0f, 0.15f, rate);
+            auto captured = makeSine(2, 256, 347.0f, 0.15f, rate);
             module->process(captured, controls, captureTelemetry);
             ContinuousTelemetrySnapshot published;
             expect(capability->readContinuousTelemetry(published));
@@ -2259,6 +2259,72 @@ public:
                 expectEquals(
                     static_cast<int>(events.events[0].kind),
                     static_cast<int>(SignalDecayModule::dropoutStarted));
+        }
+
+        beginTest("Analog Tape reports transport, modulation, and wear");
+        {
+            auto controls = moduleDefaults(ModuleType::analogTape);
+            controls[6] = 1.0f;
+            controls[7] = 1.0f;
+            controls[8] = 1.0f;
+            AnalogTapeModule module;
+            module.prepare({ rate, 48000, 2 });
+            auto block = makeSine(2, 48000, 293.0f, 0.15f, rate);
+            module.process(block, controls, captureTelemetry);
+            ContinuousTelemetrySnapshot state;
+            expect(module.readContinuousTelemetry(state));
+            expectEquals(
+                static_cast<int>(state.valueCount),
+                static_cast<int>(AnalogTapeModule::telemetryValueCount));
+            expect(state.values[AnalogTapeModule::transportPhase] >= 0.0f
+                   && state.values[AnalogTapeModule::transportPhase] < 1.0f);
+            expect(std::abs(state.values[
+                       AnalogTapeModule::modulationMilliseconds]) > 0.0f);
+            expect(state.values[AnalogTapeModule::currentDropoutGain] > 0.0f
+                   && state.values[AnalogTapeModule::currentDropoutGain]
+                          <= 1.0f);
+        }
+
+        beginTest("Analog Tape aligns dry audio and distinguishes machines");
+        {
+            auto dryControls = moduleDefaults(ModuleType::analogTape);
+            dryControls[10] = 0.0f;
+            AnalogTapeModule dryModule;
+            dryModule.prepare({ rate, 4096, 2 });
+            auto dry = makeAsymmetricSignal(2, 4096, rate);
+            const auto reference = dry;
+            dryModule.process(dry, dryControls, {});
+            const auto latency = dryModule.latencySamples();
+            for (int channel = 0; channel < dry.getNumChannels(); ++channel)
+                for (int sample = latency; sample < dry.getNumSamples();
+                     ++sample)
+                    expectWithinAbsoluteError(
+                        dry.getSample(channel, sample),
+                        reference.getSample(channel, sample - latency),
+                        0.000001f);
+
+            std::array<juce::AudioBuffer<float>, 4> rendered;
+            for (int machine = 0; machine < 4; ++machine)
+            {
+                auto controls = moduleDefaults(ModuleType::analogTape);
+                controls[0] = discreteValue(machine, 4);
+                controls[1] = 1.0f;
+                controls[2] = 1.0f;
+                AnalogTapeModule module;
+                module.prepare({ rate, 8192, 2 });
+                rendered[static_cast<size_t>(machine)] =
+                    makeSine(2, 8192, 997.0f, 0.2f, rate);
+                module.process(
+                    rendered[static_cast<size_t>(machine)], controls, {});
+                expectFinite(
+                    rendered[static_cast<size_t>(machine)],
+                    "Analog Tape machine");
+            }
+            for (int machine = 1; machine < 4; ++machine)
+                expect(maxDifference(
+                           rendered[0],
+                           rendered[static_cast<size_t>(machine)]) > 0.001f,
+                       "Analog Tape machines were not distinct");
         }
 
         beginTest("Diffusion delay sync, fallback, feedback, and tail are bounded");
