@@ -63,6 +63,7 @@ public:
     juce::String impulseResponsePath(int slot) const;
     ImpulseResponsePreview impulseResponsePreview(int slot) const;
     GrainVisualEvents grainVisualEvents(int slot) const;
+    BeatPermutationVisualEvents beatPermutationVisualEvents(int slot) const;
 
 private:
     struct Slot

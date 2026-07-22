@@ -86,6 +86,16 @@ public:
             moduleDefaults(ModuleType::vintageChorus), true, true);
         expectEquals(static_cast<int>(chorus.size()), controlsPerSlot);
         expectEquals(chorus.front(), 0);
+        for (const auto type : {
+                ModuleType::beatPermuter,
+                ModuleType::spectralPrism,
+                ModuleType::resonantMatrix,
+                ModuleType::wavefoldGarden })
+        {
+            const auto creative = keyboardControlOrder(
+                type, moduleDefaults(type), true, true);
+            expectEquals(static_cast<int>(creative.size()), controlsPerSlot);
+        }
 
         beginTest("Keyboard order respects contextual availability");
         const auto dynamicValues =

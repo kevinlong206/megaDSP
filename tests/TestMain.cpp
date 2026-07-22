@@ -999,6 +999,47 @@ public:
             0.25f, 0.5f, 0.40f,
             linearDefault(-18.0f, 12.0f, 0.0f)
         });
+        expectDefaults(megadsp::ModuleType::beatPermuter, {
+            megadsp::discreteValue(3, 6), 0.35f,
+            megadsp::discreteValue(0, 4),
+            linearDefault(1.0f, 8.0f, 4.0f),
+            linearDefault(1.0f, 8.0f, 2.0f),
+            linearDefault(20.0f, 100.0f, 90.0f),
+            0.5f, 0.20f, 0.25f, 0.10f / 0.75f, 0.35f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
+        expectDefaults(megadsp::ModuleType::spectralPrism, {
+            linearDefault(-100.0f, 100.0f, 20.0f),
+            exponentialDefault(80.0f, 8000.0f, 1000.0f),
+            0.5f, 0.20f, 0.0f,
+            exponentialDefault(0.02f, 4.0f, 0.15f),
+            0.15f, 0.15f, 0.35f, 0.65f, 0.40f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
+        expectDefaults(megadsp::ModuleType::resonantMatrix, {
+            exponentialDefault(27.5f, 440.0f, 110.0f),
+            megadsp::discreteValue(3, 6),
+            linearDefault(1.0f, 4.0f, 2.0f),
+            megadsp::discreteValue(0, 4),
+            exponentialDefault(0.10f, 12.0f, 2.5f),
+            exponentialDefault(500.0f, 20000.0f, 8000.0f),
+            linearDefault(0.0f, 30.0f, 4.0f),
+            exponentialDefault(0.02f, 2.0f, 0.10f),
+            linearDefault(0.0f, 50.0f, 6.0f),
+            linearDefault(0.0f, 150.0f, 80.0f), 0.25f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
+        expectDefaults(megadsp::ModuleType::wavefoldGarden, {
+            megadsp::discreteValue(0, 4),
+            linearDefault(0.0f, 36.0f, 6.0f),
+            linearDefault(1.0f, 8.0f, 2.0f), 0.5f, 0.35f,
+            linearDefault(-100.0f, 100.0f, 25.0f),
+            exponentialDefault(0.1f, 100.0f, 8.0f),
+            exponentialDefault(10.0f, 1000.0f, 120.0f),
+            exponentialDefault(500.0f, 20000.0f, 12000.0f),
+            0.20f, 0.45f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
 
         beginTest("Host parameter contract remains fixed");
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
@@ -1020,7 +1061,15 @@ public:
                          megadsp::ModuleType::randomGranulizer), 13);
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::vintageChorus), 14);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 15);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::beatPermuter), 15);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::spectralPrism), 16);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::resonantMatrix), 17);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::wavefoldGarden), 18);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 19);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1033,11 +1082,26 @@ public:
                    contractState.getParameter(
                        megadsp::slotParameterId(0, "bypass")))
                != nullptr);
+        auto* moduleChoice = dynamic_cast<juce::AudioParameterChoice*>(
+            contractState.getParameter(megadsp::slotParameterId(0, "type")));
+        expect(moduleChoice != nullptr);
+        if (moduleChoice != nullptr)
+        {
+            for (int stableType = 0; stableType < 19; ++stableType)
+            {
+                moduleChoice->setValueNotifyingHost(
+                    moduleChoice->convertTo0to1(
+                        static_cast<float>(stableType)));
+                expectEquals(moduleChoice->getIndex(), stableType);
+            }
+            moduleChoice->setValueNotifyingHost(
+                moduleChoice->convertTo0to1(0.0f));
+        }
 
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 15);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 19);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1054,6 +1118,9 @@ public:
                     ? megadsp::ModuleCapability::impulseResponse
                     : type == megadsp::ModuleType::randomGranulizer
                           ? megadsp::ModuleCapability::grainVisualization
+                          : type == megadsp::ModuleType::beatPermuter
+                                ? megadsp::ModuleCapability::
+                                      beatPermutationVisualization
                           : megadsp::ModuleCapability::none;
             expect(definition->capabilities == expectedCapabilities);
             const auto& descriptor = megadsp::descriptorFor(type);
@@ -1088,6 +1155,12 @@ public:
                       == megadsp::hasCapability(
                           definition->capabilities,
                           megadsp::ModuleCapability::grainVisualization));
+                expect((module->beatPermutationVisualizationCapability()
+                        != nullptr)
+                       == megadsp::hasCapability(
+                          definition->capabilities,
+                          megadsp::ModuleCapability::
+                              beatPermutationVisualization));
                factoryProducts[static_cast<size_t>(stableType)] =
                    std::move(module);
             }
@@ -1180,6 +1253,9 @@ public:
         expectCategory(megadsp::ModuleType::convolutionReverb,
                       megadsp::ModuleCategory::reverbAndSpace,
                       "Reverb & Space");
+        expectCategory(megadsp::ModuleType::resonantMatrix,
+                      megadsp::ModuleCategory::reverbAndSpace,
+                      "Reverb & Space");
         for (const auto type : {
                 megadsp::ModuleType::tremolo,
                 megadsp::ModuleType::rotarySpeaker,
@@ -1191,9 +1267,13 @@ public:
                 megadsp::ModuleType::midSideDecoder })
             expectCategory(type, megadsp::ModuleCategory::stereoAndUtility,
                           "Stereo & Utility");
-        expectCategory(megadsp::ModuleType::randomGranulizer,
-                      megadsp::ModuleCategory::glitchAndCreative,
-                      "Glitch & Creative");
+        for (const auto type : {
+                megadsp::ModuleType::randomGranulizer,
+                megadsp::ModuleType::beatPermuter,
+                megadsp::ModuleType::spectralPrism,
+                megadsp::ModuleType::wavefoldGarden })
+            expectCategory(type, megadsp::ModuleCategory::glitchAndCreative,
+                          "Glitch & Creative");
         expect(megadsp::moduleDefinition(megadsp::ModuleType::empty).category
                == megadsp::ModuleCategory::none);
         expect(juce::String(megadsp::moduleCategoryName(

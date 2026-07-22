@@ -6,8 +6,9 @@ megaDSP is a modular 8-slot effects rack for VST3, AU, and CLAP hosts. It
 includes parametric EQ, compressor, saturator, delay, limiter, and algorithmic
 and convolution reverbs, stereo-width, M/S Decoder, premium tremolo, and
 physical rotary-speaker modules, plus a stackable single-band Dynamic EQ /
-De-Esser, Random Granulizer, and four-model Vintage Chorus, with mono/stereo
-processing and an optional dynamics sidechain.
+De-Esser, Random Granulizer, four-model Vintage Chorus, Beat Permuter,
+Spectral Prism, Resonant Matrix, and Wavefold Garden, with mono/stereo processing
+and an optional dynamics sidechain.
 
 ## Building
 
@@ -67,6 +68,18 @@ are never rewritten:
   every voice trajectory and phase relationship, direct Rate/Depth/Delay/Width
   editing, signed Regeneration polarity, grouped Density and Character rails,
   and compact Phase/Output rails
+- Beat Permuter: tempo-grid and pattern pills, an eight-cell live slice map,
+  direct Window/Repeats editing, pitch/gate feedback, and compact probability,
+  stereo, regeneration, Mix, and Output tracks
+- Spectral Prism: live pre/post spectra, a direct two-dimensional Pivot/Warp
+  node, exact bin-mapping rays, an explicit Freeze state, and compact Shift,
+  Smear, motion, diffusion, transient, stereo, Mix, and Output tracks
+- Resonant Matrix: Scale and Topology pills surrounding an animated eight-node
+  tuned feedback field, direct Tune/Span editing, and compact tail, motion,
+  stereo, Mix, and Output tracks
+- Wavefold Garden: four Character pills, an animated transfer field with direct
+  Drive/Symmetry/Shape gestures, live fold/envelope feedback, and compact stage,
+  dynamics, tone, stereo, Mix, and Output tracks
 - Algorithmic Reverb: interactive early-reflection and stereo decay field with
   Hall, Chamber, and Plate modes, a direct Decay/Room Scale handle with its
   named and exact 25–200% readout, direct input-passband handles, and adjacent
@@ -78,11 +91,12 @@ are never rewritten:
 Live analysis runs only for the selected tab. Graphs edit the same automatable
 slot parameters as the contextual controls.
 
-For the full-panel EQ, Limiter, Dynamic EQ, Random Granulizer, and Vintage
-Chorus editors, focus the graph and use Left/Right to select a semantic
-control. Up/Down edits it (Shift for fine changes), Space or Return activates
-choices and switches, and Home restores that control's module default. Tab and
-Shift+Tab leave the graph normally.
+For the full-panel EQ, Limiter, Dynamic EQ, Random Granulizer, Vintage Chorus,
+Beat Permuter, Spectral Prism, Resonant Matrix, and Wavefold Garden editors,
+focus the graph and use Left/Right to select a semantic control. Up/Down edits
+it (Shift for fine changes), Space or Return activates choices and switches,
+and Home restores that control's module default. Tab and Shift+Tab leave the
+graph normally.
 
 Controls match the value they edit: modes and tempo divisions use named
 choices, Sync/Ping Pong/sidechain routing use switches, paired levels use rails,

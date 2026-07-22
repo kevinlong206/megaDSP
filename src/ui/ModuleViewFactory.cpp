@@ -40,7 +40,11 @@ constexpr std::array<ViewCreator,
         &createConvolutionReverbView,
         &createDynamicEqualizerView,
         &createRandomGranulizerView,
-        &createVintageChorusView
+        &createVintageChorusView,
+        &createBeatPermuterView,
+        &createSpectralPrismView,
+        &createResonantMatrixView,
+        &createWavefoldGardenView
     };
 
 static_assert([]

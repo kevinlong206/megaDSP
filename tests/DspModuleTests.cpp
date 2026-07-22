@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <cmath>
+#include <limits>
 
 namespace megadsp
 {
@@ -20,7 +21,7 @@ public:
         ControlValues controls;
         controls.fill(0.5f);
         ProcessEnvironment environment;
-        std::array<std::unique_ptr<DspModule>, 14> modules {
+        std::array<std::unique_ptr<DspModule>, 18> modules {
             std::make_unique<EqualizerModule>(),
             std::make_unique<CompressorModule>(),
             std::make_unique<SaturatorModule>(),
@@ -34,7 +35,11 @@ public:
             std::make_unique<ConvolutionReverbModule>(),
             std::make_unique<DynamicEqualizerModule>(),
             std::make_unique<RandomGranulizerModule>(),
-            std::make_unique<VintageChorusModule>()
+            std::make_unique<VintageChorusModule>(),
+            std::make_unique<BeatPermuterModule>(),
+            std::make_unique<SpectralPrismModule>(),
+            std::make_unique<ResonantMatrixModule>(),
+            std::make_unique<WavefoldGardenModule>()
         };
 
         for (auto& module : modules)
@@ -92,6 +97,204 @@ public:
             return static_cast<float>(std::sqrt(
                 energy / static_cast<double>(juce::jmax(1, count))));
         };
+
+        beginTest("Experimental modules preserve their documented dry paths");
+        const auto dryReference = makeSine(2, 24000, 731.0f, 0.27f);
+        for (const auto type : {
+                 ModuleType::beatPermuter,
+                 ModuleType::resonantMatrix })
+        {
+            auto dryControls = moduleDefaults(type);
+            dryControls[10] = 0.0f;
+            auto rendered = dryReference;
+            auto module = createDspModule(type);
+            module->prepare(spec);
+            module->process(rendered, dryControls, environment);
+            expect(differenceRms(rendered, dryReference, 0) < 0.000001f);
+        }
+
+        auto expectLatencyAlignedDry = [this, &spec, &dryReference](
+                                           ModuleType type)
+        {
+            auto dryControls = moduleDefaults(type);
+            dryControls[10] = 0.0f;
+            auto rendered = dryReference;
+            auto module = createDspModule(type);
+            module->prepare(spec);
+            const auto latency = module->latencySamples();
+            module->process(rendered, dryControls, {});
+            expect(latency > 0);
+            for (int channel = 0; channel < rendered.getNumChannels(); ++channel)
+            {
+                expect(rendered.getMagnitude(channel, 0, latency) < 0.000001f);
+                auto maximumDifference = 0.0f;
+                for (int sample = latency;
+                     sample < rendered.getNumSamples(); ++sample)
+                    maximumDifference = juce::jmax(
+                        maximumDifference,
+                        std::abs(rendered.getSample(channel, sample)
+                                 - dryReference.getSample(
+                                     channel, sample - latency)));
+                expect(maximumDifference < 0.00001f);
+            }
+        };
+        expectLatencyAlignedDry(ModuleType::spectralPrism);
+        expectLatencyAlignedDry(ModuleType::wavefoldGarden);
+
+        beginTest("Experimental modules produce distinct bounded wet signals");
+        {
+            auto beatControls = moduleDefaults(ModuleType::beatPermuter);
+            beatControls[0] = discreteValue(5, 6);
+            beatControls[1] = 1.0f;
+            beatControls[10] = 1.0f;
+            BeatPermuterModule module;
+            module.prepare(spec);
+            auto rendered = makeSine(2, 48000, 317.0f, 0.25f);
+            module.process(rendered, beatControls, environment);
+            expect(rendered.getMagnitude(0, rendered.getNumSamples()) > 0.01f);
+            expect(rendered.getMagnitude(0, rendered.getNumSamples()) < 4.0f);
+            const auto events = module.visualEvents();
+            expect(std::any_of(
+                events.begin(), events.end(),
+                [](const auto& event) { return event.sequence != 0; }));
+        }
+        {
+            auto slowBeatControls =
+                moduleDefaults(ModuleType::beatPermuter);
+            slowBeatControls[0] = discreteValue(0, 6);
+            slowBeatControls[1] = 1.0f;
+            slowBeatControls[2] = discreteValue(1, 4);
+            slowBeatControls[3] = 1.0f;
+            slowBeatControls[4] = 1.0f;
+            slowBeatControls[5] = 1.0f;
+            slowBeatControls[10] = 1.0f;
+            BeatPermuterModule module;
+            module.prepare(spec);
+            auto minimumLateBlockRms =
+                std::numeric_limits<float>::max();
+            for (int blockIndex = 0; blockIndex < 3600; ++blockIndex)
+            {
+                auto block = makeSine(2, 512, 223.0f, 0.24f);
+                module.process(block, slowBeatControls, { nullptr, 30.0 });
+                if (blockIndex >= 2000)
+                    minimumLateBlockRms = juce::jmin(
+                        minimumLateBlockRms, sineRms(block, 0, 0));
+            }
+            expect(minimumLateBlockRms > 0.001f);
+        }
+        {
+            auto prismControls = moduleDefaults(ModuleType::spectralPrism);
+            prismControls[0] = 0.85f;
+            prismControls[2] = 0.70f;
+            prismControls[10] = 1.0f;
+            SpectralPrismModule module;
+            module.prepare(spec);
+            auto rendered = makeSine(2, 48000, 523.25f, 0.25f);
+            module.process(rendered, prismControls, environment);
+            expect(rendered.getMagnitude(0, rendered.getNumSamples()) > 0.001f);
+            expect(rendered.getMagnitude(0, rendered.getNumSamples()) < 4.0f);
+        }
+        {
+            auto matrixControls = moduleDefaults(ModuleType::resonantMatrix);
+            matrixControls[10] = 1.0f;
+            ResonantMatrixModule module;
+            module.prepare(spec);
+            juce::AudioBuffer<float> rendered(2, 48000);
+            rendered.clear();
+            rendered.setSample(0, 0, 1.0f);
+            rendered.setSample(1, 0, 1.0f);
+            module.process(rendered, matrixControls, environment);
+            expect(rendered.getMagnitude(0, rendered.getNumSamples()) > 0.001f);
+            expect(rendered.getMagnitude(0, rendered.getNumSamples()) < 4.0f);
+            expect(module.tailSeconds(matrixControls) > 2.5);
+        }
+        {
+            auto foldControls = moduleDefaults(ModuleType::wavefoldGarden);
+            foldControls[1] = 0.8f;
+            foldControls[10] = 1.0f;
+            WavefoldGardenModule module;
+            module.prepare(spec);
+            auto rendered = makeSine(2, 48000, 659.25f, 0.35f);
+            module.process(rendered, foldControls, environment);
+            expect(rendered.getMagnitude(0, rendered.getNumSamples()) > 0.001f);
+            expect(rendered.getMagnitude(0, rendered.getNumSamples()) < 4.0f);
+        }
+
+        beginTest("Experimental stereo fields cancel on duplicated-mono fold-down");
+        for (const auto type : {
+                 ModuleType::beatPermuter,
+                 ModuleType::spectralPrism,
+                 ModuleType::resonantMatrix,
+                 ModuleType::wavefoldGarden })
+        {
+            auto foldDownControls = moduleDefaults(type);
+            foldDownControls[10] = 1.0f;
+            if (type == ModuleType::beatPermuter)
+            {
+                foldDownControls[0] = discreteValue(5, 6);
+                foldDownControls[1] = 1.0f;
+                foldDownControls[8] = 1.0f;
+            }
+            else if (type == ModuleType::spectralPrism)
+                foldDownControls[8] = 1.0f;
+            else
+                foldDownControls[9] = 1.0f;
+
+            auto mono = makeSine(1, 24000, 389.0f, 0.22f);
+            auto stereo = makeSine(2, 24000, 389.0f, 0.22f);
+            auto monoModule = createDspModule(type);
+            auto stereoModule = createDspModule(type);
+            monoModule->prepare({ 48000.0, 512, 1 });
+            stereoModule->prepare(spec);
+            monoModule->process(mono, foldDownControls, environment);
+            stereoModule->process(stereo, foldDownControls, environment);
+            auto maximumFoldDifference = 0.0f;
+            for (int sample = 4096; sample < mono.getNumSamples(); ++sample)
+                maximumFoldDifference = juce::jmax(
+                    maximumFoldDifference,
+                    std::abs(mono.getSample(0, sample)
+                             - 0.5f * (stereo.getSample(0, sample)
+                                       + stereo.getSample(1, sample))));
+            expect(maximumFoldDifference < 0.0005f,
+                   juce::String(moduleDefinition(type).displayName)
+                       + " fold-down error "
+                       + juce::String(maximumFoldDifference, 6));
+        }
+
+        beginTest("Experimental automation steps stay finite and bounded");
+        for (const auto type : {
+                 ModuleType::beatPermuter,
+                 ModuleType::spectralPrism,
+                 ModuleType::resonantMatrix,
+                 ModuleType::wavefoldGarden })
+        {
+            auto module = createDspModule(type);
+            module->prepare(spec);
+            auto automated = makeSine(2, 32768, 271.0f, 0.25f);
+            for (int offset = 0; offset < automated.getNumSamples();
+                 offset += 127)
+            {
+                const auto blockSamples = juce::jmin(
+                    127, automated.getNumSamples() - offset);
+                std::array<float*, 2> pointers {
+                    automated.getWritePointer(0, offset),
+                    automated.getWritePointer(1, offset)
+                };
+                juce::AudioBuffer<float> block(
+                    pointers.data(), 2, blockSamples);
+                ControlValues automatedControls;
+                automatedControls.fill(
+                    (offset / 127) % 2 == 0 ? 0.0f : 1.0f);
+                automatedControls[10] = 1.0f;
+                automatedControls[11] = 0.6f;
+                module->process(block, automatedControls, { nullptr, 37.0 });
+            }
+            expect(automated.getMagnitude(0, automated.getNumSamples()) < 16.0f,
+                   moduleDefinition(type).displayName);
+            for (int channel = 0; channel < automated.getNumChannels(); ++channel)
+                for (int sample = 0; sample < automated.getNumSamples(); ++sample)
+                    expect(std::isfinite(automated.getSample(channel, sample)));
+        }
 
         beginTest("Random Granulizer dry mix is exact apart from Output");
         auto grainControls = moduleDefaults(ModuleType::randomGranulizer);

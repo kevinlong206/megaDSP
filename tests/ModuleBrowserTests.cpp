@@ -54,6 +54,10 @@ public:
 
         beginTest("Search tag matching finds module");
         expectOnly("BBD", megadsp::ModuleType::vintageChorus);
+        expectOnly("stutter reverse", megadsp::ModuleType::beatPermuter);
+        expectOnly("phase freeze", megadsp::ModuleType::spectralPrism);
+        expectOnly("tuned metallic", megadsp::ModuleType::resonantMatrix);
+        expectOnly("nonlinear envelope", megadsp::ModuleType::wavefoldGarden);
 
         beginTest("No matches returns no groups");
         expect(megadsp::ui::filterAndGroupModules(

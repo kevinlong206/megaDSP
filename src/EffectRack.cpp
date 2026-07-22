@@ -772,4 +772,16 @@ GrainVisualEvents EffectRack::grainVisualEvents(int slot) const
             return visualizationCapability->grainVisualEvents();
     return {};
 }
+
+BeatPermutationVisualEvents EffectRack::beatPermutationVisualEvents(
+    int slot) const
+{
+    if (const auto* module = activeModuleInstance(slot))
+    {
+        if (const auto* visualizationCapability =
+                module->beatPermutationVisualizationCapability())
+            return visualizationCapability->beatPermutationVisualEvents();
+    }
+    return {};
+}
 } // namespace megadsp

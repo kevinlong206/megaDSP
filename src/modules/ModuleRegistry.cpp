@@ -308,6 +308,110 @@ constexpr Metadata vintageChorusMetadata {{
     { "Output", ControlKind::horizontal, true, "Output",
       "Adjusts level after the blend." }
 }};
+constexpr Metadata beatPermuterMetadata {{
+    { "Grid", ControlKind::choice, true, "Sequence",
+      "Sets the host-tempo slice duration." },
+    { "Activity", ControlKind::horizontal, true, "Sequence",
+      "Sets the chance that a grid boundary starts a permutation." },
+    { "Pattern", ControlKind::choice, true, "Sequence",
+      "Selects repeat, reverse, rotate, or scatter permutation." },
+    { "Window", ControlKind::horizontal, true, "Sequence",
+      "Sets how many recent slices are available to the pattern." },
+    { "Repeats", ControlKind::horizontal, true, "Sequence",
+      "Sets the event duration in grid steps." },
+    { "Gate", ControlKind::horizontal, false, "Shape",
+      "Sets the click-free audible length of each emitted slice." },
+    { "Pitch", ControlKind::horizontal, true, "Shape",
+      "Transposes permuted audio from -12 to +12 semitones." },
+    { "Variation", ControlKind::horizontal, false, "Sequence",
+      "Adds deterministic per-event changes to the selected pattern." },
+    { "Stereo Offset", ControlKind::horizontal, false, "Stereo",
+      "Offsets complementary left and right slice permutations." },
+    { "Regeneration", ControlKind::horizontal, true, "Texture",
+      "Returns up to 75% filtered wet energy to capture history." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the latency-matched dry and permuted signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the dry/wet blend." }
+}};
+constexpr Metadata spectralPrismMetadata {{
+    { "Warp", ControlKind::horizontal, true, "Prism",
+      "Compresses frequencies on one side of Pivot while expanding the other." },
+    { "Pivot", ControlKind::horizontal, true, "Prism",
+      "Sets the anchor frequency for spectral warping." },
+    { "Shift", ControlKind::horizontal, true, "Prism",
+      "Transposes the remapped spectrum by up to two octaves." },
+    { "Smear", ControlKind::horizontal, true, "Texture",
+      "Extends spectral magnitudes through time." },
+    { "Freeze", ControlKind::toggle, true, "Texture",
+      "Holds the current spectral field while phases continue coherently." },
+    { "Motion Rate", ControlKind::horizontal, false, "Motion",
+      "Sets the free-running spectral motion rate." },
+    { "Motion Depth", ControlKind::horizontal, false, "Motion",
+      "Modulates Warp around its current setting." },
+    { "Phase Diffusion", ControlKind::horizontal, false, "Texture",
+      "Spreads partial phases without abrupt random jumps." },
+    { "Stereo Spread", ControlKind::horizontal, false, "Stereo",
+      "Builds a complementary mono-cancelling wet side field." },
+    { "Transient Preserve", ControlKind::horizontal, true, "Texture",
+      "Protects detected attacks from smear and phase diffusion." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the latency-aligned dry and spectral signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the dry/wet blend." }
+}};
+constexpr Metadata resonantMatrixMetadata {{
+    { "Tune", ControlKind::horizontal, true, "Harmony",
+      "Sets the matrix fundamental from 27.5 to 440 Hz." },
+    { "Scale", ControlKind::choice, true, "Harmony",
+      "Selects the interval set used by all eight resonators." },
+    { "Span", ControlKind::horizontal, true, "Harmony",
+      "Distributes the resonators across one to four octaves." },
+    { "Topology", ControlKind::choice, true, "Matrix",
+      "Selects the signed energy-preserving feedback permutation." },
+    { "Decay", ControlKind::horizontal, true, "Tail",
+      "Sets the resonant field RT60." },
+    { "Damping", ControlKind::horizontal, true, "Tail",
+      "Sets the feedback low-pass cutoff." },
+    { "Detune", ControlKind::horizontal, false, "Motion",
+      "Applies deterministic offsets up to 30 cents." },
+    { "Motion Rate", ControlKind::horizontal, false, "Motion",
+      "Sets the resonator pitch-motion rate." },
+    { "Motion Depth", ControlKind::horizontal, false, "Motion",
+      "Sets bounded resonator motion up to 50 cents." },
+    { "Width", ControlKind::horizontal, true, "Stereo",
+      "Scales the mono-cancelling resonant side field." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends dry input and resonant field with constant power." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the dry/wet blend." }
+}};
+constexpr Metadata wavefoldGardenMetadata {{
+    { "Character", ControlKind::choice, true, "Character",
+      "Selects Petal, Prism, Chebyshev, or Bloom folding topology." },
+    { "Drive", ControlKind::horizontal, true, "Fold",
+      "Pushes level into the antialiased fold network." },
+    { "Folds", ControlKind::horizontal, true, "Fold",
+      "Sets one to eight active folding stages." },
+    { "Symmetry", ControlKind::horizontal, true, "Fold",
+      "Offsets the transfer curve toward negative or positive folds." },
+    { "Shape", ControlKind::horizontal, true, "Fold",
+      "Changes curvature within the selected topology." },
+    { "Dynamics", ControlKind::horizontal, true, "Envelope",
+      "Makes the input envelope close or open fold thresholds." },
+    { "Attack", ControlKind::horizontal, false, "Envelope",
+      "Sets how quickly the fold envelope reacts." },
+    { "Release", ControlKind::horizontal, false, "Envelope",
+      "Sets how quickly the fold envelope lets go." },
+    { "Tone", ControlKind::horizontal, true, "Character",
+      "Sets the post-fold low-pass cutoff." },
+    { "Stereo Bloom", ControlKind::horizontal, false, "Stereo",
+      "Adds complementary envelope-driven wet side movement." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends dry and folded signals with constant power." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the dry/wet blend." }
+}};
 constexpr Names emptyNames { "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-" };
 constexpr Names eqNames {
     "Low Frequency", "Low Gain", "Low Q",
@@ -369,6 +473,23 @@ constexpr Names vintageChorusNames {
     "Model", "Rate", "Depth", "Delay", "Density", "Width", "Regeneration",
     "Tone", "Age", "Stereo Phase", "Mix", "Output"
 };
+constexpr Names beatPermuterNames {
+    "Grid", "Activity", "Pattern", "Window", "Repeats", "Gate", "Pitch",
+    "Variation", "Stereo Offset", "Regeneration", "Mix", "Output"
+};
+constexpr Names spectralPrismNames {
+    "Warp", "Pivot", "Shift", "Smear", "Freeze", "Motion Rate",
+    "Motion Depth", "Phase Diffusion", "Stereo Spread", "Transient Preserve",
+    "Mix", "Output"
+};
+constexpr Names resonantMatrixNames {
+    "Tune", "Scale", "Span", "Topology", "Decay", "Damping", "Detune",
+    "Motion Rate", "Motion Depth", "Width", "Mix", "Output"
+};
+constexpr Names wavefoldGardenNames {
+    "Character", "Drive", "Folds", "Symmetry", "Shape", "Dynamics", "Attack",
+    "Release", "Tone", "Stereo Bloom", "Mix", "Output"
+};
 const std::array<std::array<float, 16>, 3> premiumEarlyMilliseconds {{
     { 11.3f, 18.7f, 27.1f, 37.9f, 51.7f, 69.1f, 79.3f, 88.7f,
       99.1f, 111.7f, 125.3f, 140.9f, 158.3f, 177.7f, 199.1f, 223.9f },
@@ -400,6 +521,21 @@ juce::String formatFrequency(float frequency)
                             frequency < 9999.5f ? 2 : 1)
                + " kHz";
     return juce::String(frequency, 0) + " Hz";
+}
+
+juce::String formatTunedFrequency(float frequency)
+{
+    static constexpr std::array<const char*, 12> noteNames {
+        "C", "C#", "D", "D#", "E", "F",
+        "F#", "G", "G#", "A", "A#", "B"
+    };
+    const auto midi = juce::roundToInt(
+        69.0 + 12.0 * std::log2(static_cast<double>(frequency) / 440.0));
+    const auto note = (midi % 12 + 12) % 12;
+    const auto octave = midi / 12 - 1;
+    return juce::String(frequency, 1) + " Hz  "
+           + juce::String(noteNames[static_cast<size_t>(note)])
+           + juce::String(octave);
 }
 
 float parsedFrequency(const juce::String& text, float value)
@@ -543,6 +679,16 @@ ControlOptions optionsFor(ModuleType type, int control)
         return { { "Peak", "RMS" }, 2 };
     if (type == ModuleType::vintageChorus && control == 0)
         return { { "Vintage BBD", "Dimension", "Tri-Chorus", "String Ensemble" }, 4 };
+    if (type == ModuleType::beatPermuter && control == 0)
+        return { { "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32" }, 6 };
+    if (type == ModuleType::beatPermuter && control == 2)
+        return { { "Repeat", "Reverse", "Rotate", "Scatter" }, 4 };
+    if (type == ModuleType::resonantMatrix && control == 1)
+        return { { "Major", "Minor", "Dorian", "Pentatonic", "Whole Tone", "Octaves" }, 6 };
+    if (type == ModuleType::resonantMatrix && control == 3)
+        return { { "Orbit", "Butterfly", "Spiral", "Scatter" }, 4 };
+    if (type == ModuleType::wavefoldGarden && control == 0)
+        return { { "Petal", "Prism", "Chebyshev", "Bloom" }, 4 };
     return {};
 }
 
@@ -674,6 +820,55 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 0.25f,
                 0.5f,
                 0.40f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::beatPermuter:
+            values = {
+                discreteValue(3, 6), 0.35f, discreteValue(0, 4),
+                linearNormalized(1.0f, 8.0f, 4.0f),
+                linearNormalized(1.0f, 8.0f, 2.0f),
+                linearNormalized(20.0f, 100.0f, 90.0f), 0.5f, 0.20f, 0.25f,
+                0.10f / 0.75f, 0.35f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::spectralPrism:
+            values = {
+                linearNormalized(-100.0f, 100.0f, 20.0f),
+                exponentialNormalized(80.0f, 8000.0f, 1000.0f),
+                0.5f, 0.20f, 0.0f,
+                exponentialNormalized(0.02f, 4.0f, 0.15f),
+                0.15f, 0.15f, 0.35f, 0.65f, 0.40f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::resonantMatrix:
+            values = {
+                exponentialNormalized(27.5f, 440.0f, 110.0f),
+                discreteValue(3, 6),
+                linearNormalized(1.0f, 4.0f, 2.0f),
+                discreteValue(0, 4),
+                exponentialNormalized(0.10f, 12.0f, 2.5f),
+                exponentialNormalized(500.0f, 20000.0f, 8000.0f),
+                linearNormalized(0.0f, 30.0f, 4.0f),
+                exponentialNormalized(0.02f, 2.0f, 0.10f),
+                linearNormalized(0.0f, 50.0f, 6.0f),
+                linearNormalized(0.0f, 150.0f, 80.0f), 0.25f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::wavefoldGarden:
+            values = {
+                discreteValue(0, 4),
+                linearNormalized(0.0f, 36.0f, 6.0f),
+                linearNormalized(1.0f, 8.0f, 2.0f),
+                0.5f, 0.35f,
+                linearNormalized(-100.0f, 100.0f, 25.0f),
+                exponentialNormalized(0.1f, 100.0f, 8.0f),
+                exponentialNormalized(10.0f, 1000.0f, 120.0f),
+                exponentialNormalized(500.0f, 20000.0f, 12000.0f),
+                0.20f, 0.45f,
                 linearNormalized(-18.0f, 12.0f, 0.0f)
             };
             break;
@@ -861,6 +1056,83 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 7) return formatFrequency(exponential(800.0f, 18000.0f, value));
             if (control == 9) return juce::String(value * 180.0f, 0) + juce::String::charToString(0x00b0);
             if (control == 11) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::beatPermuter:
+            if (control == 1 || control == 7 || control == 8 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 3 || control == 4)
+                return juce::String(juce::roundToInt(linear(1.0f, 8.0f, value)));
+            if (control == 5)
+                return juce::String(linear(20.0f, 100.0f, value), 0) + "%";
+            if (control == 6)
+            {
+                const auto pitch = linear(-12.0f, 12.0f, value);
+                return (pitch > 0.05f ? "+" : "") + juce::String(pitch, 1) + " st";
+            }
+            if (control == 9)
+                return juce::String(value * 75.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::spectralPrism:
+            if (control == 0)
+                return juce::String(linear(-100.0f, 100.0f, value), 0) + "%";
+            if (control == 1)
+                return formatFrequency(exponential(80.0f, 8000.0f, value));
+            if (control == 2)
+            {
+                const auto shift = linear(-24.0f, 24.0f, value);
+                return (shift > 0.05f ? "+" : "") + juce::String(shift, 1) + " st";
+            }
+            if (control == 5)
+                return juce::String(exponential(0.02f, 4.0f, value), 2) + " Hz";
+            if (control == 3 || (control >= 6 && control <= 10))
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::resonantMatrix:
+            if (control == 0)
+                return formatTunedFrequency(exponential(27.5f, 440.0f, value));
+            if (control == 2)
+                return juce::String(linear(1.0f, 4.0f, value), 1) + " oct";
+            if (control == 4)
+                return juce::String(exponential(0.10f, 12.0f, value), 2) + " s";
+            if (control == 5)
+                return formatFrequency(exponential(500.0f, 20000.0f, value));
+            if (control == 6)
+                return juce::String(linear(0.0f, 30.0f, value), 1) + " cents";
+            if (control == 7)
+                return juce::String(exponential(0.02f, 2.0f, value), 2) + " Hz";
+            if (control == 8)
+                return juce::String(linear(0.0f, 50.0f, value), 1) + " cents";
+            if (control == 9)
+                return juce::String(linear(0.0f, 150.0f, value), 0) + "%";
+            if (control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::wavefoldGarden:
+            if (control == 1)
+                return "+" + juce::String(linear(0.0f, 36.0f, value), 1) + " dB";
+            if (control == 2)
+                return juce::String(juce::roundToInt(linear(1.0f, 8.0f, value)));
+            if (control == 3 || control == 5)
+            {
+                const auto bipolar = linear(-100.0f, 100.0f, value);
+                return (bipolar > 0.5f ? "+" : "") + juce::String(bipolar, 0) + "%";
+            }
+            if (control == 4 || control == 9 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 6)
+                return juce::String(exponential(0.1f, 100.0f, value), 1) + " ms";
+            if (control == 7)
+                return juce::String(exponential(10.0f, 1000.0f, value), 0) + " ms";
+            if (control == 8)
+                return formatFrequency(exponential(500.0f, 20000.0f, value));
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::empty: break;
     }
@@ -1056,6 +1328,77 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 9) return linearNormalized(0.0f, 180.0f, value);
             if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
             break;
+        case ModuleType::beatPermuter:
+            if (control == 1 || control == 7 || control == 8 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 3 || control == 4)
+                return linearNormalized(1.0f, 8.0f, value);
+            if (control == 5)
+                return linearNormalized(20.0f, 100.0f, value);
+            if (control == 6)
+                return linearNormalized(-12.0f, 12.0f, value);
+            if (control == 9)
+                return juce::jlimit(0.0f, 1.0f, value / 75.0f);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::spectralPrism:
+            if (control == 0)
+                return linearNormalized(-100.0f, 100.0f, value);
+            if (control == 1)
+                return exponentialNormalized(
+                    80.0f, 8000.0f, parsedFrequency(text, value));
+            if (control == 2)
+                return linearNormalized(-24.0f, 24.0f, value);
+            if (control == 3 || (control >= 6 && control <= 10))
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 5)
+                return exponentialNormalized(0.02f, 4.0f, value);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::resonantMatrix:
+            if (control == 0)
+                return exponentialNormalized(27.5f, 440.0f, value);
+            if (control == 2)
+                return linearNormalized(1.0f, 4.0f, value);
+            if (control == 4)
+                return exponentialNormalized(0.10f, 12.0f, value);
+            if (control == 5)
+                return exponentialNormalized(
+                    500.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 6)
+                return linearNormalized(0.0f, 30.0f, value);
+            if (control == 7)
+                return exponentialNormalized(0.02f, 2.0f, value);
+            if (control == 8)
+                return linearNormalized(0.0f, 50.0f, value);
+            if (control == 9)
+                return linearNormalized(0.0f, 150.0f, value);
+            if (control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::wavefoldGarden:
+            if (control == 1)
+                return linearNormalized(0.0f, 36.0f, value);
+            if (control == 2)
+                return linearNormalized(1.0f, 8.0f, value);
+            if (control == 3 || control == 5)
+                return linearNormalized(-100.0f, 100.0f, value);
+            if (control == 4 || control == 9 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 6)
+                return exponentialNormalized(0.1f, 100.0f, value);
+            if (control == 7)
+                return exponentialNormalized(10.0f, 1000.0f, value);
+            if (control == 8)
+                return exponentialNormalized(
+                    500.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
         case ModuleType::empty: break;
     }
     return juce::jlimit(0.0f, 1.0f, value / 100.0f);
@@ -1125,6 +1468,10 @@ bool isControlContextuallyVisible(
         case ModuleType::dynamicEqualizer:
         case ModuleType::randomGranulizer:
         case ModuleType::vintageChorus:
+        case ModuleType::beatPermuter:
+        case ModuleType::spectralPrism:
+        case ModuleType::resonantMatrix:
+        case ModuleType::wavefoldGarden:
             break;
     }
     return true;
@@ -1284,7 +1631,36 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "Blend classic chorus, dimension, and ensemble textures.",
             "chorus dimension ensemble bbd modulation vintage",
             vintageChorusNames, vintageChorusMetadata,
-            &makeModule<VintageChorusModule>)
+            &makeModule<VintageChorusModule>),
+        makeDefinition(
+            ModuleType::beatPermuter, ModulePresentation::beatPermuter,
+            "Beat Permuter", ModuleCategory::glitchAndCreative,
+            "Rearrange recent tempo-locked slices into precise musical glitches.",
+            "beat repeat stutter reverse scatter glitch buffer rhythm",
+            beatPermuterNames, beatPermuterMetadata,
+            &makeModule<BeatPermuterModule>,
+            ModuleCapability::beatPermutationVisualization),
+        makeDefinition(
+            ModuleType::spectralPrism, ModulePresentation::spectralPrism,
+            "Spectral Prism", ModuleCategory::glitchAndCreative,
+            "Bend, shift, smear, and freeze sound around a spectral pivot.",
+            "spectral fft warp shift freeze smear phase creative",
+            spectralPrismNames, spectralPrismMetadata,
+            &makeModule<SpectralPrismModule>),
+        makeDefinition(
+            ModuleType::resonantMatrix, ModulePresentation::resonantMatrix,
+            "Resonant Matrix", ModuleCategory::reverbAndSpace,
+            "Route tuned resonators through evolving signed feedback patterns.",
+            "resonator tuned comb matrix feedback pitched metallic space",
+            resonantMatrixNames, resonantMatrixMetadata,
+            &makeModule<ResonantMatrixModule>),
+        makeDefinition(
+            ModuleType::wavefoldGarden, ModulePresentation::wavefoldGarden,
+            "Wavefold Garden", ModuleCategory::glitchAndCreative,
+            "Grow animated antialiased harmonics with dynamic wavefolding.",
+            "wavefold distortion nonlinear harmonics envelope creative",
+            wavefoldGardenNames, wavefoldGardenMetadata,
+            &makeModule<WavefoldGardenModule>)
     }};
     return definitions;
 }
@@ -1383,7 +1759,7 @@ juce::StringArray validateModuleRegistry()
         if (!juce::isPositiveAndBelow(stableType, moduleTypeCount)
             && stableType != 0)
         {
-            errors.add("Module type is outside the stable 0..14 range.");
+            errors.add("Module type is outside the stable 0..18 range.");
             continue;
         }
         ++typeCounts[static_cast<size_t>(stableType)];

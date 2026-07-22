@@ -52,6 +52,16 @@ public:
     {
         return nullptr;
     }
+    virtual BeatPermutationVisualizationCapability*
+        beatPermutationVisualizationCapability() noexcept
+    {
+        return nullptr;
+    }
+    virtual const BeatPermutationVisualizationCapability*
+        beatPermutationVisualizationCapability() const noexcept
+    {
+        return nullptr;
+    }
     ModuleCapability capabilities() const noexcept
     {
         auto result = ModuleCapability::none;
@@ -59,6 +69,9 @@ public:
             result = result | ModuleCapability::impulseResponse;
         if (grainVisualizationCapability() != nullptr)
             result = result | ModuleCapability::grainVisualization;
+        if (beatPermutationVisualizationCapability() != nullptr)
+            result = result
+                     | ModuleCapability::beatPermutationVisualization;
         return result;
     }
 };

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(megaDSP VERSION 0.23.1 LANGUAGES C CXX)
+project(megaDSP VERSION 0.24.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,6 +47,7 @@ juce_add_plugin(megaDSP
 
 set(MEGADSP_MODULE_SOURCES
     src/modules/AlgorithmicReverb.cpp
+    src/modules/BeatPermuter.cpp
     src/modules/Compressor.cpp
     src/modules/ConvolutionReverb.cpp
     src/modules/Delay.cpp
@@ -57,15 +58,19 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/MidSideDecoder.cpp
     src/modules/ModuleRegistry.cpp
     src/modules/RandomGranulizer.cpp
+    src/modules/ResonantMatrix.cpp
     src/modules/RotarySpeaker.cpp
     src/modules/Saturator.cpp
     src/modules/StereoWidth.cpp
+    src/modules/SpectralPrism.cpp
     src/modules/Tremolo.cpp
-    src/modules/VintageChorus.cpp)
+    src/modules/VintageChorus.cpp
+    src/modules/WavefoldGarden.cpp)
 
 set(MEGADSP_MODULE_HEADERS
     src/DspModules.h
     src/modules/AlgorithmicReverb.h
+    src/modules/BeatPermuter.h
     src/modules/Compressor.h
     src/modules/ConvolutionReverb.h
     src/modules/Delay.h
@@ -78,11 +83,14 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/ModuleCapabilities.h
     src/modules/ModuleRegistry.h
     src/modules/RandomGranulizer.h
+    src/modules/ResonantMatrix.h
     src/modules/RotarySpeaker.h
     src/modules/Saturator.h
     src/modules/StereoWidth.h
+    src/modules/SpectralPrism.h
     src/modules/Tremolo.h
-    src/modules/VintageChorus.h)
+    src/modules/VintageChorus.h
+    src/modules/WavefoldGarden.h)
 
 set(MEGADSP_UI_SOURCES
     src/ui/EffectGraph.cpp
@@ -97,6 +105,7 @@ set(MEGADSP_UI_SOURCES
     src/ui/ModuleBrowser.cpp
     src/ui/ModuleBrowser.h
     src/ui/modules/AlgorithmicReverbModuleView.cpp
+    src/ui/modules/BeatPermuterModuleView.cpp
     src/ui/modules/CompressorModuleView.cpp
     src/ui/modules/ConvolutionReverbModuleView.cpp
     src/ui/modules/DelayModuleView.cpp
@@ -106,11 +115,14 @@ set(MEGADSP_UI_SOURCES
     src/ui/modules/MidSideDecoderModuleView.cpp
     src/ui/modules/ModuleViewCreators.h
     src/ui/modules/RandomGranulizerModuleView.cpp
+    src/ui/modules/ResonantMatrixModuleView.cpp
     src/ui/modules/RotarySpeakerModuleView.cpp
     src/ui/modules/SaturatorModuleView.cpp
     src/ui/modules/StereoWidthModuleView.cpp
+    src/ui/modules/SpectralPrismModuleView.cpp
     src/ui/modules/TremoloModuleView.cpp
-    src/ui/modules/VintageChorusModuleView.cpp)
+    src/ui/modules/VintageChorusModuleView.cpp
+    src/ui/modules/WavefoldGardenModuleView.cpp)
 
 target_sources(megaDSP PRIVATE
     ${MEGADSP_MODULE_SOURCES}

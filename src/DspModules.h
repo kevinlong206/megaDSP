@@ -15,3 +15,7 @@
 #include "modules/DynamicEqualizer.h"
 #include "modules/RandomGranulizer.h"
 #include "modules/VintageChorus.h"
+#include "modules/BeatPermuter.h"
+#include "modules/SpectralPrism.h"
+#include "modules/ResonantMatrix.h"
+#include "modules/WavefoldGarden.h"

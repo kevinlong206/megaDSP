@@ -121,6 +121,10 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::dynamicEqualizer: return "DynEQ";
         case ModuleType::randomGranulizer: return "Grains";
         case ModuleType::vintageChorus: return "Chorus";
+        case ModuleType::beatPermuter: return "Permute";
+        case ModuleType::spectralPrism: return "Prism";
+        case ModuleType::resonantMatrix: return "Matrix";
+        case ModuleType::wavefoldGarden: return "Fold";
         case ModuleType::empty:
         case ModuleType::delay:
         case ModuleType::limiter:
@@ -156,6 +160,18 @@ std::vector<int> keyboardControlOrder(
             break;
         case ModuleType::vintageChorus:
             candidates = { 0, 1, 2, 3, 5, 4, 6, 10, 7, 8, 9, 11 };
+            break;
+        case ModuleType::beatPermuter:
+            candidates = { 0, 2, 3, 4, 1, 5, 6, 7, 8, 9, 10, 11 };
+            break;
+        case ModuleType::spectralPrism:
+            candidates = { 1, 0, 2, 4, 3, 9, 5, 6, 7, 8, 10, 11 };
+            break;
+        case ModuleType::resonantMatrix:
+            candidates = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+            break;
+        case ModuleType::wavefoldGarden:
+            candidates = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
             break;
         case ModuleType::empty:
         case ModuleType::compressor:
