@@ -542,12 +542,16 @@ public:
         expectEquals(megadsp::discreteIndex(0.3332f, 3), 0);
         expectEquals(megadsp::discreteIndex(0.3334f, 3), 1);
         expectEquals(megadsp::discreteIndex(1.0f, 3), 2);
-        expect(!megadsp::equalizerLowIsHighPass(0.49f));
+        expect(megadsp::equalizerBandMode(0.0f)
+               == megadsp::EqualizerBandMode::bell);
+        expect(megadsp::equalizerBandMode(0.5f)
+               == megadsp::EqualizerBandMode::shelf);
+        expect(megadsp::equalizerBandMode(1.0f)
+               == megadsp::EqualizerBandMode::cut);
         expect(!megadsp::equalizerLowIsHighPass(0.5f));
-        expect(megadsp::equalizerLowIsHighPass(0.5001f));
-        expect(!megadsp::equalizerHighIsLowPass(0.49f));
+        expect(megadsp::equalizerLowIsHighPass(1.0f));
         expect(!megadsp::equalizerHighIsLowPass(0.5f));
-        expect(megadsp::equalizerHighIsLowPass(0.5001f));
+        expect(megadsp::equalizerHighIsLowPass(1.0f));
         expect(!megadsp::parseControlValue(
                     megadsp::ModuleType::compressor, 0, "not a level")
                     .has_value());
@@ -1365,6 +1369,20 @@ public:
         expect(megadsp::controlOptions(
                    megadsp::ModuleType::spatialOrbit, 3)
                == tempoDivisions);
+        expect(megadsp::controlOptions(
+                  megadsp::ModuleType::equalizer, 10)
+               == juce::StringArray {
+                     "Bell", "Low Shelf", "High Pass" });
+        expect(megadsp::controlOptions(
+                  megadsp::ModuleType::equalizer, 11)
+               == juce::StringArray {
+                     "Bell", "High Shelf", "Low Pass" });
+        const auto parsedLowShelf = megadsp::parseControlValue(
+            megadsp::ModuleType::equalizer, 10, "Low Shelf");
+        expect(parsedLowShelf.has_value());
+        if (parsedLowShelf.has_value())
+            expect(megadsp::equalizerBandMode(*parsedLowShelf)
+                  == megadsp::EqualizerBandMode::shelf);
         expect(megadsp::controlOptions(
                   megadsp::ModuleType::analogTape, 0)
                == juce::StringArray {

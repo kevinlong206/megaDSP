@@ -10,7 +10,12 @@ the DSP reported no event activity; it is not filled from an editor clock.
 
 ## EQ
 
-A large knob-free response editor. Drag bell points horizontally for frequency and vertically for gain. Drag HP/LP points vertically for resonance; drop a low or high point into its labeled edge lane to latch HP or LP mode without trapping the cutoff there. The **LOW** and **HIGH** pills switch topology directly. The mouse wheel adjusts Q only while the pointer is near a band point. The right-side **Output** rail controls final EQ trim. Double-click a point or the Output rail to restore its musical default.
+A large knob-free response editor inspired by the directness of modern
+parametric EQs. Double-click empty graph space to add a band, drag its node for
+frequency and gain, and use the mouse wheel nearby for Q. Selecting an outer
+node exposes **Bell**, **Low/High Shelf**, and **High/Low Pass** choices directly
+below the graph. Double-click a node, or use **Remove**, to return that band to
+a neutral inactive state. The right-side **Output** rail controls final EQ trim.
 
 Pre/post spectrum traces run continuously while the tab is selected.
 

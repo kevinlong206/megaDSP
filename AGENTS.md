@@ -59,9 +59,10 @@ parsing/formatting, and tests.
 - Avoid hidden broad catches, silent error fallbacks, feedback instability, and
   nonlinear clamps used as substitutes for stable DSP design.
 - Use meaningful controls with accurate units and distinct audible roles.
-- EQ controls 11 and 12 (zero-based indices 10 and 11) are explicit low HP and
-  high LP topology flags in schema 5. Edge lanes only select these modes; cutoff
-  remains independent and structural changes stay crossfaded and click-safe.
+- EQ controls 11 and 12 (zero-based indices 10 and 11) encode three stable
+  outer-band shapes: Bell, Shelf, and Cut. Legacy 0/1 values remain Bell/Cut.
+  Shape changes crossfade parallel filters; node removal returns a band to a
+  neutral Bell, and cutoff frequency remains independent of shape.
 - Tremolo mode changes must crossfade continuously; rotary horn and drum speeds
   must retain independent physical inertia.
 - Saturator gain compensation compares latency-aligned dry and pre-Output wet

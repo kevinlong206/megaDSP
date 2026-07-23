@@ -11,22 +11,22 @@ using detail::lerp;
 void EqualizerModule::prepare(const juce::dsp::ProcessSpec& spec)
 {
     sampleRate = spec.sampleRate;
-    for (auto& smoother : rolloffMix)
-        smoother.reset(sampleRate, 0.02);
+    for (auto& band : topologyMix)
+        for (auto& smoother : band)
+            smoother.reset(sampleRate, 0.02);
     reset();
 }
 
 void EqualizerModule::reset()
 {
     for (auto& channel : filters)
-        for (auto& filter : channel)
-            filter.reset();
-    for (auto& channel : rolloffFilters)
-        for (auto& filter : channel)
-            filter.reset();
-    for (auto& smoother : rolloffMix)
-        smoother.setCurrentAndTargetValue(0.0f);
-    rolloffInitialized = false;
+        for (auto& band : channel)
+            for (auto& filter : band)
+                filter.reset();
+    for (auto& band : topologyMix)
+        for (auto& smoother : band)
+            smoother.setCurrentAndTargetValue(0.0f);
+    topologyInitialized = false;
 }
 
 float EqualizerModule::Biquad::process(float input)
@@ -50,6 +50,42 @@ void EqualizerModule::Biquad::setPeak(double rate, float frequency, float q, flo
     b2 = (1.0f - alpha * a) / a0;
     a1 = (-2.0f * cosOmega) / a0;
     a2 = (1.0f - alpha / a) / a0;
+}
+
+void EqualizerModule::Biquad::setLowShelf(
+    double rate, float frequency, float q, float gainDb)
+{
+    const auto a = std::pow(10.0f, gainDb / 40.0f);
+    const auto omega = juce::MathConstants<float>::twoPi * frequency
+                       / static_cast<float>(rate);
+    const auto cosine = std::cos(omega);
+    const auto alpha = std::sin(omega) / (2.0f * q);
+    const auto rootA = std::sqrt(a);
+    const auto twoRootAAlpha = 2.0f * rootA * alpha;
+    const auto a0 = (a + 1.0f) + (a - 1.0f) * cosine + twoRootAAlpha;
+    b0 = a * ((a + 1.0f) - (a - 1.0f) * cosine + twoRootAAlpha) / a0;
+    b1 = 2.0f * a * ((a - 1.0f) - (a + 1.0f) * cosine) / a0;
+    b2 = a * ((a + 1.0f) - (a - 1.0f) * cosine - twoRootAAlpha) / a0;
+    a1 = -2.0f * ((a - 1.0f) + (a + 1.0f) * cosine) / a0;
+    a2 = ((a + 1.0f) + (a - 1.0f) * cosine - twoRootAAlpha) / a0;
+}
+
+void EqualizerModule::Biquad::setHighShelf(
+    double rate, float frequency, float q, float gainDb)
+{
+    const auto a = std::pow(10.0f, gainDb / 40.0f);
+    const auto omega = juce::MathConstants<float>::twoPi * frequency
+                       / static_cast<float>(rate);
+    const auto cosine = std::cos(omega);
+    const auto alpha = std::sin(omega) / (2.0f * q);
+    const auto rootA = std::sqrt(a);
+    const auto twoRootAAlpha = 2.0f * rootA * alpha;
+    const auto a0 = (a + 1.0f) - (a - 1.0f) * cosine + twoRootAAlpha;
+    b0 = a * ((a + 1.0f) + (a - 1.0f) * cosine + twoRootAAlpha) / a0;
+    b1 = -2.0f * a * ((a - 1.0f) + (a + 1.0f) * cosine) / a0;
+    b2 = a * ((a + 1.0f) + (a - 1.0f) * cosine - twoRootAAlpha) / a0;
+    a1 = 2.0f * ((a - 1.0f) - (a + 1.0f) * cosine) / a0;
+    a2 = ((a + 1.0f) - (a - 1.0f) * cosine - twoRootAAlpha) / a0;
 }
 
 void EqualizerModule::Biquad::setHighPass(double rate, float frequency, float q)
@@ -108,37 +144,50 @@ void EqualizerModule::process(juce::AudioBuffer<float>& buffer,
         exponential(0.2f, 10.0f, controls[5]),
         exponential(0.2f, 10.0f, controls[8])
     };
-    const std::array<float, 3> rolloffTargets {
-        equalizerLowIsHighPass(controls[10]) ? 1.0f : 0.0f,
-        0.0f,
-        equalizerHighIsLowPass(controls[11]) ? 1.0f : 0.0f
+    const std::array<int, 3> topologyTargets {
+        static_cast<int>(equalizerBandMode(controls[10])),
+        static_cast<int>(EqualizerBandMode::bell),
+        static_cast<int>(equalizerBandMode(controls[11]))
     };
     for (int band = 0; band < 3; ++band)
-    {
-        auto& smoother = rolloffMix[static_cast<size_t>(band)];
-        if (!rolloffInitialized)
-            smoother.setCurrentAndTargetValue(
-                rolloffTargets[static_cast<size_t>(band)]);
-        else
-            smoother.setTargetValue(rolloffTargets[static_cast<size_t>(band)]);
-    }
-    rolloffInitialized = true;
+        for (int topology = 0; topology < topologyCount; ++topology)
+        {
+            auto& smoother = topologyMix[static_cast<size_t>(band)]
+                                        [static_cast<size_t>(topology)];
+            const auto target =
+                topologyTargets[static_cast<size_t>(band)] == topology
+                    ? 1.0f : 0.0f;
+            if (!topologyInitialized)
+                smoother.setCurrentAndTargetValue(target);
+            else
+                smoother.setTargetValue(target);
+        }
+    topologyInitialized = true;
 
     for (int band = 0; band < 3; ++band)
     {
         for (int channel = 0; channel < juce::jmin(2, buffer.getNumChannels()); ++channel)
         {
-            auto& filter =
-                filters[static_cast<size_t>(channel)][static_cast<size_t>(band)];
-            filter.setPeak(sampleRate, frequencies[static_cast<size_t>(band)],
-                           qs[static_cast<size_t>(band)],
-                           gains[static_cast<size_t>(band)]);
-            auto& rolloff = rolloffFilters[static_cast<size_t>(channel)]
-                                          [static_cast<size_t>(band)];
+            auto& topologies = filters[static_cast<size_t>(channel)]
+                                      [static_cast<size_t>(band)];
+            topologies[0].setPeak(
+                sampleRate, frequencies[static_cast<size_t>(band)],
+                qs[static_cast<size_t>(band)],
+                gains[static_cast<size_t>(band)]);
             if (band == 0)
-                rolloff.setHighPass(sampleRate, frequencies[0], qs[0]);
+            {
+                topologies[1].setLowShelf(
+                    sampleRate, frequencies[0], qs[0], gains[0]);
+                topologies[2].setHighPass(
+                    sampleRate, frequencies[0], qs[0]);
+            }
             else if (band == 2)
-                rolloff.setLowPass(sampleRate, frequencies[2], qs[2]);
+            {
+                topologies[1].setHighShelf(
+                    sampleRate, frequencies[2], qs[2], gains[2]);
+                topologies[2].setLowPass(
+                    sampleRate, frequencies[2], qs[2]);
+            }
         }
     }
 
@@ -146,10 +195,13 @@ void EqualizerModule::process(juce::AudioBuffer<float>& buffer,
         lerp(-18.0f, 18.0f, controls[9]));
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
-        std::array<float, 3> mixes {};
+        std::array<std::array<float, topologyCount>, 3> mixes {};
         for (int band = 0; band < 3; ++band)
-            mixes[static_cast<size_t>(band)] =
-                rolloffMix[static_cast<size_t>(band)].getNextValue();
+            for (int topology = 0; topology < topologyCount; ++topology)
+                mixes[static_cast<size_t>(band)]
+                     [static_cast<size_t>(topology)] =
+                    topologyMix[static_cast<size_t>(band)]
+                               [static_cast<size_t>(topology)].getNextValue();
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
         {
             auto value = buffer.getSample(channel, sample);
@@ -158,15 +210,16 @@ void EqualizerModule::process(juce::AudioBuffer<float>& buffer,
             for (int band = 0; band < 3; ++band)
             {
                 const auto index = static_cast<size_t>(band);
-                const auto peak = filters[channelIndex][index].process(value);
-                if (band == 0 || band == 2)
-                {
-                    const auto rolloff =
-                        rolloffFilters[channelIndex][index].process(value);
-                    value = peak + (rolloff - peak) * mixes[index];
-                }
+                auto processed = 0.0f;
+                if (band == 1)
+                    processed = filters[channelIndex][index][0].process(value);
                 else
-                    value = peak;
+                    for (int topology = 0; topology < topologyCount; ++topology)
+                        processed += filters[channelIndex][index]
+                                            [static_cast<size_t>(topology)]
+                                                .process(value)
+                                     * mixes[index][static_cast<size_t>(topology)];
+                value = processed;
             }
             buffer.setSample(channel, sample, value * outputGain);
         }

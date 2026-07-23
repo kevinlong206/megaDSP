@@ -67,7 +67,7 @@ megaDSP.clap → ~/.clap
 ## First-rack workflow
 
 1. Load megaDSP on a track in your DAW.
-2. Click the **+** tab to open the module browser. Search by name, category, or tag; use **↑↓** and **Enter** or click a result to add it.
+2. Click the **+** tab, choose a category, then choose a module. Open **Search** only when you want to filter by name, category, description, or tag; **↑↓** and **Enter** work throughout.
 3. Select a tab to see its interactive graph and controls.
 4. Drag tabs left or right to reorder the signal chain.
 5. **Double-click** a tab (or press **Space / Return / B**) to bypass it — the tab is greyed and labeled **BYPASSED**.
@@ -93,7 +93,7 @@ megaDSP.clap → ~/.clap
 
 | Module | What it does |
 |---|---|
-| **EQ** | Knob-free response editor with draggable bands, pre/post spectrum traces, latched HP/LP edge lanes, topology pills, proximity-gated mouse-wheel Q, and Output rail |
+| **EQ** | Pro-Q-inspired response editor: double-click to add or remove bands, drag to shape, wheel Q, select Bell/Shelf/Cut directly, and compare pre/post spectrum traces |
 
 ### Saturation
 

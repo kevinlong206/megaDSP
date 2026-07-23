@@ -160,8 +160,12 @@ public:
         megadsp::ui::ModuleBrowser browser(
             juce::Colours::black,
             [&chosen](megadsp::ModuleType type) { chosen = type; });
-        expectEquals(browser.resultRowCountForTesting(),
-                     megadsp::moduleTypeCount - 1);
+        expectEquals(browser.categoryCountForTesting(), 8);
+        expect(!browser.searchIsVisibleForTesting());
+        expectEquals(browser.resultRowCountForTesting(), 2);
+        browser.selectCategoryForTesting(
+            megadsp::ModuleCategory::saturationAndColor);
+        expectEquals(browser.resultRowCountForTesting(), 3);
         beginTest("Result rows expose selected accessibility state");
         auto selectedCount = 0;
         for (int index = 0;

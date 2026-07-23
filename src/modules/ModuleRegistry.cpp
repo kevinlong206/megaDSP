@@ -40,7 +40,10 @@ constexpr Metadata eqMetadata {{
       "Sets the high band's width." },
     { "Output", ControlKind::level, true, "Output",
       "Adjusts level after the EQ." },
-    unused, unused
+    { "Low Shape", ControlKind::choice, false, "Low Band",
+      "Selects Bell, Low Shelf, or High Pass." },
+    { "High Shape", ControlKind::choice, false, "High Band",
+      "Selects Bell, High Shelf, or Low Pass." }
 }};
 constexpr Metadata compressorMetadata {{
     { "Threshold", ControlKind::level, true, "Compression",
@@ -688,7 +691,7 @@ constexpr Names eqNames {
     "Low Frequency", "Low Gain", "Low Q",
     "Mid Frequency", "Mid Gain", "Mid Q",
     "High Frequency", "High Gain", "High Q",
-    "Output", "-", "-"
+    "Output", "Low Shape", "High Shape"
 };
 constexpr Names compressorNames {
     "Threshold", "Ratio", "Attack", "Release", "Knee", "Manual Trim",
@@ -943,14 +946,19 @@ float discreteValue(int index, int optionCount)
            / static_cast<float>(optionCount);
 }
 
+EqualizerBandMode equalizerBandMode(float normalizedMode)
+{
+    return static_cast<EqualizerBandMode>(discreteIndex(normalizedMode, 3));
+}
+
 bool equalizerLowIsHighPass(float normalizedMode)
 {
-    return normalizedMode > 0.5f;
+    return equalizerBandMode(normalizedMode) == EqualizerBandMode::cut;
 }
 
 bool equalizerHighIsLowPass(float normalizedMode)
 {
-    return normalizedMode > 0.5f;
+    return equalizerBandMode(normalizedMode) == EqualizerBandMode::cut;
 }
 
 const std::array<std::array<float, 16>, 3>& reverbEarlyMilliseconds()
@@ -975,6 +983,10 @@ namespace
 {
 ControlOptions optionsFor(ModuleType type, int control)
 {
+    if (type == ModuleType::equalizer && control == 10)
+        return { { "Bell", "Low Shelf", "High Pass" }, 3 };
+    if (type == ModuleType::equalizer && control == 11)
+        return { { "Bell", "High Shelf", "Low Pass" }, 3 };
     if (type == ModuleType::saturator && control == 5)
         return { { "Soft", "Smooth", "Hard" }, 3 };
     if (type == ModuleType::delay && control == 6)

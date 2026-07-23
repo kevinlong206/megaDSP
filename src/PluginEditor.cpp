@@ -1528,7 +1528,7 @@ void MegaDSPAudioProcessorEditor::showModuleBrowser()
         std::move(browser), getLocalArea(&addButton, addButton.getLocalBounds()),
         this);
     callout.setDismissalMouseClicksAreAlwaysConsumed(true);
-    browserPointer->focusSearch();
+    browserPointer->focusMenu();
 }
 
 void MegaDSPAudioProcessorEditor::commitInstanceName()

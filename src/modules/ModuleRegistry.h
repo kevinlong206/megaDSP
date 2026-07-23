@@ -175,6 +175,13 @@ bool isControlContextuallyEnabled(
     bool hasStereoOutput, bool hasExternalSidechain);
 int discreteIndex(float normalized, int optionCount);
 float discreteValue(int index, int optionCount);
+enum class EqualizerBandMode
+{
+    bell,
+    shelf,
+    cut
+};
+EqualizerBandMode equalizerBandMode(float normalizedMode);
 bool equalizerLowIsHighPass(float normalizedMode);
 bool equalizerHighIsLowPass(float normalizedMode);
 const std::array<std::array<float, 16>, 3>& reverbEarlyMilliseconds();

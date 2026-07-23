@@ -1043,7 +1043,27 @@ public:
         replacementFile.deleteFile();
         impulseFile.deleteFile();
 
-        beginTest("EQ edge zones engage low and high rolloff filters");
+        beginTest("EQ low shelf boosts lows without broad output gain");
+        controls = moduleDefaults(ModuleType::equalizer);
+        controls[0] = 0.25f;
+        controls[1] = 1.0f;
+        controls[10] = discreteValue(
+            static_cast<int>(EqualizerBandMode::shelf), 3);
+        auto lowShelfSignal = makeSine(2, 48000, 60.0f, 0.05f);
+        auto highShelfReference =
+            makeSine(2, 48000, 6000.0f, 0.05f);
+        EqualizerModule lowShelf;
+        EqualizerModule highReference;
+        lowShelf.prepare(spec);
+        highReference.prepare(spec);
+        lowShelf.process(lowShelfSignal, controls, environment);
+        highReference.process(highShelfReference, controls, environment);
+        expect(lowShelfSignal.getRMSLevel(0, 24000, 24000)
+               > highShelfReference.getRMSLevel(0, 24000, 24000) * 2.0f);
+        expect(std::isfinite(lowShelfSignal.getMagnitude(
+            0, lowShelfSignal.getNumSamples())));
+
+        beginTest("EQ edge shapes engage low and high cut filters");
         EqualizerModule rolloffEq;
         rolloffEq.prepare(spec);
         controls = moduleDefaults(ModuleType::equalizer);

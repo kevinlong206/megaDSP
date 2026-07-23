@@ -10,8 +10,8 @@ namespace
 {
 bool isEqualizerModeControl(ModuleType type, int control)
 {
-    return type == ModuleType::equalizer
-           && (control == 10 || control == 11);
+    juce::ignoreUnused(type, control);
+    return false;
 }
 
 juce::String toggleLabel(ModuleType type, int control)

@@ -119,15 +119,14 @@ public:
         graphics.drawRoundedRectangle(bounds, 5.0f, selected ? 1.5f : 1.0f);
 
         const auto& definition = moduleDefinition(type);
-        auto text = getLocalBounds().reduced(12, 5);
+        auto text = getLocalBounds().reduced(10, 4);
         graphics.setColour(juce::Colours::white);
-        graphics.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-        graphics.drawText(definition.displayName, text.removeFromTop(20),
+        graphics.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+        graphics.drawText(definition.displayName, text,
                           juce::Justification::centredLeft);
-        graphics.setColour(juce::Colour(0xffa8b3c0));
-        graphics.setFont(juce::FontOptions(12.0f));
-        graphics.drawFittedText(definition.description, text,
-                                juce::Justification::centredLeft, 1);
+        graphics.setColour(selected ? accent : juce::Colour(0xff738092));
+        graphics.drawText("+", text.removeFromRight(18),
+                          juce::Justification::centred);
     }
 
     void mouseEnter(const juce::MouseEvent&) override
@@ -202,16 +201,29 @@ ModuleBrowser::ModuleBrowser(
     : backgroundColour(background), onModuleChosen(std::move(moduleChosen)),
       results(std::make_unique<ResultsComponent>())
 {
-    setSize(520, 410);
+    setSize(450, 360);
     setTitle("Add Module");
-    setHelpText("Search and choose a module to add to the rack.");
+    setHelpText(
+        "Choose a category, then choose a module. Search is available on demand.");
     setWantsKeyboardFocus(true);
     addKeyListener(this);
 
     heading.setText("Add Module", juce::dontSendNotification);
-    heading.setFont(juce::FontOptions(19.0f, juce::Font::bold));
+    heading.setFont(juce::FontOptions(17.0f, juce::Font::bold));
     heading.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(heading);
+
+    searchToggle.setButtonText("Search");
+    searchToggle.setTitle("Search modules");
+    searchToggle.setHelpText("Show or hide module search.");
+    searchToggle.setColour(
+        juce::TextButton::buttonColourId, juce::Colour(0xff27303b));
+    searchToggle.setColour(
+        juce::TextButton::buttonOnColourId, accent.withAlpha(0.35f));
+    searchToggle.setColour(
+        juce::TextButton::textColourOffId, juce::Colour(0xffc5cfda));
+    searchToggle.onClick = [this] { setSearchVisible(!searchVisible); };
+    addAndMakeVisible(searchToggle);
 
     search.setTextToShowWhenEmpty("Search modules...", juce::Colour(0xff7f8b99));
     search.setTitle("Search modules");
@@ -231,7 +243,7 @@ ModuleBrowser::ModuleBrowser(
     search.onTextChange = [this] { rebuildResults(); };
     search.onReturnKey = [this] { activateSelection(); };
     search.onEscapeKey = [this] { dismiss(); };
-    addAndMakeVisible(search);
+    addChildComponent(search);
 
     viewport.setViewedComponent(results.get(), false);
     viewport.setScrollBarsShown(true, false);
@@ -247,7 +259,42 @@ ModuleBrowser::ModuleBrowser(
     noResults.setColour(juce::Label::textColourId, juce::Colour(0xffa8b3c0));
     results->addAndMakeVisible(noResults);
 
+    selectionDescription.setTitle("Selected module description");
+    selectionDescription.setJustificationType(
+        juce::Justification::centredLeft);
+    selectionDescription.setFont(juce::FontOptions(11.5f));
+    selectionDescription.setColour(
+        juce::Label::textColourId, juce::Colour(0xffa8b3c0));
+    selectionDescription.setMinimumHorizontalScale(0.85f);
+    addAndMakeVisible(selectionDescription);
+
+    for (const auto& group : filterAndGroupModules({}))
+    {
+        categories.push_back(group.category);
+        auto button = std::make_unique<juce::TextButton>(
+            moduleCategoryName(group.category));
+        button->setTitle(
+            juce::String(moduleCategoryName(group.category)) + " category");
+        button->setHelpText("Show modules in this category.");
+        button->setClickingTogglesState(false);
+        button->setColour(
+            juce::TextButton::buttonColourId, juce::Colour(0xff17202a));
+        button->setColour(
+            juce::TextButton::buttonOnColourId, accent.withAlpha(0.28f));
+        button->setColour(
+            juce::TextButton::textColourOffId, juce::Colour(0xffa8b3c0));
+        button->setColour(
+            juce::TextButton::textColourOnId, juce::Colours::white);
+        const auto category = group.category;
+        button->onClick = [this, category] { setCategory(category); };
+        addAndMakeVisible(*button);
+        categoryButtons.push_back(std::move(button));
+    }
+    if (!categories.empty())
+        selectedCategory = categories.front();
+
     rebuildResults();
+    setCategory(selectedCategory);
 }
 
 void ModuleBrowser::paint(juce::Graphics& graphics)
@@ -260,18 +307,37 @@ void ModuleBrowser::paint(juce::Graphics& graphics)
 
 void ModuleBrowser::resized()
 {
-    auto bounds = getLocalBounds().reduced(12);
-    heading.setBounds(bounds.removeFromTop(25));
-    bounds.removeFromTop(5);
-    search.setBounds(bounds.removeFromTop(36));
-    bounds.removeFromTop(9);
+    auto bounds = getLocalBounds().reduced(10);
+    auto header = bounds.removeFromTop(28);
+    searchToggle.setBounds(header.removeFromRight(78));
+    header.removeFromRight(6);
+    heading.setBounds(header);
+    bounds.removeFromTop(6);
+    if (searchVisible)
+    {
+        search.setBounds(bounds.removeFromTop(32));
+        bounds.removeFromTop(6);
+    }
+
+    auto categoriesArea = bounds.removeFromLeft(132);
+    bounds.removeFromLeft(8);
+    const auto buttonHeight = 29;
+    for (auto& button : categoryButtons)
+    {
+        button->setBounds(categoriesArea.removeFromTop(buttonHeight));
+        categoriesArea.removeFromTop(3);
+    }
+    selectionDescription.setBounds(bounds.removeFromBottom(46));
+    bounds.removeFromBottom(4);
     viewport.setBounds(bounds);
     layoutResults();
 }
 
-void ModuleBrowser::focusSearch()
+void ModuleBrowser::focusMenu()
 {
-    search.grabKeyboardFocus();
+    grabKeyboardFocus();
+    if (!rows.empty())
+        selectIndex(0);
 }
 
 #if defined(MEGADSP_TESTS)
@@ -303,6 +369,21 @@ bool ModuleBrowser::pressResultRowForTesting(int index)
     return rows[static_cast<size_t>(index)]
         ->invokeAccessibilityPressForTesting();
 }
+
+int ModuleBrowser::categoryCountForTesting() const
+{
+    return static_cast<int>(categories.size());
+}
+
+void ModuleBrowser::selectCategoryForTesting(ModuleCategory category)
+{
+    setCategory(category);
+}
+
+bool ModuleBrowser::searchIsVisibleForTesting() const
+{
+    return searchVisible;
+}
 #endif
 
 bool ModuleBrowser::keyPressed(const juce::KeyPress& key, juce::Component*)
@@ -332,6 +413,12 @@ bool ModuleBrowser::keyPressed(const juce::KeyPress& key, juce::Component*)
         dismiss();
         return true;
     }
+    if (key.getModifiers().isCommandDown()
+        && key.getTextCharacter() == 'f')
+    {
+        setSearchVisible(true);
+        return true;
+    }
     return false;
 }
 
@@ -347,8 +434,11 @@ void ModuleBrowser::rebuildResults()
     groupSizes.clear();
     results->addAndMakeVisible(noResults);
 
-    for (const auto& group : filterAndGroupModules(search.getText()))
+    const auto query = search.getText();
+    for (const auto& group : filterAndGroupModules(query))
     {
+        if (query.isEmpty() && group.category != selectedCategory)
+            continue;
         auto label = std::make_unique<juce::Label>();
         label->setText(moduleCategoryName(group.category),
                        juce::dontSendNotification);
@@ -388,9 +478,9 @@ void ModuleBrowser::rebuildResults()
 
 void ModuleBrowser::layoutResults()
 {
-    constexpr int categoryHeight = 24;
-    constexpr int rowHeight = 54;
-    constexpr int gap = 4;
+    constexpr int categoryHeight = 21;
+    constexpr int rowHeight = 34;
+    constexpr int gap = 3;
     const auto width = juce::jmax(1, viewport.getWidth() - 12);
     int y = 0;
     int rowIndex = 0;
@@ -427,7 +517,15 @@ void ModuleBrowser::selectIndex(int index)
         rows[static_cast<size_t>(row)]->setSelected(row == selectedIndex);
 
     if (selectedIndex < 0)
+    {
+        selectionDescription.setText({}, juce::dontSendNotification);
         return;
+    }
+    selectionDescription.setText(
+        moduleDefinition(
+            rows[static_cast<size_t>(selectedIndex)]->moduleType())
+            .description,
+        juce::dontSendNotification);
     const auto rowBounds = rows[static_cast<size_t>(selectedIndex)]->getBounds();
     const auto viewTop = viewport.getViewPositionY();
     if (rowBounds.getY() < viewTop)
@@ -456,6 +554,33 @@ void ModuleBrowser::selectType(ModuleType type)
             selectIndex(index);
             return;
         }
+}
+
+void ModuleBrowser::setCategory(ModuleCategory category)
+{
+        selectedCategory = category;
+        for (size_t index = 0; index < categoryButtons.size(); ++index)
+            categoryButtons[index]->setToggleState(
+                index < categories.size() && categories[index] == category,
+                juce::dontSendNotification);
+        if (search.getText().isNotEmpty())
+            search.clear();
+        else
+            rebuildResults();
+}
+
+void ModuleBrowser::setSearchVisible(bool shouldShow)
+{
+        searchVisible = shouldShow;
+        searchToggle.setToggleState(searchVisible, juce::dontSendNotification);
+        search.setVisible(searchVisible);
+        if (!searchVisible && search.getText().isNotEmpty())
+            search.clear();
+        resized();
+        if (searchVisible)
+            search.grabKeyboardFocus();
+        else
+            focusMenu();
 }
 
 void ModuleBrowser::activateSelection()

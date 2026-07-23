@@ -19,15 +19,20 @@ private:
         float z1 = 0.0f, z2 = 0.0f;
         float process(float input);
         void setPeak(double sampleRate, float frequency, float q, float gainDb);
+        void setLowShelf(
+            double sampleRate, float frequency, float q, float gainDb);
+        void setHighShelf(
+            double sampleRate, float frequency, float q, float gainDb);
         void setHighPass(double sampleRate, float frequency, float q);
         void setLowPass(double sampleRate, float frequency, float q);
         void reset();
     };
-    std::array<std::array<Biquad, 3>, 2> filters;
-    std::array<std::array<Biquad, 3>, 2> rolloffFilters;
-    std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>, 3>
-        rolloffMix;
+    static constexpr int topologyCount = 3;
+    std::array<std::array<std::array<Biquad, topologyCount>, 3>, 2> filters;
+    std::array<std::array<
+        juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>,
+        topologyCount>, 3> topologyMix;
     double sampleRate = 44100.0;
-    bool rolloffInitialized = false;
+    bool topologyInitialized = false;
 };
 } // namespace megadsp
