@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(megaDSP VERSION 0.26.0 LANGUAGES C CXX)
+project(megaDSP VERSION 0.27.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -49,6 +49,7 @@ juce_add_plugin(megaDSP
 
 set(MEGADSP_MODULE_SOURCES
     src/modules/AlgorithmicReverb.cpp
+    src/modules/AdaptiveClipper.cpp
     src/modules/AnalogTape.cpp
     src/modules/BeatPermuter.cpp
     src/modules/Compressor.cpp
@@ -59,30 +60,41 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/DynamicEqualizer.cpp
     src/modules/Equalizer.cpp
     src/modules/FrequencyLab.cpp
+    src/modules/FormantForge.cpp
     src/modules/GateExpander.cpp
     src/modules/Limiter.cpp
+    src/modules/LoudnessRider.cpp
     src/modules/MidSideDecoder.cpp
     src/modules/ModuleRegistry.cpp
     src/modules/MultibandCompressor.cpp
     src/modules/PitchBloom.cpp
+    src/modules/PhaseCoherence.cpp
     src/modules/RandomGranulizer.cpp
     src/modules/ResonantMatrix.cpp
+    src/modules/ResonanceTamer.cpp
     src/modules/RotarySpeaker.cpp
     src/modules/Saturator.cpp
     src/modules/StereoWidth.cpp
     src/modules/SpectralPrism.cpp
+    src/modules/SpectralBalance.cpp
+    src/modules/SpectralDelayCanvas.cpp
+    src/modules/SpectralFoundation.cpp
     src/modules/SignalDecay.cpp
     src/modules/SpatialOrbit.cpp
     src/modules/StudioFlanger.cpp
     src/modules/StudioPhaser.cpp
     src/modules/Tremolo.cpp
     src/modules/TransientDesigner.cpp
+    src/modules/TimeMosaic.cpp
     src/modules/VintageChorus.cpp
-    src/modules/WavefoldGarden.cpp)
+    src/modules/WavefoldGarden.cpp
+    src/modules/HarmonicMirage.cpp
+    src/modules/ChaosField.cpp)
 
 set(MEGADSP_MODULE_HEADERS
     src/DspModules.h
     src/modules/AlgorithmicReverb.h
+    src/modules/AdaptiveClipper.h
     src/modules/AnalogTape.h
     src/modules/BeatPermuter.h
     src/modules/Compressor.h
@@ -95,27 +107,37 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/DynamicEqualizer.h
     src/modules/Equalizer.h
     src/modules/FrequencyLab.h
+    src/modules/FormantForge.h
     src/modules/GateExpander.h
     src/modules/Limiter.h
+    src/modules/LoudnessRider.h
     src/modules/MidSideDecoder.h
     src/modules/ModuleCapabilities.h
     src/modules/ModuleRegistry.h
     src/modules/MultibandCompressor.h
     src/modules/PitchBloom.h
+    src/modules/PhaseCoherence.h
     src/modules/RandomGranulizer.h
     src/modules/ResonantMatrix.h
+    src/modules/ResonanceTamer.h
     src/modules/RotarySpeaker.h
     src/modules/Saturator.h
     src/modules/StereoWidth.h
     src/modules/SpectralPrism.h
+    src/modules/SpectralBalance.h
+    src/modules/SpectralDelayCanvas.h
+    src/modules/SpectralFoundation.h
     src/modules/SignalDecay.h
     src/modules/SpatialOrbit.h
     src/modules/StudioFlanger.h
     src/modules/StudioPhaser.h
     src/modules/Tremolo.h
     src/modules/TransientDesigner.h
+    src/modules/TimeMosaic.h
     src/modules/VintageChorus.h
-    src/modules/WavefoldGarden.h)
+    src/modules/WavefoldGarden.h
+    src/modules/HarmonicMirage.h
+    src/modules/ChaosField.h)
 
 set(MEGADSP_UI_SOURCES
     src/ui/EffectGraph.cpp
@@ -130,35 +152,45 @@ set(MEGADSP_UI_SOURCES
     src/ui/ModuleBrowser.cpp
     src/ui/ModuleBrowser.h
     src/ui/modules/AlgorithmicReverbModuleView.cpp
+    src/ui/modules/AdaptiveClipperModuleView.cpp
     src/ui/modules/AnalogTapeModuleView.cpp
     src/ui/modules/BeatPermuterModuleView.cpp
     src/ui/modules/CompressorModuleView.cpp
     src/ui/modules/ConvolutionReverbModuleView.cpp
+    src/ui/modules/ChaosFieldModuleView.cpp
     src/ui/modules/DelayModuleView.cpp
     src/ui/modules/DiffusionDelayModuleView.cpp
     src/ui/modules/DynamicEqualizerModuleView.cpp
     src/ui/modules/EqualizerModuleView.cpp
     src/ui/modules/FrequencyLabModuleView.cpp
+    src/ui/modules/FormantForgeModuleView.cpp
     src/ui/modules/GateExpanderModuleView.cpp
     src/ui/modules/LimiterModuleView.cpp
+    src/ui/modules/LoudnessRiderModuleView.cpp
     src/ui/modules/MidSideDecoderModuleView.cpp
     src/ui/modules/ModuleViewCreators.h
     src/ui/modules/MultibandCompressorModuleView.cpp
     src/ui/modules/PitchBloomModuleView.cpp
+    src/ui/modules/PhaseCoherenceModuleView.cpp
     src/ui/modules/RandomGranulizerModuleView.cpp
+    src/ui/modules/ResonanceTamerModuleView.cpp
     src/ui/modules/ResonantMatrixModuleView.cpp
     src/ui/modules/RotarySpeakerModuleView.cpp
     src/ui/modules/SaturatorModuleView.cpp
     src/ui/modules/StereoWidthModuleView.cpp
     src/ui/modules/SpectralPrismModuleView.cpp
+    src/ui/modules/SpectralBalanceModuleView.cpp
+    src/ui/modules/SpectralDelayCanvasModuleView.cpp
     src/ui/modules/SignalDecayModuleView.cpp
     src/ui/modules/SpatialOrbitModuleView.cpp
     src/ui/modules/StudioFlangerModuleView.cpp
     src/ui/modules/StudioPhaserModuleView.cpp
     src/ui/modules/TremoloModuleView.cpp
     src/ui/modules/TransientDesignerModuleView.cpp
+    src/ui/modules/TimeMosaicModuleView.cpp
     src/ui/modules/VintageChorusModuleView.cpp
-    src/ui/modules/WavefoldGardenModuleView.cpp)
+    src/ui/modules/WavefoldGardenModuleView.cpp
+    src/ui/modules/HarmonicMirageModuleView.cpp)
 
 target_sources(megaDSP PRIVATE
     ${MEGADSP_MODULE_SOURCES}
@@ -217,11 +249,14 @@ juce_add_console_app(megaDSPTests PRODUCT_NAME "megaDSP Tests")
 target_sources(megaDSPTests PRIVATE
     tests/TestMain.cpp
     tests/DspModuleTests.cpp
+    tests/SpectralAdaptiveModulesTests.cpp
+    tests/SpectralHistoryPairTests.cpp
     tests/DynamicsTelemetryTests.cpp
     tests/TelemetryFoundationTests.cpp
     tests/TimeTelemetryTests.cpp
     tests/GuiLayoutTests.cpp
     tests/ModuleBrowserTests.cpp
+    tests/NextTenUtilityTests.cpp
     tests/ProcessorTests.cpp
     ${MEGADSP_MODULE_SOURCES}
     ${MEGADSP_MODULE_HEADERS}

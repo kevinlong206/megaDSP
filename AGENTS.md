@@ -12,7 +12,10 @@ serial slots and twelve fixed generic controls per slot.
 - Current appended values continue through Wavefold Garden 18, Gate / Expander
   19, Transient Designer 20, Multiband Compressor 21, Studio Phaser 22, Studio
   Flanger 23, Diffusion Delay 24, Pitch Bloom 25, Frequency Lab 26, Spatial
-  Orbit 27, Signal Decay 28, and Analog Tape 29.
+  Orbit 27, Signal Decay 28, Analog Tape 29, Resonance Tamer 30, Spectral
+  Balance 31, Phase Coherence 32, Loudness Rider 33, Adaptive Clipper 34,
+  Spectral Delay Canvas 35, Formant Forge 36, Harmonic Mirage 37, Chaos Field
+  38, and Time Mosaic 39.
 - Preserve the eight-slot, twelve-control host parameter topology and existing
   parameter IDs.
 - Keep state migration compatible with schema 2 through current schema 7.
@@ -125,6 +128,22 @@ parsing/formatting, and tests.
   hiss stays energy-gated, feedback-free wear remains bounded, and the reel,
   modulation, dropout, and signal visuals use capture-gated DSP telemetry rather
   than editor-clock animation.
+- Resonance Tamer and Spectral Balance share only the prepared fixed-latency
+  STFT foundation; their detection, smoothing, targets, and correction behavior
+  remain module-specific. Amount-zero or Mix-zero paths stay latency-aligned,
+  and spectral telemetry is published only for the capture-selected slot.
+- Phase Coherence applies internal stereo correction only with sufficient
+  confidence and leaves mono input unchanged. Loudness Rider uses gated
+  long-term gain riding rather than a compressor curve. Adaptive Clipper keeps
+  all prepared oversampling choices aligned to one fixed reported latency.
+- Spectral Delay Canvas and Time Mosaic preallocate their maximum spectral
+  histories during `prepare()`. Freeze stops history writes without allocating;
+  age/delay transitions crossfade smoothly and event telemetry reflects actual
+  DSP frame activity.
+- Formant Forge keeps formant shifting independent of source pitch and gates its
+  deterministic breath by signal energy. Harmonic Mirage uses phase-continuous
+  oscillators and releases uncertain tracking. Chaos Field uses deterministic,
+  bounded attractor integration and stable sub-unity feedback.
 
 ## Build and test
 

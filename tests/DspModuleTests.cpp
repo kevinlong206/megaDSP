@@ -21,7 +21,7 @@ public:
         ControlValues controls;
         controls.fill(0.5f);
         ProcessEnvironment environment;
-        std::array<std::unique_ptr<DspModule>, 28> modules {
+        std::array<std::unique_ptr<DspModule>, 39> modules {
             std::make_unique<EqualizerModule>(),
             std::make_unique<CompressorModule>(),
             std::make_unique<SaturatorModule>(),
@@ -49,7 +49,18 @@ public:
             std::make_unique<PitchBloomModule>(),
             std::make_unique<FrequencyLabModule>(),
             std::make_unique<SpatialOrbitModule>(),
-            std::make_unique<SignalDecayModule>()
+            std::make_unique<SignalDecayModule>(),
+            std::make_unique<AnalogTapeModule>(),
+            std::make_unique<ResonanceTamerModule>(),
+            std::make_unique<SpectralBalanceModule>(),
+            std::make_unique<PhaseCoherenceModule>(),
+            std::make_unique<LoudnessRiderModule>(),
+            std::make_unique<AdaptiveClipperModule>(),
+            std::make_unique<SpectralDelayCanvasModule>(),
+            std::make_unique<FormantForgeModule>(),
+            std::make_unique<HarmonicMirageModule>(),
+            std::make_unique<ChaosFieldModule>(),
+            std::make_unique<TimeMosaicModule>()
         };
 
         for (auto& module : modules)

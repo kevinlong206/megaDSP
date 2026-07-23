@@ -686,6 +686,240 @@ constexpr Metadata analogTapeMetadata {{
     { "Output", ControlKind::level, true, "Output",
       "Adjusts level after the blend." }
 }};
+constexpr Metadata resonanceTamerMetadata {{
+    { "Reduction", ControlKind::level, true, "Suppression",
+      "Sets the maximum adaptive resonance reduction." },
+    { "Selectivity", ControlKind::choice, true, "Detection",
+      "Chooses broad, focused, or surgical resonance detection." },
+    { "Reaction", ControlKind::choice, false, "Detection",
+      "Sets how quickly detected resonances are followed." },
+    { "Tone Bias", ControlKind::horizontal, false, "Detection",
+      "Biases sensitivity across the spectrum in dB per octave." },
+    { "Low Limit", ControlKind::horizontal, false, "Range",
+      "Sets the lowest frequency eligible for suppression." },
+    { "High Limit", ControlKind::horizontal, false, "Range",
+      "Sets the highest frequency eligible for suppression." },
+    { "Transient Preserve", ControlKind::horizontal, true, "Protection",
+      "Relaxes suppression during measured broadband transients." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned dry and resonance-reduced signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the blend." },
+    unused, unused, unused
+}};
+constexpr Metadata spectralBalanceMetadata {{
+    { "Contour", ControlKind::choice, true, "Target",
+      "Selects the broad musical balance target." },
+    { "Amount", ControlKind::horizontal, true, "Correction",
+      "Sets the strength of adaptive tonal correction." },
+    { "Low Weight", ControlKind::level, false, "Target",
+      "Adjusts the low-frequency target in dB." },
+    { "Presence", ControlKind::level, false, "Target",
+      "Adjusts the presence target in dB." },
+    { "Air", ControlKind::level, false, "Target",
+      "Adjusts the air-band target in dB." },
+    { "Adaptation", ControlKind::horizontal, true, "Timing",
+      "Sets how quickly the long-term balance follows the source." },
+    { "Detail", ControlKind::choice, false, "Correction",
+      "Chooses smooth, balanced, or detailed correction." },
+    { "Transient Preserve", ControlKind::horizontal, false, "Protection",
+      "Protects measured broadband transients from correction." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts the corrected output level." },
+    unused, unused, unused
+}};
+constexpr Metadata phaseCoherenceMetadata {{
+    { "Range", ControlKind::choice, true, "Analysis",
+      "Chooses the frequency range used for phase repair." },
+    { "Crossover", ControlKind::horizontal, true, "Analysis",
+      "Sets the upper edge of focused low-frequency repair." },
+    { "Correction", ControlKind::horizontal, true, "Repair",
+      "Sets the amount of confident delay and phase correction." },
+    { "Max Alignment", ControlKind::horizontal, false, "Repair",
+      "Limits interchannel time alignment in milliseconds." },
+    { "Phase Rotation", ControlKind::horizontal, false, "Repair",
+      "Limits all-pass phase rotation in degrees." },
+    { "Stereo Preserve", ControlKind::horizontal, true, "Stereo",
+      "Retains measured stereo difference during correction." },
+    { "Mono Below", ControlKind::horizontal, false, "Stereo",
+      "Sets the frequency below which output is explicitly mono." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after phase repair." },
+    unused, unused, unused, unused
+}};
+constexpr Metadata loudnessRiderMetadata {{
+    { "Target", ControlKind::level, true, "Loudness",
+      "Sets the momentary loudness target in LUFS." },
+    { "Range", ControlKind::horizontal, true, "Ride",
+      "Limits automatic fader movement in dB." },
+    { "Window", ControlKind::choice, false, "Loudness",
+      "Chooses the loudness observation window." },
+    { "Reaction", ControlKind::horizontal, true, "Ride",
+      "Sets how quickly ride gain follows programme changes." },
+    { "Lookahead", ControlKind::horizontal, false, "Ride",
+      "Sets predictive delay while preserving fixed host latency." },
+    { "Transient Hold", ControlKind::horizontal, false, "Protection",
+      "Delays ride changes around short transients." },
+    { "Crest Preserve", ControlKind::horizontal, true, "Protection",
+      "Protects measured peak-to-average contrast." },
+    { "Gate", ControlKind::level, false, "Loudness",
+      "Stops upward riding below this loudness." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after automatic riding." },
+    unused, unused, unused
+}};
+constexpr Metadata adaptiveClipperMetadata {{
+    { "Drive", ControlKind::level, true, "Clipping",
+      "Sets level into the adaptive clipping stage." },
+    { "Ceiling", ControlKind::level, true, "Clipping",
+      "Sets the final true-peak ceiling in dBTP." },
+    { "Style", ControlKind::choice, true, "Character",
+      "Chooses clean, punch, or dense adaptation." },
+    { "Shape", ControlKind::horizontal, false, "Character",
+      "Moves from a soft knee to hard clipping." },
+    { "Transient Bias", ControlKind::horizontal, true, "Detection",
+      "Prioritizes transient peaks or sustained body." },
+    { "Release", ControlKind::horizontal, false, "Detection",
+      "Sets recovery after clipping activity." },
+    { "Stereo Link", ControlKind::horizontal, false, "Stereo",
+      "Links clipping adaptation across channels." },
+    { "Oversampling", ControlKind::choice, false, "Quality",
+      "Selects 2x, 4x, or 8x oversampling at fixed latency." },
+    { "Auto Trim", ControlKind::toggle, true, "Output",
+      "Removes measured loudness added by Drive without boosting." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned dry and clipped audio." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the blend." },
+    unused
+}};
+constexpr Metadata spectralDelayCanvasMetadata {{
+    { "Sync", ControlKind::toggle, true, "Timing",
+      "Switches between milliseconds and musical divisions." },
+    { "Base Time", ControlKind::horizontal, true, "Timing",
+      "Sets the base spectral delay in milliseconds." },
+    { "Division", ControlKind::choice, true, "Timing",
+      "Sets the tempo-synced base delay." },
+    { "Low Delay", ControlKind::horizontal, true, "Canvas",
+      "Scales delay time for low frequencies." },
+    { "Mid Delay", ControlKind::horizontal, true, "Canvas",
+      "Scales delay time for mid frequencies." },
+    { "High Delay", ControlKind::horizontal, true, "Canvas",
+      "Scales delay time for high frequencies." },
+    { "Feedback", ControlKind::horizontal, true, "Regeneration",
+      "Returns delayed spectral energy to history." },
+    { "Diffusion", ControlKind::horizontal, false, "Texture",
+      "Spreads neighboring spectral delay times." },
+    { "Stereo Spread", ControlKind::horizontal, false, "Stereo",
+      "Offsets spectral history between channels." },
+    { "Freeze", ControlKind::toggle, false, "History",
+      "Stops writing new frames while history continues." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned dry and delayed spectra." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the blend." }
+}};
+constexpr Metadata formantForgeMetadata {{
+    { "Model", ControlKind::choice, true, "Tract",
+      "Chooses Human, Tube, Creature, or Metallic resonances." },
+    { "Vowel X", ControlKind::horizontal, true, "Vowel",
+      "Moves across the A to E vowel axis." },
+    { "Vowel Y", ControlKind::horizontal, true, "Vowel",
+      "Moves through the I, O, and U vowel field." },
+    { "Formant Shift", ControlKind::horizontal, true, "Tract",
+      "Moves resonances in semitones without shifting source pitch." },
+    { "Resonance", ControlKind::horizontal, true, "Tract",
+      "Sets formant emphasis and bandwidth." },
+    { "Breath", ControlKind::horizontal, false, "Excitation",
+      "Adds deterministic signal-gated breath excitation." },
+    { "Motion Rate", ControlKind::horizontal, false, "Motion",
+      "Sets vowel-field motion in hertz." },
+    { "Motion Depth", ControlKind::horizontal, false, "Motion",
+      "Sets motion distance through the vowel field." },
+    { "Stereo Spread", ControlKind::horizontal, false, "Stereo",
+      "Offsets formant motion between channels." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends dry and formant-shaped audio." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the blend." },
+    unused
+}};
+constexpr Metadata harmonicMirageMetadata {{
+    { "Mode", ControlKind::choice, true, "Resynthesis",
+      "Chooses Harmonic, Subharmonic, Hollow, or Metallic partials." },
+    { "Tracking", ControlKind::choice, true, "Analysis",
+      "Sets loose, musical, or tight partial tracking." },
+    { "Partials", ControlKind::horizontal, true, "Resynthesis",
+      "Sets the number of generated partials." },
+    { "Even / Odd", ControlKind::horizontal, true, "Resynthesis",
+      "Balances even and odd harmonic families." },
+    { "Inharmonicity", ControlKind::horizontal, false, "Resynthesis",
+      "Offsets upper partials from the harmonic series." },
+    { "Fine Drift", ControlKind::horizontal, false, "Motion",
+      "Sets deterministic pitch drift in cents." },
+    { "Response", ControlKind::horizontal, false, "Analysis",
+      "Sets partial lock and release timing." },
+    { "Transient Preserve", ControlKind::horizontal, true, "Protection",
+      "Keeps unpitched transients on the aligned source path." },
+    { "Stereo Spread", ControlKind::horizontal, false, "Stereo",
+      "Places generated partials across stereo." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends aligned source and generated partials." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the blend." },
+    unused
+}};
+constexpr Metadata chaosFieldMetadata {{
+    { "Attractor", ControlKind::choice, true, "Motion",
+      "Chooses Lorenz, Rossler, or Double Pendulum motion." },
+    { "Rate", ControlKind::horizontal, true, "Timing",
+      "Sets free attractor speed in hertz." },
+    { "Sync", ControlKind::toggle, true, "Timing",
+      "Switches attractor speed to musical divisions." },
+    { "Division", ControlKind::choice, true, "Timing",
+      "Sets tempo-synced attractor speed." },
+    { "Depth", ControlKind::horizontal, true, "Motion",
+      "Scales filter, delay, and pan modulation together." },
+    { "Filter Center", ControlKind::horizontal, true, "Filter",
+      "Sets the center of attractor-driven filtering." },
+    { "Delay Center", ControlKind::horizontal, false, "Delay",
+      "Sets the center fractional delay in milliseconds." },
+    { "Feedback", ControlKind::horizontal, true, "Delay",
+      "Sets signed filtered delay feedback." },
+    { "Pan Orbit", ControlKind::horizontal, false, "Stereo",
+      "Sets attractor-driven pan movement." },
+    { "Stereo Spread", ControlKind::horizontal, false, "Stereo",
+      "Offsets motion between channels." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends dry and attractor-modulated audio." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the blend." }
+}};
+constexpr Metadata timeMosaicMetadata {{
+    { "History", ControlKind::horizontal, true, "History",
+      "Sets the available spectral history in seconds." },
+    { "Tile Width", ControlKind::horizontal, true, "Tiles",
+      "Sets spectral tile bandwidth in octaves." },
+    { "Tile Time", ControlKind::horizontal, true, "Tiles",
+      "Sets how long each history assignment is held." },
+    { "Age", ControlKind::horizontal, true, "History",
+      "Biases tiles from present toward older history." },
+    { "Motion", ControlKind::horizontal, false, "Tiles",
+      "Sets how strongly tile ages evolve." },
+    { "Coherence", ControlKind::horizontal, true, "Tiles",
+      "Links neighboring tile history assignments." },
+    { "Pitch Drift", ControlKind::horizontal, false, "Texture",
+      "Sets upward spectral pitch drift in cents." },
+    { "Freeze", ControlKind::toggle, false, "History",
+      "Stops writing new spectral frames." },
+    { "Stereo Spread", ControlKind::horizontal, false, "Stereo",
+      "Offsets tile ages between channels." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends aligned source and reconstructed mosaic." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the blend." },
+    unused
+}};
 constexpr Names emptyNames { "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-" };
 constexpr Names eqNames {
     "Low Frequency", "Low Gain", "Low Q",
@@ -809,6 +1043,47 @@ constexpr Names analogTapeNames {
     "Machine", "Input", "Drive", "Bias", "Tape Speed", "Head Bump", "Wow",
     "Flutter", "Wear", "Noise", "Mix", "Output"
 };
+constexpr Names resonanceTamerNames {
+    "Reduction", "Selectivity", "Reaction", "Tone Bias", "Low Limit",
+    "High Limit", "Transient Preserve", "Mix", "Output", "-", "-", "-"
+};
+constexpr Names spectralBalanceNames {
+    "Contour", "Amount", "Low Weight", "Presence", "Air", "Adaptation",
+    "Detail", "Transient Preserve", "Output", "-", "-", "-"
+};
+constexpr Names phaseCoherenceNames {
+    "Range", "Crossover", "Correction", "Max Alignment", "Phase Rotation",
+    "Stereo Preserve", "Mono Below", "Output", "-", "-", "-", "-"
+};
+constexpr Names loudnessRiderNames {
+    "Target", "Range", "Window", "Reaction", "Lookahead", "Transient Hold",
+    "Crest Preserve", "Gate", "Output", "-", "-", "-"
+};
+constexpr Names adaptiveClipperNames {
+    "Drive", "Ceiling", "Style", "Shape", "Transient Bias", "Release",
+    "Stereo Link", "Oversampling", "Auto Trim", "Mix", "Output", "-"
+};
+constexpr Names spectralDelayCanvasNames {
+    "Sync", "Base Time", "Division", "Low Delay", "Mid Delay", "High Delay",
+    "Feedback", "Diffusion", "Stereo Spread", "Freeze", "Mix", "Output"
+};
+constexpr Names formantForgeNames {
+    "Model", "Vowel X", "Vowel Y", "Formant Shift", "Resonance", "Breath",
+    "Motion Rate", "Motion Depth", "Stereo Spread", "Mix", "Output", "-"
+};
+constexpr Names harmonicMirageNames {
+    "Mode", "Tracking", "Partials", "Even / Odd", "Inharmonicity",
+    "Fine Drift", "Response", "Transient Preserve", "Stereo Spread", "Mix",
+    "Output", "-"
+};
+constexpr Names chaosFieldNames {
+    "Attractor", "Rate", "Sync", "Division", "Depth", "Filter Center",
+    "Delay Center", "Feedback", "Pan Orbit", "Stereo Spread", "Mix", "Output"
+};
+constexpr Names timeMosaicNames {
+    "History", "Tile Width", "Tile Time", "Age", "Motion", "Coherence",
+    "Pitch Drift", "Freeze", "Stereo Spread", "Mix", "Output", "-"
+};
 const std::array<std::array<float, 16>, 3> premiumEarlyMilliseconds {{
     { 11.3f, 18.7f, 27.1f, 37.9f, 51.7f, 69.1f, 79.3f, 88.7f,
       99.1f, 111.7f, 125.3f, 140.9f, 158.3f, 177.7f, 199.1f, 223.9f },
@@ -874,6 +1149,18 @@ float parsedMilliseconds(const juce::String& text, float value)
     return text.containsIgnoreCase("s")
                && !text.containsIgnoreCase("ms")
                ? value * 1000.0f : value;
+}
+
+juce::String formatSeconds(float seconds)
+{
+    return seconds < 1.0f
+               ? juce::String(seconds * 1000.0f, 0) + " ms"
+               : juce::String(seconds, seconds < 10.0f ? 2 : 1) + " s";
+}
+
+float parsedSeconds(const juce::String& text, float value)
+{
+    return text.containsIgnoreCase("ms") ? value * 0.001f : value;
 }
 
 const char* roomScaleName(float percent)
@@ -1040,6 +1327,36 @@ ControlOptions optionsFor(ModuleType type, int control)
                    "Studer-Style Deck" }, 4 };
     if (type == ModuleType::analogTape && control == 4)
         return { { "3.75 ips", "7.5 ips", "15 ips", "30 ips" }, 4 };
+    if (type == ModuleType::resonanceTamer && control == 1)
+        return { { "Broad", "Focused", "Surgical" }, 3 };
+    if (type == ModuleType::resonanceTamer && control == 2)
+        return { { "Slow", "Natural", "Fast" }, 3 };
+    if (type == ModuleType::spectralBalance && control == 0)
+        return { { "Natural", "Warm", "Clear", "Vocal", "Flat" }, 5 };
+    if (type == ModuleType::spectralBalance && control == 6)
+        return { { "Smooth", "Balanced", "Detailed" }, 3 };
+    if (type == ModuleType::phaseCoherence && control == 0)
+        return { { "Low End", "Low + Mid", "Full Range" }, 3 };
+    if (type == ModuleType::loudnessRider && control == 2)
+        return { { "Short", "Medium", "Long" }, 3 };
+    if (type == ModuleType::adaptiveClipper && control == 2)
+        return { { "Clean", "Punch", "Dense" }, 3 };
+    if (type == ModuleType::adaptiveClipper && control == 7)
+        return { { "2x", "4x", "8x" }, 3 };
+    if (type == ModuleType::spectralDelayCanvas && control == 2)
+        return { { "1/32", "1/16", "1/8", "1/4",
+                   "1/2", "1 bar", "2 bars" }, 7 };
+    if (type == ModuleType::formantForge && control == 0)
+        return { { "Human", "Tube", "Creature", "Metallic" }, 4 };
+    if (type == ModuleType::harmonicMirage && control == 0)
+        return { { "Harmonic", "Subharmonic", "Hollow", "Metallic" }, 4 };
+    if (type == ModuleType::harmonicMirage && control == 1)
+        return { { "Loose", "Musical", "Tight" }, 3 };
+    if (type == ModuleType::chaosField && control == 0)
+        return { { "Lorenz", "Rossler", "Double Pendulum" }, 3 };
+    if (type == ModuleType::chaosField && control == 3)
+        return { { "1 bar", "1/2", "1/4.", "1/4",
+                   "1/8.", "1/8", "1/16.", "1/16" }, 8 };
     return {};
 }
 
@@ -1347,6 +1664,98 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 0.30f, 0.5f, discreteValue(2, 4),
                 0.35f, 0.20f, 0.20f, 0.15f, 0.20f, 1.0f,
                 linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::resonanceTamer:
+            values = {
+                6.0f / 18.0f, discreteValue(1, 3), discreteValue(1, 3),
+                0.5f, exponentialNormalized(20.0f, 2000.0f, 80.0f),
+                exponentialNormalized(1000.0f, 20000.0f, 12000.0f),
+                0.65f, 1.0f, linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.5f, 0.5f, 0.5f
+            };
+            break;
+        case ModuleType::spectralBalance:
+            values = {
+                discreteValue(0, 5), 0.5f, 0.5f, 0.5f, 0.5f,
+                exponentialNormalized(0.5f, 30.0f, 5.0f),
+                discreteValue(1, 3), 0.65f,
+                linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.5f, 0.5f, 0.5f
+            };
+            break;
+        case ModuleType::phaseCoherence:
+            values = {
+                discreteValue(0, 3),
+                exponentialNormalized(40.0f, 800.0f, 180.0f),
+                0.75f, 0.5f, 0.5f, 0.75f,
+                exponentialNormalized(20.0f, 500.0f, 40.0f),
+                linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.5f, 0.5f, 0.5f, 0.5f
+            };
+            break;
+        case ModuleType::loudnessRider:
+            values = {
+                linearNormalized(-36.0f, -8.0f, -20.0f), 0.5f,
+                discreteValue(1, 3),
+                exponentialNormalized(0.25f, 10.0f, 1.5f),
+                100.0f / 250.0f, 0.5f, 0.65f,
+                linearNormalized(-70.0f, -30.0f, -56.0f),
+                linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.5f, 0.5f, 0.5f
+            };
+            break;
+        case ModuleType::adaptiveClipper:
+            values = {
+                6.0f / 24.0f,
+                linearNormalized(-12.0f, 0.0f, -1.0f),
+                discreteValue(0, 3), 0.65f, 0.55f,
+                exponentialNormalized(20.0f, 1000.0f, 120.0f),
+                1.0f, discreteValue(1, 3), 1.0f, 1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f), 0.5f
+            };
+            break;
+        case ModuleType::spectralDelayCanvas:
+            values = {
+                1.0f, exponentialNormalized(10.0f, 4000.0f, 500.0f),
+                discreteValue(3, 7), 0.5f, 0.75f, 1.0f,
+                0.35f, 0.25f, 0.50f, 0.0f, 0.35f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::formantForge:
+            values = {
+                discreteValue(0, 4), 0.35f, 0.45f, 0.5f, 0.45f,
+                0.12f, exponentialNormalized(0.02f, 6.0f, 0.15f),
+                0.15f, 0.35f, 1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f), 0.5f
+            };
+            break;
+        case ModuleType::harmonicMirage:
+            values = {
+                discreteValue(0, 4), discreteValue(1, 3),
+                6.0f / 22.0f, 0.5f, 0.10f,
+                0.10f, 0.5f,
+                0.65f, 0.35f, 0.35f,
+                linearNormalized(-18.0f, 12.0f, 0.0f), 0.5f
+            };
+            break;
+        case ModuleType::chaosField:
+            values = {
+                discreteValue(0, 3),
+                exponentialNormalized(0.015f, 7.0f, 0.15f),
+                0.0f, discreteValue(3, 8), 0.50f,
+                exponentialNormalized(80.0f, 10000.0f, 1200.0f),
+                exponentialNormalized(2.0f, 600.0f, 40.0f),
+                0.50f, 0.70f, 0.60f, 0.45f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::timeMosaic:
+            values = {
+                0.5f, 0.35f, 0.45f,
+                0.5f, 0.4f, 0.75f, 0.0f, 0.0f, 0.50f, 0.35f,
+                linearNormalized(-18.0f, 12.0f, 0.0f), 0.5f
             };
             break;
         case ModuleType::empty: break;
@@ -1781,6 +2190,105 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 11)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
+        case ModuleType::resonanceTamer:
+            if (control == 0) return juce::String(value * 18.0f, 1) + " dB";
+            if (control == 3) return juce::String(linear(-3.0f, 3.0f, value), 1) + " dB/oct";
+            if (control == 4) return formatFrequency(exponential(20.0f, 2000.0f, value));
+            if (control == 5) return formatFrequency(exponential(1000.0f, 20000.0f, value));
+            if (control == 6 || control == 7)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 8) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::spectralBalance:
+            if (control == 1 || control == 7)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control >= 2 && control <= 4)
+                return juce::String(linear(-6.0f, 6.0f, value), 1) + " dB";
+            if (control == 5) return formatSeconds(exponential(0.5f, 30.0f, value));
+            if (control == 8) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::phaseCoherence:
+            if (control == 1) return formatFrequency(exponential(40.0f, 800.0f, value));
+            if (control == 2 || control == 5)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 3) return juce::String(value * 2.0f, 2) + " ms";
+            if (control == 4)
+                return juce::String(value * 180.0f, 0)
+                       + juce::String::charToString(0x00b0);
+            if (control == 6) return formatFrequency(exponential(20.0f, 500.0f, value));
+            if (control == 7) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::loudnessRider:
+            if (control == 0) return juce::String(linear(-36.0f, -8.0f, value), 1) + " LUFS";
+            if (control == 1) return juce::String(value * 18.0f, 1) + " dB";
+            if (control == 3) return formatSeconds(exponential(0.25f, 10.0f, value));
+            if (control == 4) return juce::String(value * 250.0f, 0) + " ms";
+            if (control == 5 || control == 6)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 7) return juce::String(linear(-70.0f, -30.0f, value), 1) + " LUFS";
+            if (control == 8) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::adaptiveClipper:
+            if (control == 0) return juce::String(value * 24.0f, 1) + " dB";
+            if (control == 1) return juce::String(linear(-12.0f, 0.0f, value), 1) + " dBTP";
+            if (control == 3 || control == 4 || control == 6 || control == 9)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 5) return juce::String(exponential(20.0f, 1000.0f, value), 0) + " ms";
+            if (control == 10) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::spectralDelayCanvas:
+            if (control == 1) return formatGrainSize(exponential(10.0f, 4000.0f, value));
+            if (control >= 3 && control <= 5)
+                return juce::String(value * 200.0f, 0) + "%";
+            if (control == 6) return juce::String(value * 90.0f, 0) + "%";
+            if (control == 7) return juce::String(value * 70.0f, 0) + "%";
+            if (control == 8 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 11) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::formantForge:
+            if (control == 1 || control == 2 || control == 4 || control == 5
+                || control == 7 || control == 8 || control == 9)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 3)
+                return juce::String(linear(-24.0f, 24.0f, value), 1) + " st";
+            if (control == 6) return juce::String(exponential(0.02f, 6.0f, value), 2) + " Hz";
+            if (control == 10) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::harmonicMirage:
+            if (control == 2) return juce::String(
+                juce::roundToInt(linear(2.0f, 24.0f, value)));
+            if (control == 3)
+                return juce::String(linear(-100.0f, 100.0f, value), 0) + "%";
+            if (control == 4 || control == 7 || control == 8 || control == 9)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 5) return juce::String(value * 30.0f, 1) + " cents";
+            if (control == 6) return formatSeconds(exponential(0.02f, 2.0f, value));
+            if (control == 10) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::chaosField:
+            if (control == 1) return juce::String(exponential(0.015f, 7.0f, value), 2) + " Hz";
+            if (control == 4 || control == 8 || control == 9 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 5) return formatFrequency(exponential(80.0f, 10000.0f, value));
+            if (control == 6) return juce::String(exponential(2.0f, 600.0f, value), 1) + " ms";
+            if (control == 7) return juce::String(linear(-88.0f, 88.0f, value), 0) + "%";
+            if (control == 11) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::timeMosaic:
+            if (control == 0) return formatSeconds(exponential(0.25f, 8.0f, value));
+            if (control == 1)
+                return juce::String(
+                    exponential(1.0f / 24.0f, 3.0f, value), 2) + " oct";
+            if (control == 2)
+                return juce::String(
+                    exponential(0.01f, 0.5f, value) * 1000.0f, 0) + " ms";
+            if (control == 3 || control == 4 || control == 5 || control == 8
+                || control == 9)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 6) return juce::String(value * 50.0f, 1) + " cents";
+            if (control == 10) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
         case ModuleType::empty: break;
     }
     return juce::String(value * 100.0f, 0) + "%";
@@ -2186,6 +2694,116 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             }
             if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
             break;
+        case ModuleType::resonanceTamer:
+            if (control == 0) return juce::jlimit(0.0f, 1.0f, value / 18.0f);
+            if (control == 3) return linearNormalized(-3.0f, 3.0f, value);
+            if (control == 4) return exponentialNormalized(
+                20.0f, 2000.0f, parsedFrequency(text, value));
+            if (control == 5) return exponentialNormalized(
+                1000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 6 || control == 7)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 8) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::spectralBalance:
+            if (control == 1 || control == 7)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control >= 2 && control <= 4)
+                return linearNormalized(-6.0f, 6.0f, value);
+            if (control == 5) return exponentialNormalized(
+                0.5f, 30.0f, parsedSeconds(text, value));
+            if (control == 8) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::phaseCoherence:
+            if (control == 1) return exponentialNormalized(
+                40.0f, 800.0f, parsedFrequency(text, value));
+            if (control == 2 || control == 5)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 3)
+                return juce::jlimit(0.0f, 1.0f, parsedMilliseconds(text, value) / 2.0f);
+            if (control == 4) return linearNormalized(0.0f, 180.0f, value);
+            if (control == 6) return exponentialNormalized(
+                20.0f, 500.0f, parsedFrequency(text, value));
+            if (control == 7) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::loudnessRider:
+            if (control == 0) return linearNormalized(-36.0f, -8.0f, value);
+            if (control == 1) return juce::jlimit(0.0f, 1.0f, value / 18.0f);
+            if (control == 3) return exponentialNormalized(
+                0.25f, 10.0f, parsedSeconds(text, value));
+            if (control == 4)
+                return juce::jlimit(0.0f, 1.0f, parsedMilliseconds(text, value) / 250.0f);
+            if (control == 5 || control == 6)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 7) return linearNormalized(-70.0f, -30.0f, value);
+            if (control == 8) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::adaptiveClipper:
+            if (control == 0) return juce::jlimit(0.0f, 1.0f, value / 24.0f);
+            if (control == 1) return linearNormalized(-12.0f, 0.0f, value);
+            if (control == 3 || control == 4 || control == 6 || control == 9)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 5) return exponentialNormalized(
+                20.0f, 1000.0f, parsedMilliseconds(text, value));
+            if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::spectralDelayCanvas:
+            if (control == 1) return exponentialNormalized(
+                10.0f, 4000.0f, parsedMilliseconds(text, value));
+            if (control >= 3 && control <= 5)
+                return juce::jlimit(0.0f, 1.0f, value / 200.0f);
+            if (control == 6)
+                return juce::jlimit(0.0f, 1.0f, value / 90.0f);
+            if (control == 7)
+                return juce::jlimit(0.0f, 1.0f, value / 70.0f);
+            if (control == 8 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::formantForge:
+            if (control == 1 || control == 2 || control == 4 || control == 5
+                || control == 7 || control == 8 || control == 9)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 3) return linearNormalized(-24.0f, 24.0f, value);
+            if (control == 6) return exponentialNormalized(0.02f, 6.0f, value);
+            if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::harmonicMirage:
+            if (control == 2) return linearNormalized(2.0f, 24.0f, value);
+            if (control == 3) return linearNormalized(-100.0f, 100.0f, value);
+            if (control == 4 || control == 7 || control == 8 || control == 9)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 5)
+                return juce::jlimit(0.0f, 1.0f, value / 30.0f);
+            if (control == 6) return exponentialNormalized(
+                0.02f, 2.0f, parsedSeconds(text, value));
+            if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::chaosField:
+            if (control == 1) return exponentialNormalized(0.015f, 7.0f, value);
+            if (control == 4 || control == 8 || control == 9 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 5) return exponentialNormalized(
+                80.0f, 10000.0f, parsedFrequency(text, value));
+            if (control == 6) return exponentialNormalized(
+                2.0f, 600.0f, parsedMilliseconds(text, value));
+            if (control == 7) return linearNormalized(-88.0f, 88.0f, value);
+            if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::timeMosaic:
+            if (control == 0) return exponentialNormalized(
+                0.25f, 8.0f, parsedSeconds(text, value));
+            if (control == 1) return exponentialNormalized(
+                1.0f / 24.0f, 3.0f, value);
+            if (control == 2) return exponentialNormalized(
+                0.01f, 0.5f, parsedMilliseconds(text, value) * 0.001f);
+            if (control == 3 || control == 4 || control == 5 || control == 8
+                || control == 9)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 6)
+                return juce::jlimit(0.0f, 1.0f, value / 50.0f);
+            if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
+            break;
         case ModuleType::empty: break;
     }
     return juce::jlimit(0.0f, 1.0f, value / 100.0f);
@@ -2261,6 +2879,18 @@ bool isControlContextuallyVisible(
             if (control == 2)
                 return values[1] >= 0.5f;
             break;
+        case ModuleType::spectralDelayCanvas:
+            if (control == 1)
+                return values[0] < 0.5f;
+            if (control == 2)
+                return values[0] >= 0.5f;
+            break;
+        case ModuleType::chaosField:
+            if (control == 1)
+                return values[2] < 0.5f;
+            if (control == 3)
+                return values[2] >= 0.5f;
+            break;
         case ModuleType::empty:
         case ModuleType::equalizer:
         case ModuleType::saturator:
@@ -2280,6 +2910,14 @@ bool isControlContextuallyVisible(
         case ModuleType::frequencyLab:
         case ModuleType::signalDecay:
         case ModuleType::analogTape:
+        case ModuleType::resonanceTamer:
+        case ModuleType::spectralBalance:
+        case ModuleType::phaseCoherence:
+        case ModuleType::loudnessRider:
+        case ModuleType::adaptiveClipper:
+        case ModuleType::formantForge:
+        case ModuleType::harmonicMirage:
+        case ModuleType::timeMosaic:
             break;
     }
     return true;
@@ -2561,7 +3199,89 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "tape saturation reel cassette wow flutter analog warmth",
             analogTapeNames, analogTapeMetadata,
             &makeModule<AnalogTapeModule>,
-            ModuleCapability::continuousTelemetry)
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::resonanceTamer, ModulePresentation::resonanceTamer,
+            "Resonance Tamer", ModuleCategory::eqAndFilters,
+            "Detect and suppress narrow resonances while preserving broad tone and transients.",
+            "adaptive resonance suppression spectral dynamic eq harshness",
+            resonanceTamerNames, resonanceTamerMetadata,
+            &makeModule<ResonanceTamerModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::spectralBalance, ModulePresentation::spectralBalance,
+            "Spectral Balance", ModuleCategory::eqAndFilters,
+            "Guide long-term tonal balance toward a musical target contour.",
+            "adaptive spectral tonal balance contour automatic eq",
+            spectralBalanceNames, spectralBalanceMetadata,
+            &makeModule<SpectralBalanceModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::phaseCoherence, ModulePresentation::phaseCoherence,
+            "Phase Coherence", ModuleCategory::stereoAndUtility,
+            "Repair confident stereo timing and low-frequency phase mismatches.",
+            "phase coherence correlation alignment mono stereo utility",
+            phaseCoherenceNames, phaseCoherenceMetadata,
+            &makeModule<PhaseCoherenceModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::loudnessRider, ModulePresentation::loudnessRider,
+            "Loudness Rider", ModuleCategory::dynamics,
+            "Ride long-term loudness with a bounded transparent fader trajectory.",
+            "loudness rider lufs gain automation dynamics level",
+            loudnessRiderNames, loudnessRiderMetadata,
+            &makeModule<LoudnessRiderModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::adaptiveClipper, ModulePresentation::adaptiveClipper,
+            "Adaptive Clipper", ModuleCategory::dynamics,
+            "Clip transient and body energy with adaptive shape and true-peak awareness.",
+            "adaptive clipper clipping peak loudness transient oversampling",
+            adaptiveClipperNames, adaptiveClipperMetadata,
+            &makeModule<AdaptiveClipperModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::spectralDelayCanvas,
+            ModulePresentation::spectralDelayCanvas,
+            "Spectral Delay Canvas", ModuleCategory::delayAndEcho,
+            "Send low, mid, and high frequencies through independently timed spectral echoes.",
+            "spectral delay echo frequency canvas freeze diffusion",
+            spectralDelayCanvasNames, spectralDelayCanvasMetadata,
+            &makeModule<SpectralDelayCanvasModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::formantForge, ModulePresentation::formantForge,
+            "Formant Forge", ModuleCategory::glitchAndCreative,
+            "Sculpt animated vocal-tract resonances without shifting source pitch.",
+            "formant vowel vocal tract filter creature metallic creative",
+            formantForgeNames, formantForgeMetadata,
+            &makeModule<FormantForgeModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::harmonicMirage, ModulePresentation::harmonicMirage,
+            "Harmonic Mirage", ModuleCategory::saturationAndColor,
+            "Track and transform confident partials into phase-continuous harmonic layers.",
+            "harmonic partial resynthesis subharmonic inharmonic color",
+            harmonicMirageNames, harmonicMirageMetadata,
+            &makeModule<HarmonicMirageModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::chaosField, ModulePresentation::chaosField,
+            "Chaos Field", ModuleCategory::modulation,
+            "Drive filter, delay, and stereo motion from deterministic chaotic attractors.",
+            "chaos attractor lorenz rossler modulation orbit delay filter",
+            chaosFieldNames, chaosFieldMetadata,
+            &makeModule<ChaosFieldModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::timeMosaic, ModulePresentation::timeMosaic,
+            "Time Mosaic", ModuleCategory::glitchAndCreative,
+            "Reassemble spectral tiles from recent history into evolving time-frequency textures.",
+            "spectral history mosaic tile freeze glitch time creative",
+            timeMosaicNames, timeMosaicMetadata,
+            &makeModule<TimeMosaicModule>,
+            ModuleCapability::continuousTelemetry
+                | ModuleCapability::eventTelemetry)
     }};
     return definitions;
 }

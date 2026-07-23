@@ -1,6 +1,6 @@
 # Effects reference
 
-Detailed control and interaction notes for each of megaDSP's twenty-nine modules. For installation and a quick overview see the [README](../README.md).
+Detailed control and interaction notes for each of megaDSP's thirty-nine modules. For installation and a quick overview see the [README](../README.md).
 
 Runtime-specific graphs show **DSP telemetry waiting** until the selected slot
 has processed an audio block. After capture begins, an empty event field means
@@ -295,3 +295,97 @@ bounded wear modulation provide movement and age without runtime allocation.
 The reel graphic follows captured DSP transport phase and reports actual
 wow/flutter offset, dropout gain, and signal envelope rather than advancing on
 the editor timer.
+
+---
+
+## Resonance Tamer
+
+Finds narrow energy above a local spectral baseline and applies bounded,
+frequency-smoothed reduction. Selectivity and Reaction set how precisely and
+quickly it acts; Tone Bias, Low/High Limit, and Transient Preserve keep the
+result musical. The graph separates measured input, baseline, detected excess,
+and actual reduction.
+
+---
+
+## Spectral Balance
+
+Tracks long-term perceptual-band energy and gradually guides it toward Natural,
+Warm, Clear, Vocal, or Flat contours. Low Weight, Presence, Air, Detail, and
+Transient Preserve shape a broad zero-mean correction rather than adding static
+makeup gain. The graph shows measured energy, target anchors, and correction.
+
+---
+
+## Phase Coherence
+
+Estimates internal left/right timing and phase mismatch, then corrects only
+high-confidence material. Range, Crossover, maximum alignment, phase rotation,
+Stereo Preserve, and Mono Below define safe boundaries. Mono and already
+coherent signals remain effectively unchanged; the graph shows before/after
+correlation and the correction actually applied.
+
+---
+
+## Loudness Rider
+
+Uses gated K-weighted loudness to move a bounded fader toward the selected LUFS
+target. Window, Reaction, fixed-latency Lookahead, Transient Hold, and Crest
+Preserve separate long-term riding from compression. Its history plots measured
+loudness, target, gate, and ride gain.
+
+---
+
+## Adaptive Clipper
+
+Classifies fast transient and slower body energy to continuously adapt its
+clipping knee. Clean, Punch, and Dense styles combine with Shape, Transient
+Bias, Release, Stereo Link, prepared 2x/4x/8x oversampling, Auto Trim, and a
+dBTP Ceiling. Waveform and event views report actual clipped energy and margin.
+
+---
+
+## Spectral Delay Canvas
+
+Stores spectral frames and reads low, mid, and high frequency regions at
+independent delay offsets. Free time or host divisions set the base, while
+Feedback, Diffusion, Stereo Spread, and Freeze evolve the canvas. The display
+follows measured energy moving through frequency and history.
+
+---
+
+## Formant Forge
+
+Interpolates stable vocal-tract filterbanks across a directly editable vowel
+field. Human, Tube, Creature, and Metallic models respond to Formant Shift,
+Resonance, signal-gated Breath, Motion, and Stereo Spread without shifting the
+source pitch. Live formant positions come from captured DSP state.
+
+---
+
+## Harmonic Mirage
+
+Tracks confident partials and resynthesizes phase-continuous Harmonic,
+Subharmonic, Hollow, or Metallic layers. Tracking, partial count, Even/Odd
+weighting, Inharmonicity, Fine Drift, Response, and Transient Preserve define
+the transformation. The graph distinguishes measured and generated partials.
+
+---
+
+## Chaos Field
+
+Integrates deterministic Lorenz, Rossler, or double-pendulum-style attractors
+and maps their captured axes to filter, fractional delay, pan, and stereo
+motion. It can run freely or from host divisions; bounded signed Feedback and
+continuous state keep transitions stable. The visible trail is the trajectory
+used by the audio DSP.
+
+---
+
+## Time Mosaic
+
+Partitions recent spectral history into frequency tiles and reconstructs them
+from evolving ages. History, tile width/time, Age, Motion, Coherence, Pitch
+Drift, Freeze, and Stereo Spread create deterministic rearrangements while
+preserving phase within tiles. The map displays actual tile assignments and
+reassignment events.

@@ -1146,11 +1146,82 @@ public:
             0.35f, 0.20f, 0.20f, 0.15f, 0.20f, 1.0f,
             linearDefault(-18.0f, 12.0f, 0.0f)
         });
+        expectDefaults(megadsp::ModuleType::resonanceTamer, {
+            6.0f / 18.0f, megadsp::discreteValue(1, 3),
+            megadsp::discreteValue(1, 3), 0.5f,
+            exponentialDefault(20.0f, 2000.0f, 80.0f),
+            exponentialDefault(1000.0f, 20000.0f, 12000.0f),
+            0.65f, 1.0f, linearDefault(-18.0f, 12.0f, 0.0f),
+            0.5f, 0.5f, 0.5f
+        });
+        expectDefaults(megadsp::ModuleType::spectralBalance, {
+            megadsp::discreteValue(0, 5), 0.5f, 0.5f, 0.5f, 0.5f,
+            exponentialDefault(0.5f, 30.0f, 5.0f),
+            megadsp::discreteValue(1, 3), 0.65f,
+            linearDefault(-18.0f, 12.0f, 0.0f),
+            0.5f, 0.5f, 0.5f
+        });
+        expectDefaults(megadsp::ModuleType::phaseCoherence, {
+            megadsp::discreteValue(0, 3),
+            exponentialDefault(40.0f, 800.0f, 180.0f),
+            0.75f, 0.5f, 0.5f, 0.75f,
+            exponentialDefault(20.0f, 500.0f, 40.0f),
+            linearDefault(-18.0f, 12.0f, 0.0f),
+            0.5f, 0.5f, 0.5f, 0.5f
+        });
+        expectDefaults(megadsp::ModuleType::loudnessRider, {
+            linearDefault(-36.0f, -8.0f, -20.0f), 0.5f,
+            megadsp::discreteValue(1, 3),
+            exponentialDefault(0.25f, 10.0f, 1.5f),
+            0.4f, 0.5f, 0.65f,
+            linearDefault(-70.0f, -30.0f, -56.0f),
+            linearDefault(-18.0f, 12.0f, 0.0f),
+            0.5f, 0.5f, 0.5f
+        });
+        expectDefaults(megadsp::ModuleType::adaptiveClipper, {
+            0.25f, linearDefault(-12.0f, 0.0f, -1.0f),
+            megadsp::discreteValue(0, 3), 0.65f, 0.55f,
+            exponentialDefault(20.0f, 1000.0f, 120.0f),
+            1.0f, megadsp::discreteValue(1, 3), 1.0f, 1.0f,
+            linearDefault(-18.0f, 12.0f, 0.0f), 0.5f
+        });
+        expectDefaults(megadsp::ModuleType::spectralDelayCanvas, {
+            1.0f, exponentialDefault(10.0f, 4000.0f, 500.0f),
+            megadsp::discreteValue(3, 7), 0.5f, 0.75f, 1.0f,
+            0.35f, 0.25f, 0.5f, 0.0f, 0.35f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
+        expectDefaults(megadsp::ModuleType::formantForge, {
+            megadsp::discreteValue(0, 4), 0.35f, 0.45f, 0.5f, 0.45f,
+            0.12f, exponentialDefault(0.02f, 6.0f, 0.15f),
+            0.15f, 0.35f, 1.0f,
+            linearDefault(-18.0f, 12.0f, 0.0f), 0.5f
+        });
+        expectDefaults(megadsp::ModuleType::harmonicMirage, {
+            megadsp::discreteValue(0, 4), megadsp::discreteValue(1, 3),
+            6.0f / 22.0f, 0.5f, 0.10f, 0.10f, 0.5f,
+            0.65f, 0.35f, 0.35f,
+            linearDefault(-18.0f, 12.0f, 0.0f), 0.5f
+        });
+        expectDefaults(megadsp::ModuleType::chaosField, {
+            megadsp::discreteValue(0, 3),
+            exponentialDefault(0.015f, 7.0f, 0.15f),
+            0.0f, megadsp::discreteValue(3, 8), 0.50f,
+            exponentialDefault(80.0f, 10000.0f, 1200.0f),
+            exponentialDefault(2.0f, 600.0f, 40.0f),
+            0.50f, 0.70f, 0.60f, 0.45f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
+        expectDefaults(megadsp::ModuleType::timeMosaic, {
+            0.5f, 0.35f, 0.45f,
+            0.5f, 0.4f, 0.75f, 0.0f, 0.0f, 0.5f, 0.35f,
+            linearDefault(-18.0f, 12.0f, 0.0f), 0.5f
+        });
 
         beginTest("Host parameter contract remains fixed");
-        expectEquals(megadsp::moduleTypeCount, 30);
+        expectEquals(megadsp::moduleTypeCount, 40);
         expectEquals(megadsp::stateSchemaVersion, 7);
-        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 30);
+        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 40);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
         expectEquals(static_cast<int>(megadsp::ModuleType::compressor), 2);
@@ -1200,7 +1271,27 @@ public:
                          megadsp::ModuleType::signalDecay), 28);
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::analogTape), 29);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 30);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::resonanceTamer), 30);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::spectralBalance), 31);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::phaseCoherence), 32);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::loudnessRider), 33);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::adaptiveClipper), 34);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::spectralDelayCanvas), 35);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::formantForge), 36);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::harmonicMirage), 37);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::chaosField), 38);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::timeMosaic), 39);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 40);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1233,7 +1324,7 @@ public:
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 30);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 40);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1256,6 +1347,7 @@ public:
                                 ? megadsp::ModuleCapability::
                                       beatPermutationVisualization
                           : type == megadsp::ModuleType::signalDecay
+                              || type == megadsp::ModuleType::timeMosaic
                           ? megadsp::ModuleCapability::continuousTelemetry
                                 | megadsp::ModuleCapability::eventTelemetry
                           : type == megadsp::ModuleType::diffusionDelay
@@ -1266,6 +1358,15 @@ public:
                               || type == megadsp::ModuleType::frequencyLab
                               || type == megadsp::ModuleType::spatialOrbit
                               || type == megadsp::ModuleType::analogTape
+                              || type == megadsp::ModuleType::resonanceTamer
+                              || type == megadsp::ModuleType::spectralBalance
+                              || type == megadsp::ModuleType::phaseCoherence
+                              || type == megadsp::ModuleType::loudnessRider
+                              || type == megadsp::ModuleType::adaptiveClipper
+                              || type == megadsp::ModuleType::spectralDelayCanvas
+                              || type == megadsp::ModuleType::formantForge
+                              || type == megadsp::ModuleType::harmonicMirage
+                              || type == megadsp::ModuleType::chaosField
                               || type == megadsp::ModuleType::gateExpander
                               || type == megadsp::ModuleType::transientDesigner
                               || type
@@ -1491,6 +1592,12 @@ public:
         expectCategory(megadsp::ModuleType::dynamicEqualizer,
                       megadsp::ModuleCategory::eqAndFilters,
                       "EQ & Filters");
+        expectCategory(megadsp::ModuleType::resonanceTamer,
+                      megadsp::ModuleCategory::eqAndFilters,
+                      "EQ & Filters");
+        expectCategory(megadsp::ModuleType::spectralBalance,
+                      megadsp::ModuleCategory::eqAndFilters,
+                      "EQ & Filters");
         expectCategory(megadsp::ModuleType::compressor,
                       megadsp::ModuleCategory::dynamics, "Dynamics");
         expectCategory(megadsp::ModuleType::limiter,
@@ -1501,6 +1608,10 @@ public:
                       megadsp::ModuleCategory::dynamics, "Dynamics");
         expectCategory(megadsp::ModuleType::multibandCompressor,
                       megadsp::ModuleCategory::dynamics, "Dynamics");
+        expectCategory(megadsp::ModuleType::loudnessRider,
+                      megadsp::ModuleCategory::dynamics, "Dynamics");
+        expectCategory(megadsp::ModuleType::adaptiveClipper,
+                      megadsp::ModuleCategory::dynamics, "Dynamics");
         expectCategory(megadsp::ModuleType::saturator,
                       megadsp::ModuleCategory::saturationAndColor,
                       "Saturation & Color");
@@ -1510,10 +1621,16 @@ public:
         expectCategory(megadsp::ModuleType::analogTape,
                       megadsp::ModuleCategory::saturationAndColor,
                       "Saturation & Color");
+        expectCategory(megadsp::ModuleType::harmonicMirage,
+                      megadsp::ModuleCategory::saturationAndColor,
+                      "Saturation & Color");
         expectCategory(megadsp::ModuleType::delay,
                       megadsp::ModuleCategory::delayAndEcho,
                       "Delay & Echo");
         expectCategory(megadsp::ModuleType::diffusionDelay,
+                      megadsp::ModuleCategory::delayAndEcho,
+                      "Delay & Echo");
+        expectCategory(megadsp::ModuleType::spectralDelayCanvas,
                       megadsp::ModuleCategory::delayAndEcho,
                       "Delay & Echo");
         expectCategory(megadsp::ModuleType::algorithmicReverb,
@@ -1533,13 +1650,15 @@ public:
                 megadsp::ModuleType::rotarySpeaker,
                 megadsp::ModuleType::vintageChorus,
                 megadsp::ModuleType::studioPhaser,
-                megadsp::ModuleType::studioFlanger })
+                megadsp::ModuleType::studioFlanger,
+                megadsp::ModuleType::chaosField })
             expectCategory(type, megadsp::ModuleCategory::modulation,
                           "Modulation");
         for (const auto type : {
                 megadsp::ModuleType::stereoWidth,
                 megadsp::ModuleType::midSideDecoder,
-                megadsp::ModuleType::spatialOrbit })
+                megadsp::ModuleType::spatialOrbit,
+                megadsp::ModuleType::phaseCoherence })
             expectCategory(type, megadsp::ModuleCategory::stereoAndUtility,
                           "Stereo & Utility");
         for (const auto type : {
@@ -1547,7 +1666,9 @@ public:
                 megadsp::ModuleType::beatPermuter,
                 megadsp::ModuleType::spectralPrism,
                 megadsp::ModuleType::wavefoldGarden,
-                megadsp::ModuleType::frequencyLab })
+                megadsp::ModuleType::frequencyLab,
+                megadsp::ModuleType::formantForge,
+                megadsp::ModuleType::timeMosaic })
             expectCategory(type, megadsp::ModuleCategory::glitchAndCreative,
                           "Glitch & Creative");
         expect(megadsp::moduleDefinition(megadsp::ModuleType::empty).category

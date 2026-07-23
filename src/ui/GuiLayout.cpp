@@ -40,7 +40,9 @@ juce::String toggleState(
         || ((type == ModuleType::studioPhaser
              || type == ModuleType::studioFlanger
              || type == ModuleType::spatialOrbit) && control == 2)
-        || (type == ModuleType::diffusionDelay && control == 1))
+        || (type == ModuleType::diffusionDelay && control == 1)
+        || (type == ModuleType::spectralDelayCanvas && control == 0)
+        || (type == ModuleType::chaosField && control == 2))
         return state ? "Tempo" : "Free";
     if (type == ModuleType::midSideDecoder && control == 1)
         return state ? "Swapped" : "Normal";
@@ -159,6 +161,16 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::spatialOrbit: return "Orbit";
         case ModuleType::signalDecay: return "Decay";
         case ModuleType::analogTape: return "Tape";
+        case ModuleType::resonanceTamer: return "Tamer";
+        case ModuleType::spectralBalance: return "Balance";
+        case ModuleType::phaseCoherence: return "Phase";
+        case ModuleType::loudnessRider: return "Rider";
+        case ModuleType::adaptiveClipper: return "Clip";
+        case ModuleType::spectralDelayCanvas: return "SpDelay";
+        case ModuleType::formantForge: return "Formant";
+        case ModuleType::harmonicMirage: return "Mirage";
+        case ModuleType::chaosField: return "Chaos";
+        case ModuleType::timeMosaic: return "Mosaic";
         case ModuleType::empty:
         case ModuleType::delay:
         case ModuleType::limiter:

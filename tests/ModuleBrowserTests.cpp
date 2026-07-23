@@ -51,7 +51,7 @@ public:
         beginTest("Category matching supports multiple tokens");
         const auto colorModules = flatten(
             megadsp::ui::filterAndGroupModules("SATURATION & color"));
-        expectEquals(static_cast<int>(colorModules.size()), 3);
+        expectEquals(static_cast<int>(colorModules.size()), 4);
         expect(std::find(colorModules.begin(), colorModules.end(),
                          megadsp::ModuleType::saturator)
                != colorModules.end());
@@ -60,6 +60,9 @@ public:
                != colorModules.end());
         expect(std::find(colorModules.begin(), colorModules.end(),
                         megadsp::ModuleType::analogTape)
+               != colorModules.end());
+        expect(std::find(colorModules.begin(), colorModules.end(),
+                        megadsp::ModuleType::harmonicMirage)
                != colorModules.end());
 
         beginTest("Description matching finds module copy");
@@ -107,6 +110,32 @@ public:
         for (const auto& [query, expected] : nextTenSearches)
             expectOnly(query, expected);
 
+        beginTest("Differentiating module search identities are unique");
+        const std::array differentiatingSearches {
+            std::pair { "adaptive resonance suppression",
+                        megadsp::ModuleType::resonanceTamer },
+            std::pair { "tonal balance contour",
+                        megadsp::ModuleType::spectralBalance },
+            std::pair { "correlation alignment mono",
+                        megadsp::ModuleType::phaseCoherence },
+            std::pair { "lufs automation",
+                        megadsp::ModuleType::loudnessRider },
+            std::pair { "clipper oversampling",
+                        megadsp::ModuleType::adaptiveClipper },
+            std::pair { "frequency canvas diffusion",
+                        megadsp::ModuleType::spectralDelayCanvas },
+            std::pair { "vocal tract creature",
+                        megadsp::ModuleType::formantForge },
+            std::pair { "partial resynthesis subharmonic",
+                        megadsp::ModuleType::harmonicMirage },
+            std::pair { "lorenz rossler",
+                        megadsp::ModuleType::chaosField },
+            std::pair { "history mosaic tile",
+                        megadsp::ModuleType::timeMosaic }
+        };
+        for (const auto& [query, expected] : differentiatingSearches)
+            expectOnly(query, expected);
+
         beginTest("Next-ten browser categories match the approved roster");
         const std::array nextTenCategories {
             std::pair { megadsp::ModuleType::gateExpander,
@@ -146,12 +175,16 @@ public:
         {
             const auto& eqGroup = allGroups.front();
             expect(eqGroup.category == megadsp::ModuleCategory::eqAndFilters);
-            expectEquals(static_cast<int>(eqGroup.modules.size()), 2);
-            if (eqGroup.modules.size() == 2)
+            expectEquals(static_cast<int>(eqGroup.modules.size()), 4);
+            if (eqGroup.modules.size() == 4)
             {
                 expect(eqGroup.modules[0] == megadsp::ModuleType::equalizer);
                 expect(eqGroup.modules[1]
                        == megadsp::ModuleType::dynamicEqualizer);
+                expect(eqGroup.modules[2]
+                       == megadsp::ModuleType::resonanceTamer);
+                expect(eqGroup.modules[3]
+                       == megadsp::ModuleType::spectralBalance);
             }
         }
 
