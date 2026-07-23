@@ -1509,6 +1509,55 @@ void MegaDSPAudioProcessorEditor::showModuleBrowser()
     if (audioProcessor.getRack().activeSlotCount() >= megadsp::slotCount)
         return;
 
+    constexpr int searchCommand = 1;
+    constexpr int moduleCommandBase = 100;
+    juce::PopupMenu menu;
+    menu.addItem(searchCommand, "Search Modules...");
+    menu.addSeparator();
+    for (const auto& group : megadsp::ui::filterAndGroupModules({}))
+    {
+        juce::PopupMenu category;
+        for (const auto type : group.modules)
+            category.addItem(
+                moduleCommandBase + static_cast<int>(type),
+                megadsp::moduleDefinition(type).displayName);
+        menu.addSubMenu(
+            megadsp::moduleCategoryName(group.category), category);
+    }
+
+    juce::Component::SafePointer<MegaDSPAudioProcessorEditor> safeThis(this);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(&addButton),
+        [safeThis](int result)
+        {
+            if (safeThis == nullptr || result == 0)
+                return;
+            if (result == searchCommand)
+            {
+                safeThis->showModuleSearch();
+                return;
+            }
+            if (result < moduleCommandBase)
+                return;
+            const auto stableType = result - moduleCommandBase;
+            if (!juce::isPositiveAndBelow(
+                    stableType, megadsp::moduleTypeCount)
+                || safeThis->audioProcessor.getRack().activeSlotCount()
+                       >= megadsp::slotCount)
+                return;
+            safeThis->audioProcessor.addModule(
+                static_cast<megadsp::ModuleType>(stableType));
+            safeThis->selectedSlot =
+                safeThis->audioProcessor.getRack().activeSlotCount() - 1;
+            safeThis->refreshTabs();
+        });
+}
+
+void MegaDSPAudioProcessorEditor::showModuleSearch()
+{
+    if (audioProcessor.getRack().activeSlotCount() >= megadsp::slotCount)
+        return;
+
     juce::Component::SafePointer<MegaDSPAudioProcessorEditor> safeThis(this);
     auto browser = std::make_unique<megadsp::ui::ModuleBrowser>(
         backgroundColour(audioProcessor.getBackgroundThemeIndex()),
@@ -1528,7 +1577,7 @@ void MegaDSPAudioProcessorEditor::showModuleBrowser()
         std::move(browser), getLocalArea(&addButton, addButton.getLocalBounds()),
         this);
     callout.setDismissalMouseClicksAreAlwaysConsumed(true);
-    browserPointer->focusMenu();
+    browserPointer->focusSearch();
 }
 
 void MegaDSPAudioProcessorEditor::commitInstanceName()

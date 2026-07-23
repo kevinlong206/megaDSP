@@ -67,7 +67,7 @@ megaDSP.clap → ~/.clap
 ## First-rack workflow
 
 1. Load megaDSP on a track in your DAW.
-2. Click the **+** tab, choose a category, then choose a module. Open **Search** only when you want to filter by name, category, description, or tag; **↑↓** and **Enter** work throughout.
+2. Click the **+** tab and choose a module from the standard category submenus. **Search Modules…** at the top opens a separate searchable list; **↑↓** and **Enter** work there.
 3. Select a tab to see its interactive graph and controls.
 4. Drag tabs left or right to reorder the signal chain.
 5. **Double-click** a tab (or press **Space / Return / B**) to bypass it — the tab is greyed and labeled **BYPASSED**.

@@ -26,6 +26,7 @@ private:
     void selectSlot(int slot);
     void refreshTabs();
     void showModuleBrowser();
+    void showModuleSearch();
     void removeSlot(int slot);
     void reorderSlot(int source, int destination);
     void choosePreset(bool save);
