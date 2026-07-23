@@ -2,11 +2,28 @@
 
 [![Build and test](https://github.com/kevinlong206/megaDSP/actions/workflows/build.yml/badge.svg)](https://github.com/kevinlong206/megaDSP/actions/workflows/build.yml)
 
-An eight-slot modular effects rack with thirty-nine purpose-built processors,
-interactive graphs, realtime analysis, and controls that match the musical
-quantity they edit. Available as VST3, AU, and CLAP.
+megaDSP aims to be the only effects plugin you need in your DAW: one VST3, AU,
+or CLAP plugin with a growing collection of high-quality, intuitive effects.
+Use a module on its own or combine up to eight in a serial chain to shape,
+transform, and finish your audio without juggling separate plugins.
+
+Today, megaDSP includes thirty-nine purpose-built processors with interactive
+graphs, realtime analysis, and controls that match the musical quantities they
+edit. The long-term vision is a community-built library spanning dozens—and
+eventually perhaps hundreds—of useful effects in one consistent rack.
 
 ![Eight processor tabs in signal-flow order with the header output meter](docs/images/rack-overview.png)
+
+## Built in the open
+
+megaDSP is intended to grow with its community. Users around the world are
+invited to [report bugs, request features, and share ideas](https://github.com/kevinlong206/megaDSP/issues).
+Code contributions are welcome; see the [contributing guide](CONTRIBUTING.md)
+for build instructions, architecture notes, and the pull request process.
+
+The plugin is built with [JUCE 8](https://juce.com) and C++20. Development is
+assisted by [GitHub Copilot](https://github.com/features/copilot), alongside
+automated tests and review.
 
 ## Supported platforms and formats
 
