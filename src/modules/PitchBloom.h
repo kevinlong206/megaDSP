@@ -32,6 +32,10 @@ public:
     void process(juce::AudioBuffer<float>&, const ControlValues&,
                  const ProcessEnvironment&) override;
     int latencySamples() const override { return reportedLatencySamples; }
+    DryPathTiming dryPathTiming() const override
+    {
+        return DryPathTiming::immediate;
+    }
     double tailSeconds(const ControlValues&) const override;
     bool readEventTelemetry(
         EventTelemetrySnapshot&) const noexcept override;
@@ -66,7 +70,6 @@ private:
         float pan, float spread, bool stereo) noexcept;
     std::array<std::vector<float>, 2> repeatDelay;
     std::array<std::vector<float>, 2> pitchBuffer;
-    std::array<std::array<float, reportedLatencySamples + 1>, 2> dryDelay {};
     std::array<AllpassStage, diffuserStageCount> diffuser;
     std::array<float, 2> lowpassState {};
     std::array<float, 2> highpassState {};
@@ -103,7 +106,6 @@ private:
     float previousRatio = 1.0f;
     int repeatWritePosition = 0;
     int pitchWritePosition = 0;
-    int dryWritePosition = 0;
     int currentInterval = -1;
     bool parametersInitialised = false;
     EventTelemetrySnapshot telemetryWorking;

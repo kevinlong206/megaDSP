@@ -60,8 +60,6 @@ void PitchBloomModule::reset()
         std::fill(channel.begin(), channel.end(), 0.0f);
     for (auto& channel : pitchBuffer)
         std::fill(channel.begin(), channel.end(), 0.0f);
-    for (auto& channel : dryDelay)
-        channel.fill(0.0f);
     for (auto& stage : diffuser)
     {
         for (auto& channel : stage.buffer)
@@ -78,7 +76,6 @@ void PitchBloomModule::reset()
     previousPitchPhase.fill(0.5f);
     repeatWritePosition = 0;
     pitchWritePosition = 0;
-    dryWritePosition = 0;
     inputEnvelope = 0.0f;
     currentRatio = 1.0f;
     previousRatio = 1.0f;
@@ -396,7 +393,6 @@ void PitchBloomModule::process(
 
     const auto channels = juce::jmin(2, buffer.getNumChannels());
     const auto repeatCapacity = static_cast<int>(repeatDelay[0].size());
-    const auto dryCapacity = static_cast<int>(dryDelay[0].size());
     const auto pitchCapacity = static_cast<int>(pitchBuffer[0].size());
     const auto envelopeAttack =
         1.0f - std::exp(-1.0f / static_cast<float>(sampleRate * 0.005));
@@ -435,15 +431,10 @@ void PitchBloomModule::process(
             -juce::MathConstants<float>::twoPi * lowCut
             / static_cast<float>(sampleRate));
 
-        std::array<float, 2> alignedDry {};
         std::array<float, 2> wet {};
         for (int channel = 0; channel < 2; ++channel)
         {
             const auto index = static_cast<size_t>(channel);
-            const auto dryRead = (dryWritePosition + 1) % dryCapacity;
-            alignedDry[index] = dryDelay[index][static_cast<size_t>(dryRead)];
-            dryDelay[index][static_cast<size_t>(dryWritePosition)] = dry[index];
-
             const auto delayed = readCircular(
                 repeatDelay[index], repeatWritePosition, delay);
             const auto repeatInput = dry[index] + feedbackState[index] * feedback;
@@ -466,8 +457,6 @@ void PitchBloomModule::process(
             repeatWritePosition = 0;
         if (++pitchWritePosition >= pitchCapacity)
             pitchWritePosition = 0;
-        if (++dryWritePosition >= dryCapacity)
-            dryWritePosition = 0;
 
         const auto feedbackWet = wet;
         if (channels > 1)
@@ -497,7 +486,7 @@ void PitchBloomModule::process(
         {
             const auto index = static_cast<size_t>(juce::jmin(channel, 1));
             const auto result =
-                (alignedDry[index] * dryGain + wet[index] * wetGain) * output;
+                (dry[index] * dryGain + wet[index] * wetGain) * output;
             buffer.setSample(channel, sample,
                              std::isfinite(result) ? result : 0.0f);
         }

@@ -1011,34 +1011,102 @@ constexpr Metadata spectralNebulaMetadata {{
     { "High Cut", ControlKind::horizontal, false, "Passband",
       "Removes high-frequency energy from the synthesized cloud." },
     { "Dry", ControlKind::level, true, "Levels",
-      "Sets the independent latency-aligned input level." },
+      "Sets the independent immediate input level." },
     { "Cloud", ControlKind::level, true, "Levels",
       "Sets the independent synthesized cloud level." },
     { "Output", ControlKind::level, true, "Output",
       "Adjusts level after the dry and cloud paths." }
 }};
 constexpr Metadata neuralAmpModelerMetadata {{
-    { "Input Trim", ControlKind::level, true, "Input",
-      "Adjusts input level before the neural model." },
-    { "Gate", ControlKind::toggle, false, "Gate",
-      "Enables a noise gate before the neural model." },
-    { "Gate Threshold", ControlKind::level, false, "Gate",
-      "Sets the level below which the gate closes." },
-    { "Gate Release", ControlKind::rotary, false, "Gate",
-      "Sets how quickly the gate re-opens after closing." },
-    { "Low Cut", ControlKind::horizontal, false, "Filters",
-      "Removes low-frequency energy from the modeled signal." },
-    { "High Cut", ControlKind::horizontal, false, "Filters",
-      "Removes high-frequency energy from the modeled signal." },
-    { "CPU Mode", ControlKind::choice, false, "Engine",
-      "Selects Slimmed or Full CPU for slimmable models; fixed for A2 and others." },
-    { "Dry", ControlKind::level, false, "Levels",
-      "Sets the level of the original unprocessed signal." },
-    { "Wet", ControlKind::level, true, "Levels",
-      "Sets the level of the neural-modeled signal." },
+    { "Pre Gain", ControlKind::level, true, "Gain",
+      "Adjusts level entering the neural amp model." },
+    { "Bass", ControlKind::rotary, true, "Tone Stack",
+      "Cuts or boosts the guitar tone stack below 120 Hz." },
+    { "Mid", ControlKind::rotary, true, "Tone Stack",
+      "Cuts or boosts the guitar tone stack around 750 Hz." },
+    { "Treble", ControlKind::rotary, true, "Tone Stack",
+      "Cuts or boosts the guitar tone stack above 3.2 kHz." },
+    { "Post Gain", ControlKind::level, true, "Gain",
+      "Adjusts level after the neural model and tone stack." },
+    unused, unused, unused, unused, unused, unused, unused
+}};
+constexpr Metadata midnightCurrentMetadata {{
+    { "Filter Center", ControlKind::horizontal, true, "Submerged Filter",
+      "Sets the center of the dark resonant filter and phase network." },
+    { "Filter Sweep", ControlKind::horizontal, true, "Submerged Filter",
+      "Sets how far the filter moves above and below its center." },
+    { "Motion Rate", ControlKind::horizontal, true, "Motion",
+      "Sets the free-running speed of the slow analog current." },
+    { "Phase Depth", ControlKind::horizontal, true, "Phase Network",
+      "Sets how deeply the eight all-pass stages sweep." },
+    { "Regeneration", ControlKind::horizontal, true, "Phase Network",
+      "Feeds the phase field back with positive or negative polarity." },
+    { "Resonance", ControlKind::horizontal, true, "Submerged Filter",
+      "Emphasizes the moving filter cutoff without unstable self-oscillation." },
+    { "Warmth", ControlKind::horizontal, true, "Analog Front End",
+      "Drives the preamp and output stages into soft analog saturation." },
+    { "Softness", ControlKind::horizontal, true, "Analog Front End",
+      "Rounds sharp attacks and darkens the electric-piano-like body." },
+    { "Drift", ControlKind::horizontal, false, "Motion",
+      "Adds slow imperfect movement around the main modulation cycle." },
+    { "Stereo Spread", ControlKind::horizontal, true, "Stereo",
+      "Expands a mono-cancelling side field while preserving fold-down." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the immediate dry input with the submerged phase field." },
     { "Output", ControlKind::level, true, "Output",
-      "Adjusts final output level after dry/wet blend." },
-    unused, unused
+      "Adjusts level after the complete effect." }
+}};
+constexpr Metadata autoWahMetadata {{
+    { "Sensitivity", ControlKind::horizontal, true, "Detector",
+      "Sets the visible input threshold; higher sensitivity responds to quieter picks." },
+    { "Center Frequency", ControlKind::horizontal, true, "Filter",
+      "Sets the musical midpoint of the wah sweep." },
+    { "Sweep Range", ControlKind::horizontal, true, "Filter",
+      "Sets how many octaves the filter travels after a pick." },
+    { "Attack", ControlKind::horizontal, true, "Envelope",
+      "Sets how quickly the wah opens or closes after a pick." },
+    { "Release", ControlKind::horizontal, true, "Envelope",
+      "Sets how quickly the wah returns after the note decays." },
+    { "Resonance", ControlKind::horizontal, true, "Filter",
+      "Sets the vocal emphasis at the moving filter frequency." },
+    { "Direction", ControlKind::choice, true, "Envelope",
+      "Chooses an upward or downward sweep after each pick." },
+    { "Pick Focus", ControlKind::horizontal, true, "Detector",
+      "Emphasizes pick attack relative to sustained signal level." },
+    { "Drive", ControlKind::horizontal, false, "Character",
+      "Adds level-referenced saturation and harmonic push before the resonant filter." },
+    { "Filter Type", ControlKind::choice, true, "Filter",
+      "Selects Low Pass, Band Pass, Peak, or Classic Wah response." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the immediate dry signal with the wah filter." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the dry and filtered paths." }
+}};
+constexpr Metadata resonantSculptureMetadata {{
+    { "Material", ControlKind::choice, true, "Object",
+      "Selects String, Glass, Metal, or Membrane modal behavior." },
+    { "Shape", ControlKind::horizontal, true, "Object",
+      "Warps the spacing and geometry of the resonant modes." },
+    { "Pitch Offset", ControlKind::horizontal, true, "Pitch",
+      "Transposes the tracked input fundamental from -24 to +24 semitones." },
+    { "Excitation", ControlKind::horizontal, true, "Excitation",
+      "Sets how strongly incoming audio energizes the resonant modes." },
+    { "Decay", ControlKind::horizontal, true, "Object",
+      "Sets how long modal energy continues after excitation." },
+    { "Mutation", ControlKind::horizontal, true, "Motion",
+      "Adds slow independent movement to the modal frequencies." },
+    { "Bow", ControlKind::horizontal, true, "Excitation",
+      "Turns sustained input into continuous bowed excitation." },
+    { "Strike", ControlKind::horizontal, true, "Excitation",
+      "Emphasizes pick and consonant attacks as sharp impacts." },
+    { "Stereo Field", ControlKind::horizontal, true, "Stereo",
+      "Spreads alternating modes in a mono-cancelling side field." },
+    { "Chaos", ControlKind::horizontal, true, "Motion",
+      "Adds deterministic irregular motion without destabilizing decay." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the immediate dry signal with the resonant sculpture." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the dry and resonant paths." }
 }};
 constexpr Names emptyNames { "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-" };
 constexpr Names eqNames {
@@ -1223,8 +1291,22 @@ constexpr Names spectralNebulaNames {
     "Low Cut", "High Cut", "Dry", "Cloud", "Output"
 };
 constexpr Names neuralAmpModelerNames {
-    "Input Trim", "Gate", "Gate Threshold", "Gate Release", "Low Cut",
-    "High Cut", "CPU Mode", "Dry", "Wet", "Output", "-", "-"
+    "Pre Gain", "Bass", "Mid", "Treble", "Post Gain",
+    "-", "-", "-", "-", "-", "-", "-"
+};
+constexpr Names midnightCurrentNames {
+    "Filter Center", "Filter Sweep", "Motion Rate", "Phase Depth",
+    "Regeneration", "Resonance", "Warmth", "Softness", "Drift",
+    "Stereo Spread", "Mix", "Output"
+};
+constexpr Names autoWahNames {
+    "Sensitivity", "Center Frequency", "Sweep Range", "Attack", "Release",
+    "Resonance", "Direction", "Pick Focus", "Drive", "Filter Type", "Mix",
+    "Output"
+};
+constexpr Names resonantSculptureNames {
+    "Material", "Shape", "Pitch Offset", "Excitation", "Decay", "Mutation",
+    "Bow", "Strike", "Stereo Field", "Chaos", "Mix", "Output"
 };
 const std::array<std::array<float, 16>, 3> premiumEarlyMilliseconds {{
     { 11.3f, 18.7f, 27.1f, 37.9f, 51.7f, 69.1f, 79.3f, 88.7f,
@@ -1515,8 +1597,12 @@ ControlOptions optionsFor(ModuleType type, int control)
                    "4x12 Closed" }, 4 };
     if (type == ModuleType::guitarCabinet && control == 2)
         return { { "Dynamic", "Ribbon", "Condenser" }, 3 };
-    if (type == ModuleType::neuralAmpModeler && control == 6)
-        return { { "Slimmed", "Full CPU" }, 2 };
+    if (type == ModuleType::autoWah && control == 6)
+        return { { "Up", "Down" }, 2 };
+    if (type == ModuleType::autoWah && control == 9)
+        return { { "Low Pass", "Band Pass", "Peak", "Classic Wah" }, 4 };
+    if (type == ModuleType::resonantSculpture && control == 0)
+        return { { "String", "Glass", "Metal", "Membrane" }, 4 };
     return {};
 }
 
@@ -1967,17 +2053,40 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
             break;
         case ModuleType::neuralAmpModeler:
             values = {
-                linearNormalized(-24.0f, 24.0f, 0.0f),
-                0.0f,
-                linearNormalized(-90.0f, -20.0f, -60.0f),
-                exponentialNormalized(10.0f, 500.0f, 120.0f),
-                exponentialNormalized(20.0f, 250.0f, 30.0f),
-                exponentialNormalized(4000.0f, 20000.0f, 18000.0f),
-                discreteValue(1, 2),
-                0.0f,
-                1.0f,
-                linearNormalized(-24.0f, 24.0f, 0.0f),
-                0.0f, 0.0f
+                0.5f, 0.5f, 0.5f, 0.5f, 0.5f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+            };
+            break;
+        case ModuleType::midnightCurrent:
+            values = {
+                exponentialNormalized(120.0f, 3000.0f, 520.0f),
+                0.70f,
+                exponentialNormalized(0.02f, 1.2f, 0.11f),
+                0.78f,
+                linearNormalized(-80.0f, 80.0f, 38.0f),
+                0.55f, 0.45f, 0.55f, 0.15f, 0.55f, 0.70f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::autoWah:
+            values = {
+                linearNormalized(-18.0f, -66.0f, -42.0f),
+                exponentialNormalized(120.0f, 1600.0f, 720.0f),
+                linearNormalized(0.5f, 5.0f, 2.5f),
+                exponentialNormalized(0.5f, 80.0f, 7.0f),
+                exponentialNormalized(30.0f, 1400.0f, 320.0f),
+                0.52f, discreteValue(0, 2), 0.62f, 0.12f,
+                discreteValue(3, 4), 0.78f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::resonantSculpture:
+            values = {
+                discreteValue(1, 4), 0.45f, 0.5f,
+                0.62f,
+                exponentialNormalized(0.15f, 12.0f, 3.8f),
+                0.18f, 0.12f, 0.72f, 0.58f, 0.08f, 0.72f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
             };
             break;
         case ModuleType::empty: break;
@@ -2597,18 +2706,61 @@ juce::String formatControlValue(ModuleType type, int control, float value)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::neuralAmpModeler:
-            if (control == 0 || control == 9)
+            if (control == 0 || control == 4)
                 return juce::String(linear(-24.0f, 24.0f, value), 1) + " dB";
+            if (control >= 1 && control <= 3)
+            {
+                const auto gain = linear(-12.0f, 12.0f, value);
+                return (gain > 0.05f ? "+" : "")
+                    + juce::String(gain, 1) + " dB";
+            }
+            break;
+        case ModuleType::midnightCurrent:
+            if (control == 0)
+                return formatFrequency(exponential(120.0f, 3000.0f, value));
             if (control == 2)
-                return juce::String(linear(-90.0f, -20.0f, value), 1) + " dB";
-            if (control == 3)
-                return juce::String(exponential(10.0f, 500.0f, value), 0) + " ms";
+                return juce::String(exponential(0.02f, 1.2f, value), 2)
+                    + " Hz";
             if (control == 4)
-                return formatFrequency(exponential(20.0f, 250.0f, value));
-            if (control == 5)
-                return formatFrequency(exponential(4000.0f, 20000.0f, value));
-            if (control == 7 || control == 8)
+            {
+                const auto regeneration = linear(-80.0f, 80.0f, value);
+                return (regeneration > 0.5f ? "+" : "")
+                    + juce::String(regeneration, 0) + "%";
+            }
+            if (control == 1 || (control >= 3 && control <= 10))
                 return juce::String(value * 100.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::autoWah:
+            if (control == 0)
+                return juce::String(linear(-18.0f, -66.0f, value), 1) + " dB";
+            if (control == 1)
+                return formatFrequency(exponential(120.0f, 1600.0f, value));
+            if (control == 2)
+                return juce::String(linear(0.5f, 5.0f, value), 2) + " oct";
+            if (control == 3)
+                return juce::String(exponential(0.5f, 80.0f, value), 1) + " ms";
+            if (control == 4)
+                return formatGrainSize(exponential(30.0f, 1400.0f, value));
+            if (control == 5 || (control >= 7 && control <= 10))
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::resonantSculpture:
+            if (control == 2)
+            {
+                const auto offset = linear(-24.0f, 24.0f, value);
+                return (offset > 0.05f ? "+" : "")
+                    + juce::String(offset, 1) + " st";
+            }
+            if (control == 4)
+                return formatSeconds(exponential(0.15f, 12.0f, value));
+            if (control >= 1 && control <= 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::empty: break;
     }
@@ -3247,21 +3399,52 @@ std::optional<float> parseControlValue(ModuleType type, int control,
                 return linearNormalized(-18.0f, 12.0f, value);
             break;
         case ModuleType::neuralAmpModeler:
-            if (control == 0 || control == 9)
+            if (control == 0 || control == 4)
                 return linearNormalized(-24.0f, 24.0f, value);
-            if (control == 2)
-                return linearNormalized(-90.0f, -20.0f, value);
-            if (control == 3)
+            if (control >= 1 && control <= 3)
+                return linearNormalized(-12.0f, 12.0f, value);
+            break;
+        case ModuleType::midnightCurrent:
+            if (control == 0)
                 return exponentialNormalized(
-                    10.0f, 500.0f, parsedMilliseconds(text, value));
+                    120.0f, 3000.0f, parsedFrequency(text, value));
+            if (control == 2)
+                return exponentialNormalized(0.02f, 1.2f, value);
+            if (control == 4)
+                return linearNormalized(-80.0f, 80.0f, value);
+            if (control == 1 || (control >= 3 && control <= 10))
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::autoWah:
+            if (control == 0)
+                return linearNormalized(-18.0f, -66.0f, value);
+            if (control == 1)
+                return exponentialNormalized(
+                    120.0f, 1600.0f, parsedFrequency(text, value));
+            if (control == 2)
+                return linearNormalized(0.5f, 5.0f, value);
+            if (control == 3)
+                return exponentialNormalized(0.5f, 80.0f, value);
             if (control == 4)
                 return exponentialNormalized(
-                    20.0f, 250.0f, parsedFrequency(text, value));
-            if (control == 5)
-                return exponentialNormalized(
-                    4000.0f, 20000.0f, parsedFrequency(text, value));
-            if (control == 7 || control == 8)
+                    30.0f, 1400.0f, parsedMilliseconds(text, value));
+            if (control == 5 || (control >= 7 && control <= 10))
                 return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::resonantSculpture:
+            if (control == 2)
+                return linearNormalized(-24.0f, 24.0f, value);
+            if (control == 4)
+                return exponentialNormalized(
+                    0.15f, 12.0f, parsedSeconds(text, value));
+            if (control >= 1 && control <= 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
             break;
         case ModuleType::empty: break;
     }
@@ -3350,10 +3533,7 @@ bool isControlContextuallyVisible(
             if (control == 3)
                 return values[2] >= 0.5f;
             break;
-        case ModuleType::neuralAmpModeler:
-            if (control == 2 || control == 3)
-                return values[1] >= 0.5f;
-            break;
+        case ModuleType::neuralAmpModeler: break;
         case ModuleType::empty:
         case ModuleType::equalizer:
         case ModuleType::saturator:
@@ -3385,6 +3565,9 @@ bool isControlContextuallyVisible(
         case ModuleType::chordLoom:
         case ModuleType::volumeSwell:
         case ModuleType::spectralNebula:
+        case ModuleType::midnightCurrent:
+        case ModuleType::autoWah:
+        case ModuleType::resonantSculpture:
             break;
     }
     return true;
@@ -3780,6 +3963,34 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "spectral cloud smear freeze shimmer ambient vocal guitar texture",
             spectralNebulaNames, spectralNebulaMetadata,
             &makeModule<SpectralNebulaModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::midnightCurrent, ModulePresentation::midnightCurrent,
+            "Midnight Current", ModuleCategory::modulation,
+            "Submerge input in a warm resonant analog filter and deep slow phase current.",
+            "submerged underwater electric piano analog vcs3 phaser filter "
+            "psychedelic vintage slow swirl",
+            midnightCurrentNames, midnightCurrentMetadata,
+            &makeModule<MidnightCurrentModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::autoWah, ModulePresentation::autoWah,
+            "Auto Wah", ModuleCategory::eqAndFilters,
+            "Drive a vocal resonant filter directly from pick attack and playing dynamics.",
+            "auto wah envelope filter pick attack touch sensitive guitar funk "
+            "vocal quack",
+            autoWahNames, autoWahMetadata,
+            &makeModule<AutoWahModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::resonantSculpture,
+            ModulePresentation::resonantSculpture,
+            "Resonant Sculpture", ModuleCategory::glitchAndCreative,
+            "Excite a morphing virtual object of strings, glass, metal, or membranes.",
+            "physical modeling modal resonator sculpture bowed struck material "
+            "glass metal membrane impossible texture",
+            resonantSculptureNames, resonantSculptureMetadata,
+            &makeModule<ResonantSculptureModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::neuralAmpModeler,

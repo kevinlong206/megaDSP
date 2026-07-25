@@ -24,6 +24,49 @@ juce::String linearNamJson(double sr = 48000.0)
     return j;
 }
 
+juce::String slimmableContainerNamJson(double sr = 48000.0)
+{
+    const auto child = nlohmann::json::parse(
+        linearNamJson(sr).toStdString());
+    nlohmann::json root;
+    root["version"] = "0.5.4";
+    root["architecture"] = "SlimmableContainer";
+    root["config"]["submodels"] = nlohmann::json::array({
+        { { "max_value", 0.5 }, { "model", child } },
+        { { "max_value", 1.0 }, { "model", child } }
+    });
+    root["weights"] = nlohmann::json::array();
+    root["sample_rate"] = sr;
+    root["metadata"] = nlohmann::json::object();
+    return juce::String(root.dump());
+}
+
+juce::String waveNetNamJson(double sr = 48000.0)
+{
+    nlohmann::json layer;
+    layer["input_size"] = 1;
+    layer["condition_size"] = 1;
+    layer["head_size"] = 1;
+    layer["channels"] = 1;
+    layer["kernel_size"] = 1;
+    layer["dilations"] = { 1 };
+    layer["activation"] = "Tanh";
+    layer["gated"] = false;
+    layer["head_bias"] = false;
+
+    nlohmann::json root;
+    root["version"] = "0.5.4";
+    root["architecture"] = "WaveNet";
+    root["config"]["layers"] = nlohmann::json::array({ layer });
+    root["config"]["head"] = nullptr;
+    root["config"]["head_scale"] = 1.0;
+    root["weights"] =
+        { 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0 };
+    root["sample_rate"] = sr;
+    root["metadata"] = nlohmann::json::object();
+    return juce::String(root.dump());
+}
+
 juce::File writeNam(const juce::String& content, const juce::String& name)
 {
     auto f = juce::File::getSpecialLocation(
@@ -90,9 +133,9 @@ public:
     NamRegistryTests() : juce::UnitTest("NAM registry", "megaDSP") {}
     void runTest() override
     {
-        beginTest("Enum 44, count 45");
-        expectEquals(static_cast<int>(ModuleType::neuralAmpModeler), 44);
-        expectEquals(moduleTypeCount, 45);
+        beginTest("Stable appended enum and module count");
+        expectEquals(static_cast<int>(ModuleType::neuralAmpModeler), 47);
+        expectEquals(moduleTypeCount, 48);
 
         beginTest("Host parameter count");
         MegaDSPAudioProcessor proc;
@@ -108,26 +151,24 @@ public:
                              ModuleCapability::neuralAmpModel));
 
         beginTest("Options, defaults, formatting, parsing");
-        auto opts = controlOptions(ModuleType::neuralAmpModeler, 6);
-        expectEquals(opts.size(), 2);
         const auto defs = moduleDefaults(ModuleType::neuralAmpModeler);
-        expectWithinAbsoluteError(defs[0], 0.5f, 0.01f);
-        expectWithinAbsoluteError(defs[7], 0.0f, 0.01f);
-        expectWithinAbsoluteError(defs[8], 1.0f, 0.01f);
-        auto fmt = formatControlValue(ModuleType::neuralAmpModeler, 6, defs[6]);
-        expectEquals(fmt, juce::String("Full CPU"));
+        for (int control = 0; control < 5; ++control)
+            expectWithinAbsoluteError(
+                defs[static_cast<size_t>(control)], 0.5f, 0.01f);
+        expect(controlOptions(ModuleType::neuralAmpModeler, 6).isEmpty());
+        expectEquals(
+            formatControlValue(ModuleType::neuralAmpModeler, 2, defs[2]),
+            juce::String("0.0 dB"));
         auto p = parseControlValue(ModuleType::neuralAmpModeler, 0, "0 dB");
         expect(p.has_value());
         expectWithinAbsoluteError(*p, 0.5f, 0.01f);
 
-        beginTest("Contextual visibility");
-        ControlValues v = defs;
-        v[1] = 0.0f;
-        expect(!isControlContextuallyVisible(
-            ModuleType::neuralAmpModeler, 2, v));
-        v[1] = 1.0f;
-        expect(isControlContextuallyVisible(
-            ModuleType::neuralAmpModeler, 2, v));
+        beginTest("Only tone-stack controls are visible");
+        for (int control = 0; control < controlsPerSlot; ++control)
+            expect(
+                isControlContextuallyVisible(
+                    ModuleType::neuralAmpModeler, control, defs)
+                == (control < 5));
 
         beginTest("Factory and capability");
         auto mod = createDspModule(ModuleType::neuralAmpModeler);
@@ -144,7 +185,7 @@ public:
     NamDspTests() : juce::UnitTest("NAM DSP", "megaDSP") {}
     void runTest() override
     {
-        beginTest("Unloaded Dry=0 is silent");
+        beginTest("Unloaded module is silent");
         {
             auto m = createDspModule(ModuleType::neuralAmpModeler);
             m->prepare({ 48000.0, 512, 2 });
@@ -232,38 +273,6 @@ public:
             f.deleteFile();
         }
 
-        beginTest("Internal Dry is aligned to resampled Wet latency");
-        {
-            auto m = createDspModule(ModuleType::neuralAmpModeler);
-            m->prepare({ 44100.0, 512, 1 });
-            auto* cap = m->namModelCapability();
-            auto f = writeNam(linearNamJson(48000.0), "dry_alignment");
-            PreparedNamModelPtr p;
-            expect(cap->prepareNamModel(f, p).wasOk());
-            expect(cap->commitPreparedNamModel(p));
-            const auto latency = m->latencySamples();
-            expect(latency > 0);
-
-            auto controls = moduleDefaults(ModuleType::neuralAmpModeler);
-            controls[7] = 1.0f;
-            controls[8] = 0.0f;
-            juce::AudioBuffer<float> settle(1, 512);
-            settle.clear();
-            m->process(settle, controls, {});
-            m->reset();
-
-            juce::AudioBuffer<float> impulse(1, latency + 32);
-            impulse.clear();
-            impulse.setSample(0, 0, 1.0f);
-            m->process(impulse, controls, {});
-            for (int i = 0; i < latency; ++i)
-                expectWithinAbsoluteError(
-                    impulse.getSample(0, i), 0.0f, 1.0e-7f);
-            expect(std::abs(impulse.getSample(0, latency)) > 0.5f,
-                   "Dry impulse must emerge at the reported latency");
-            f.deleteFile();
-        }
-
         beginTest("Stereo duplicated-input channels match during smoothing");
         {
             auto m = createDspModule(ModuleType::neuralAmpModeler);
@@ -274,7 +283,7 @@ public:
             cap->prepareNamModel(f, p);
             cap->commitPreparedNamModel(p);
 
-            // Process blocks while stepping Input Trim
+            // Process blocks while stepping Pre Gain.
             ControlValues c = moduleDefaults(ModuleType::neuralAmpModeler);
             for (int block = 0; block < 4; ++block)
             {
@@ -307,65 +316,49 @@ public:
             juce::AudioBuffer<float> buf(1, 4096);
             for (int i = 0; i < buf.getNumSamples(); ++i)
                 buf.setSample(0, i, 0.25f);
-            m->process(
-                buf, moduleDefaults(ModuleType::neuralAmpModeler), {});
+            auto controls = moduleDefaults(ModuleType::neuralAmpModeler);
+            controls[0] = 0.75f;
+            m->process(buf, controls, {});
             for (int i = 0; i < buf.getNumSamples(); ++i)
                 expect(std::isfinite(buf.getSample(0, i)));
-            expect(std::abs(buf.getSample(0, 4095) - 0.25f) > 0.01f,
-                   "Samples beyond the prepared block must not bypass DSP");
+            expect(buf.getSample(0, 4095) > 0.5f,
+                   "Samples beyond the prepared block must receive Pre Gain");
             f.deleteFile();
         }
 
-        beginTest("Gate release: long vs short produces different tails");
+        beginTest("SlimmableContainer parser is explicitly available");
         {
-            auto runGate = [](float relNorm) -> float
-            {
-                auto m = createDspModule(ModuleType::neuralAmpModeler);
-                m->prepare({ 48000.0, 1024, 1 });
-                auto* cap = m->namModelCapability();
-                auto f = writeNam(linearNamJson(48000.0), "gate_" + juce::String(relNorm, 1));
-                PreparedNamModelPtr p;
-                cap->prepareNamModel(f, p);
-                cap->commitPreparedNamModel(p);
-                m->reset();
+            auto m = createDspModule(ModuleType::neuralAmpModeler);
+            m->prepare({ 48000.0, 512, 1 });
+            auto f = writeNam(
+                slimmableContainerNamJson(), "slimmable_container");
+            PreparedNamModelPtr prepared;
+            const auto result =
+                m->namModelCapability()->prepareNamModel(f, prepared);
+            expect(result.wasOk(), result.getErrorMessage());
+            expect(m->namModelCapability()->commitPreparedNamModel(prepared));
+            expectEquals(
+                static_cast<int>(
+                   m->namModelCapability()->namModelInfo().kind),
+                static_cast<int>(NamModelKind::container));
+            f.deleteFile();
+        }
 
-                ControlValues c = moduleDefaults(ModuleType::neuralAmpModeler);
-                c[1] = 1.0f; // gate on
-                c[2] = 0.5f; // threshold ~-55 dB
-                c[3] = relNorm; // release
-                c[7] = 0.0f; // dry off
-                c[8] = 1.0f; // wet on
-
-                // Block 1: loud signal to open gate
-                juce::AudioBuffer<float> buf(1, 1024);
-                for (int i = 0; i < 512; ++i)
-                    buf.setSample(0, i, 0.8f);
-                for (int i = 512; i < 1024; ++i)
-                    buf.setSample(0, i, 0.001f); // below threshold
-                m->process(buf, c, {});
-
-                // Continue below threshold long enough for the short release
-                // to close while the long release remains open.
-                juce::AudioBuffer<float> buf2(1, 8192);
-                for (int i = 0; i < buf2.getNumSamples(); ++i)
-                    buf2.setSample(
-                        0, i, 0.001f * std::sin(
-                            juce::MathConstants<float>::twoPi
-                            * 1000.0f * static_cast<float>(i) / 48000.0f));
-                m->process(buf2, c, {});
-
-                float tailEnergy = 0.0f;
-                for (int i = buf2.getNumSamples() - 1024;
-                     i < buf2.getNumSamples(); ++i)
-                    tailEnergy += buf2.getSample(0, i) * buf2.getSample(0, i);
-                f.deleteFile();
-                return tailEnergy;
-            };
-            const float shortTail = runGate(0.0f);
-            const float longTail = runGate(1.0f);
-            expect(longTail > shortTail * 4.0f && longTail > 1.0e-7f,
-                   "Long release should retain meaningfully more signal (short="
-                   + juce::String(shortTail) + " long=" + juce::String(longTail) + ")");
+        beginTest("WaveNet parser is explicitly available");
+        {
+            auto m = createDspModule(ModuleType::neuralAmpModeler);
+            m->prepare({ 48000.0, 512, 1 });
+            auto f = writeNam(waveNetNamJson(), "wavenet");
+            PreparedNamModelPtr prepared;
+            const auto result =
+                m->namModelCapability()->prepareNamModel(f, prepared);
+            expect(result.wasOk(), result.getErrorMessage());
+            expect(m->namModelCapability()->commitPreparedNamModel(prepared));
+            expectEquals(
+                static_cast<int>(
+                    m->namModelCapability()->namModelInfo().kind),
+                static_cast<int>(NamModelKind::waveNet));
+            f.deleteFile();
         }
 
         beginTest("Malformed file fails gracefully");
@@ -415,12 +408,6 @@ public:
             f.deleteFile();
         }
 
-        beginTest("CPU mode default is Full");
-        {
-            const auto d = moduleDefaults(ModuleType::neuralAmpModeler);
-            expect(d[6] > 0.5f);
-        }
-
         beginTest("A2 positive detection (standard 8ch)");
         {
 #if defined(NAM_ENABLE_A2_FAST)
@@ -457,7 +444,7 @@ public:
 #endif
         }
 
-        beginTest("Filter automation finite");
+        beginTest("Tone-stack automation is finite and audible");
         {
             auto m = createDspModule(ModuleType::neuralAmpModeler);
             m->prepare({ 48000.0, 256, 1 });
@@ -470,8 +457,9 @@ public:
             ControlValues c = moduleDefaults(ModuleType::neuralAmpModeler);
             for (int block = 0; block < 4; ++block)
             {
-                c[4] = block < 2 ? 0.0f : 1.0f;
-                c[5] = block < 2 ? 1.0f : 0.0f;
+                c[1] = block < 2 ? 0.0f : 1.0f;
+                c[2] = block % 2 == 0 ? 0.0f : 1.0f;
+                c[3] = block < 2 ? 1.0f : 0.0f;
                 juce::AudioBuffer<float> buf(1, 256);
                 for (int i = 0; i < 256; ++i)
                     buf.setSample(0, i, 0.3f);

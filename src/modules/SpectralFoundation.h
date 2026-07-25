@@ -49,7 +49,8 @@ public:
         void* context, Complex* const* spectra, int channelCount,
         int binCount) noexcept;
     using OutputCallback = float (*)(
-        void* context, int channel, float delayedDry, float wet) noexcept;
+        void* context, int channel, float input, float delayedDry,
+        float wet) noexcept;
 
     static constexpr int fftOrder = 11;
     static constexpr int fftSize = 1 << fftOrder;

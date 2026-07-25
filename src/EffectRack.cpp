@@ -14,6 +14,12 @@ void retainPeak(std::atomic<float>& destination, float value)
     {
     }
 }
+
+int alignedLatencySamples(const DspModule& module)
+{
+    return module.dryPathTiming() == DryPathTiming::aligned
+        ? module.latencySamples() : 0;
+}
 } // namespace
 
 ControlValues EffectRack::Slot::values() const
@@ -105,8 +111,8 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
             static_cast<int>(preparedSpec.numChannels),
             static_cast<int>(preparedSpec.maximumBlockSize),
             false, true, true);
-        const auto latencyCapacity =
-            static_cast<size_t>(juce::jmax(0, module->latencySamples()));
+        const auto latencyCapacity = static_cast<size_t>(
+            juce::jmax(0, alignedLatencySamples(*module)));
         if (latencyCapacity > 0)
             for (auto& channel : slot.latencyBuffer)
                 channel.assign(latencyCapacity, 0.0f);
@@ -117,7 +123,7 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
         slot.reactivationSamplesRemaining = 0;
     }
 
-    slot.previousLatency = module->latencySamples();
+    slot.previousLatency = alignedLatencySamples(*module);
     slot.activeType = type;
     slot.activeModule = std::move(module);
     jassert(slot.activeModule != nullptr);
@@ -335,7 +341,8 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
         if (captureVisualization)
             visualization.captureInput(slotIndex, main);
 
-        const auto moduleLatency = module->latencySamples();
+        const auto processingLatency = module->latencySamples();
+        const auto moduleLatency = alignedLatencySamples(*module);
         if (moduleLatency != slot.previousLatency)
         {
             for (auto& channel : slot.latencyBuffer)
@@ -382,7 +389,7 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
         if (!bypassRequested && slot.dspSuspended)
         {
             slot.dspSuspended = false;
-            slot.reactivationSamplesRemaining = moduleLatency;
+            slot.reactivationSamplesRemaining = processingLatency;
             slot.wet.setCurrentAndTargetValue(0.0f);
             if (slot.reactivationSamplesRemaining <= 0)
                 slot.wet.setTargetValue(1.0f);
@@ -493,7 +500,7 @@ int EffectRack::latencySamples() const
     for (const auto& slot : slots)
     {
         if (const auto* module = selectedModule(slot))
-            latency += module->latencySamples();
+            latency += alignedLatencySamples(*module);
     }
     return latency;
 }

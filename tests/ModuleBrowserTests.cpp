@@ -90,6 +90,10 @@ public:
         expectOnly("infinite granular strum", megadsp::ModuleType::chordLoom);
         expectOnly("volume pedal knob", megadsp::ModuleType::volumeSwell);
         expectOnly("spectral cloud smear", megadsp::ModuleType::spectralNebula);
+        expectOnly("underwater vcs3", megadsp::ModuleType::midnightCurrent);
+        expectOnly("pick attack quack", megadsp::ModuleType::autoWah);
+        expectOnly("impossible bowed material",
+                   megadsp::ModuleType::resonantSculpture);
 
         beginTest("Next-ten search identities are unique");
         const std::array nextTenSearches {
@@ -182,8 +186,8 @@ public:
         {
             const auto& eqGroup = allGroups.front();
             expect(eqGroup.category == megadsp::ModuleCategory::eqAndFilters);
-            expectEquals(static_cast<int>(eqGroup.modules.size()), 4);
-            if (eqGroup.modules.size() == 4)
+            expectEquals(static_cast<int>(eqGroup.modules.size()), 5);
+            if (eqGroup.modules.size() == 5)
             {
                 expect(eqGroup.modules[0] == megadsp::ModuleType::equalizer);
                 expect(eqGroup.modules[1]
@@ -192,6 +196,8 @@ public:
                        == megadsp::ModuleType::resonanceTamer);
                 expect(eqGroup.modules[3]
                        == megadsp::ModuleType::spectralBalance);
+                expect(eqGroup.modules[4]
+                       == megadsp::ModuleType::autoWah);
             }
         }
 

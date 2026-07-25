@@ -168,7 +168,7 @@ void TimeMosaicModule::processFrameCallback(
 }
 
 float TimeMosaicModule::outputCallback(
-    void* context, int channel, float dry, float wet) noexcept
+    void* context, int channel, float input, float, float wet) noexcept
 {
     auto& module = *static_cast<TimeMosaicModule*>(context);
     if (channel == 0)
@@ -177,7 +177,7 @@ float TimeMosaicModule::outputCallback(
         module.currentOutput = module.outputSmoothed.getNextValue();
     }
     return detail::finiteSample(
-        (dry + module.currentMix * (wet - dry)) * module.currentOutput);
+        (input + module.currentMix * (wet - input)) * module.currentOutput);
 }
 
 void TimeMosaicModule::processFrame(

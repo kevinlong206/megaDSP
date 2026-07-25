@@ -154,7 +154,7 @@ void SpectralDelayCanvasModule::processFrameCallback(
 }
 
 float SpectralDelayCanvasModule::outputCallback(
-    void* context, int channel, float dry, float wet) noexcept
+    void* context, int channel, float input, float, float wet) noexcept
 {
     auto& module = *static_cast<SpectralDelayCanvasModule*>(context);
     if (channel == 0)
@@ -162,7 +162,7 @@ float SpectralDelayCanvasModule::outputCallback(
         module.currentMix = module.mixSmoothed.getNextValue();
         module.currentOutput = module.outputSmoothed.getNextValue();
     }
-    const auto mixed = dry + module.currentMix * (wet - dry);
+    const auto mixed = input + module.currentMix * (wet - input);
     return detail::finiteSample(mixed * module.currentOutput);
 }
 

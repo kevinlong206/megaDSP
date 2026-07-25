@@ -172,6 +172,7 @@ void FixedLatencyStft::process(
             const auto output = outputCallback != nullptr
                 ? outputCallback(
                       context, channel,
+                      input[static_cast<std::size_t>(channel)],
                       delayed[static_cast<std::size_t>(channel)],
                       wet[static_cast<std::size_t>(channel)])
                 : wet[static_cast<std::size_t>(channel)];

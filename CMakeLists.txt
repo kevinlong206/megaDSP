@@ -36,6 +36,11 @@ FetchContent_Declare(
         "${CMAKE_COMMAND}"
         "-DNAM_SOURCE_DIR=<SOURCE_DIR>"
         "-DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/neuralampmodelercore-finalize-slim.patch"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyNamPatch.cmake"
+        COMMAND
+        "${CMAKE_COMMAND}"
+        "-DNAM_SOURCE_DIR=<SOURCE_DIR>"
+        "-DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/neuralampmodelercore-container-registration.patch"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyNamPatch.cmake")
 FetchContent_MakeAvailable(NeuralAmpModelerCore)
 
@@ -113,6 +118,9 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/ChordLoom.cpp
     src/modules/VolumeSwell.cpp
     src/modules/SpectralNebula.cpp
+    src/modules/MidnightCurrent.cpp
+    src/modules/AutoWah.cpp
+    src/modules/ResonantSculpture.cpp
     src/modules/Limiter.cpp
     src/modules/LoudnessRider.cpp
     src/modules/MidSideDecoder.cpp
@@ -165,6 +173,9 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/ChordLoom.h
     src/modules/VolumeSwell.h
     src/modules/SpectralNebula.h
+    src/modules/MidnightCurrent.h
+    src/modules/AutoWah.h
+    src/modules/ResonantSculpture.h
     src/modules/Limiter.h
     src/modules/LoudnessRider.h
     src/modules/MidSideDecoder.h
@@ -226,6 +237,9 @@ set(MEGADSP_UI_SOURCES
     src/ui/modules/ChordLoomModuleView.cpp
     src/ui/modules/VolumeSwellModuleView.cpp
     src/ui/modules/SpectralNebulaModuleView.cpp
+    src/ui/modules/MidnightCurrentModuleView.cpp
+    src/ui/modules/AutoWahModuleView.cpp
+    src/ui/modules/ResonantSculptureModuleView.cpp
     src/ui/modules/LimiterModuleView.cpp
     src/ui/modules/LoudnessRiderModuleView.cpp
     src/ui/modules/MidSideDecoderModuleView.cpp
@@ -327,6 +341,9 @@ target_sources(megaDSPTests PRIVATE
     tests/ChordLoomTests.cpp
     tests/VolumeSwellTests.cpp
     tests/SpectralNebulaTests.cpp
+    tests/MidnightCurrentTests.cpp
+    tests/AutoWahTests.cpp
+    tests/ResonantSculptureTests.cpp
     tests/ModuleBrowserTests.cpp
     tests/NextTenUtilityTests.cpp
     tests/ProcessorTests.cpp

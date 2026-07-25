@@ -70,6 +70,9 @@ constexpr std::array<ViewCreator,
         &createChordLoomView,
         &createVolumeSwellView,
         &createSpectralNebulaView,
+        &createMidnightCurrentView,
+        &createAutoWahView,
+        &createResonantSculptureView,
         &createNeuralAmpModelerView
     };
 

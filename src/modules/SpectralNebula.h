@@ -56,6 +56,10 @@ public:
     {
         return FixedLatencyStft::reportedLatencySamples;
     }
+    DryPathTiming dryPathTiming() const override
+    {
+        return DryPathTiming::immediate;
+    }
     double tailSeconds(const ControlValues&) const override;
     float meterValue() const override
     {
@@ -75,7 +79,7 @@ private:
     static void processFrameCallback(
         void*, Complex* const*, int, int) noexcept;
     static float outputCallback(
-        void*, int, float, float) noexcept;
+        void*, int, float, float, float) noexcept;
     void processFrame(Complex* const*, int, int) noexcept;
     void publishTelemetry(bool capture) noexcept;
     static Complex safeComplex(Complex) noexcept;

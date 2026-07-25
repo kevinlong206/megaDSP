@@ -95,10 +95,11 @@ public:
             HarmonicMirageModule module;
             auto controls = moduleDefaults(ModuleType::harmonicMirage);
             controls[HarmonicMirageModule::mixControl] = 0.0f;
-            expectAlignedDry(module, controls);
+            expectImmediateDry(module, controls);
             expectEquals(
                 module.latencySamples(),
                 FixedLatencyStft::reportedLatencySamples);
+            expect(module.dryPathTiming() == DryPathTiming::immediate);
         }
 
         beginTest("Phase Coherence finds and confidently repairs a known lag");
@@ -367,6 +368,22 @@ private:
                     buffer.getSample(channel, sample),
                     reference.getSample(channel, sample - latency), 2.0e-6f);
         }
+    }
+
+    void expectImmediateDry(
+        megadsp::DspModule& module,
+        const megadsp::ControlValues& controls)
+    {
+        module.prepare({ sampleRate, blockSize, 2 });
+        juce::AudioBuffer<float> buffer(2, blockSize);
+        fillTestSignal(buffer);
+        const auto reference = buffer;
+        module.process(buffer, controls, {});
+        for (int channel = 0; channel < 2; ++channel)
+            for (int sample = 0; sample < blockSize; ++sample)
+                expectWithinAbsoluteError(
+                    buffer.getSample(channel, sample),
+                    reference.getSample(channel, sample), 2.0e-6f);
     }
 
     megadsp::ContinuousTelemetrySnapshot renderFormants(

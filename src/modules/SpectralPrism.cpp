@@ -51,8 +51,6 @@ void SpectralPrismModule::reset()
 {
     for (auto& channel : inputRing)
         channel.fill(0.0f);
-    for (auto& channel : dryDelay)
-        channel.fill(0.0f);
     for (auto& channel : wetRing)
         channel.fill(0.0f);
     for (auto& values : previousAnalysisPhase)
@@ -70,7 +68,6 @@ void SpectralPrismModule::reset()
     for (auto& values : freezeOutputPhase)
         values.fill(0.0f);
     inputWritePosition = 0;
-    dryDelayPosition = 0;
     wetReadPosition = 0;
     samplesSinceFrame = 0;
     validInputSamples = 0;
@@ -127,17 +124,9 @@ void SpectralPrismModule::process(juce::AudioBuffer<float>& buffer,
                                              : buffer.getSample(0, sample))
         };
 
-        std::array<float, 2> delayedDry {};
         std::array<float, 2> wet {};
         for (int channel = 0; channel < maxChannels; ++channel)
         {
-            delayedDry[static_cast<size_t>(channel)] =
-                dryDelay[static_cast<size_t>(channel)]
-                        [static_cast<size_t>(dryDelayPosition)];
-            dryDelay[static_cast<size_t>(channel)]
-                    [static_cast<size_t>(dryDelayPosition)] =
-                input[static_cast<size_t>(channel)];
-
             wet[static_cast<size_t>(channel)] =
                 wetRing[static_cast<size_t>(channel)]
                        [static_cast<size_t>(wetReadPosition)];
@@ -183,7 +172,7 @@ void SpectralPrismModule::process(juce::AudioBuffer<float>& buffer,
                 ? wet[index]
                 : wetMid;
             const auto result = output
-                * (dryGain * delayedDry[index] + wetGain * wetSample);
+                * (dryGain * input[index] + wetGain * wetSample);
             buffer.setSample(channel, sample, sanitizeSample(result));
         }
 
@@ -196,7 +185,6 @@ void SpectralPrismModule::process(juce::AudioBuffer<float>& buffer,
             juce::jlimit(0.0f, 1.0f, std::sqrt(meterEnvelope)),
             std::memory_order_relaxed);
 
-        dryDelayPosition = (dryDelayPosition + 1) % dryDelaySize;
         wetReadPosition = (wetReadPosition + 1) % wetRingSize;
 
         if (!freezeTarget && freezeBlend <= 0.0001f)

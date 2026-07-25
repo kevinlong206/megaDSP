@@ -160,7 +160,17 @@ public:
                 expect(maximumDifference < 0.00001f);
             }
         };
-        expectLatencyAlignedDry(ModuleType::spectralPrism);
+        {
+            auto prismDryControls =
+                moduleDefaults(ModuleType::spectralPrism);
+            prismDryControls[10] = 0.0f;
+            auto rendered = dryReference;
+            auto module = createDspModule(ModuleType::spectralPrism);
+            module->prepare(spec);
+            module->process(rendered, prismDryControls, {});
+            expect(module->dryPathTiming() == DryPathTiming::immediate);
+            expect(differenceRms(rendered, dryReference, 0) < 0.00001f);
+        }
         expectLatencyAlignedDry(ModuleType::wavefoldGarden);
 
         beginTest("Experimental modules produce distinct bounded wet signals");
@@ -2057,7 +2067,9 @@ public:
             rendered.setSample(0, 0, 0.75f);
             rendered.setSample(1, 3, -0.4f);
             module->process(rendered, controls, {});
-            const auto latency = module->latencySamples();
+            const auto latency =
+                module->dryPathTiming() == DryPathTiming::immediate
+                    ? 0 : module->latencySamples();
             expect(latency >= 0 && latency < rendered.getNumSamples(),
                    name(moduleIndex) + " invalid latency");
             for (int channel = 0; channel < rendered.getNumChannels();

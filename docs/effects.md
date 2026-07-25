@@ -1,10 +1,21 @@
 # Effects reference
 
-Detailed control and interaction notes for each of megaDSP's forty modules. For installation and a quick overview see the [README](../README.md).
+Detailed control and interaction notes for each of megaDSP's forty-six
+modules. For installation and a quick overview see the [README](../README.md).
 
 Runtime-specific graphs show **DSP telemetry waiting** until the selected slot
 has processed an audio block. After capture begins, an empty event field means
 the DSP reported no event activity; it is not filled from an editor clock.
+
+## Latency behavior
+
+**Spectral Prism**, **Pitch Bloom**, **Spectral Delay Canvas**, **Harmonic
+Mirage**, **Time Mosaic**, and **Spectral Nebula** keep their dry path immediate
+and contribute no host delay compensation. Their spectral or pitch-transformed
+wet field begins after its internal analysis window, which acts as a short
+pre-delay rather than delaying everything else in the DAW. Corrective spectral
+tools and processors whose topology depends on phase alignment, oversampling,
+or lookahead continue to report fixed latency and align their dry paths.
 
 ---
 
@@ -18,6 +29,24 @@ below the graph. Double-click a node, or use **Remove**, to return that band to
 a neutral inactive state. The right-side **Output** rail controls final EQ trim.
 
 Pre/post spectrum traces run continuously while the tab is selected.
+
+---
+
+## Auto Wah
+
+Moves a resonant vocal filter from the dynamics of each pick. **Sensitivity**
+sets a visible dB threshold against the live input meter, while **Pick Focus**
+emphasizes the fast attack over the sustained note. **Center Frequency** and
+**Sweep Range** define the motion directly in the main field; **Direction**
+chooses an upward or downward response.
+
+**Attack** controls how quickly the filter reaches the picked position and
+**Release** controls its return. **Resonance** shapes the vocal emphasis,
+while **Filter Type** selects Low Pass, Band Pass, Peak, or Classic Wah.
+**Drive** adds progressively stronger level-referenced saturation and harmonic
+push before the filter. The animated response follows
+the measured envelope and actual cutoff. **Mix** retains an immediate
+zero-latency dry path.
 
 ---
 
@@ -274,7 +303,8 @@ Octaves, with a cents Fine control. Delay, Feedback, Bloom, Spread, wet
 passband, and Ducking shape the result. Rising arcs are not inferred from those
 controls: the selected slot publishes actual pitch-shifted repeat events with
 their smoothed interval, repeat-clock progress, measured energy, pan, and stereo
-spread. The dry path is aligned to the fixed overlapping-window shifter latency.
+spread. The live dry path remains immediate; the shifted repeat arrives after
+the overlapping-window shifter delay.
 
 ---
 
@@ -353,8 +383,8 @@ within each note instead of turning adjacent FFT bins into detuned oscillators.
 **Freeze** stops cloud-state updates without stopping phase motion,
 so frozen material remains alive rather than becoming a static FFT frame.
 **Width** scales only the side domain and therefore preserves mono fold-down.
-Low Cut and High Cut shape only the synthesized cloud; **Dry** and **Cloud** are
-independent latency-aligned levels.
+Low Cut and High Cut shape only the synthesized cloud; **Dry** is immediate and
+**Cloud** is an independent delayed spectral level.
 
 Spectral Nebula uses the shared prepared fixed-latency STFT foundation. Its
 per-bin magnitude, pitch-tracked phase advance, and scratch storage is allocated
@@ -516,31 +546,19 @@ and A2 Nano (3-channel) fast-path models.
 
 | # | Control | Range | Default | Description |
 |---|---------|-------|---------|-------------|
-| 0 | Input Trim | -24..+24 dB | 0 dB | Level before the neural model |
-| 1 | Gate | Off / On | Off | Noise gate on the wet path |
-| 2 | Gate Threshold | -90..-20 dB | -60 dB | Below this level the gate closes (visible when Gate is On) |
-| 3 | Gate Release | 10..500 ms | 120 ms | How quickly the gate re-opens (visible when Gate is On) |
-| 4 | Low Cut | 20..250 Hz | 30 Hz | High-pass on modeled signal |
-| 5 | High Cut | 4..20 kHz | 18 kHz | Low-pass on modeled signal |
-| 6 | CPU Mode | Slimmed / Full CPU | Full CPU | For slimmable models only; A2 shows "A2 Fast (fixed)", others show "Full CPU (fixed)" |
-| 7 | Dry | 0..100% | 0% | Unprocessed input level |
-| 8 | Wet | 0..100% | 100% | Neural-modeled signal level |
-| 9 | Output | -24..+24 dB | 0 dB | Final output after dry/wet blend |
+| 0 | Pre Gain | -24..+24 dB | 0 dB | Level entering the neural model |
+| 1 | Bass | -12..+12 dB | 0 dB | Low-shelf tone control at 120 Hz |
+| 2 | Mid | -12..+12 dB | 0 dB | Broad mid control centered at 750 Hz |
+| 3 | Treble | -12..+12 dB | 0 dB | High-shelf tone control at 3.2 kHz |
+| 4 | Post Gain | -24..+24 dB | 0 dB | Level after the model and tone stack |
 
-### CPU Mode Truthfulness
-
-- **A2 Standard / A2 Nano**: Always shows "A2 Fast (fixed)" — A2 models use
-  a hardware-optimized fixed-width fast path and cannot be slimmed.
-- **Slimmable WaveNet / Container**: Shows and edits "Slimmed / Full CPU" via
-  the CPU Mode control. Switching is click-safe (crossfaded) and performed
-  off the audio thread.
-- **All other architectures**: Shows "Full CPU (fixed)" — these have no
-  slimming capability.
+The module always outputs the modeled path; use the rack's module bypass for
+dry comparison. `SlimmableContainer` models load at their full-size setting.
 
 ### Unloaded Behavior
 
-With no model loaded, the module produces `Dry × input × Output`. With the
-default Dry of 0%, this means silence — no synthetic model signal is generated.
+With no model loaded, the module produces silence—no synthetic model signal is
+generated.
 The UI shows "No model loaded" and prompts the user to drop a `.nam` file.
 
 ### Model File Licensing
@@ -554,3 +572,40 @@ trained by the community may have various licenses. The NAM processing engine
 NAM models declare an expected sample rate. When the host rate matches, the
 model runs directly. Sample-rate mismatch handling is planned for a future
 update with Lanczos resampling via the upstream AudioDSPTools infrastructure.
+
+---
+
+## Midnight Current
+
+Creates the dark, submerged psychedelic character of an electric keyboard
+processed through an early analog synthesizer, without reproducing a particular
+performance. **Filter Center** and **Filter Sweep** shape a moving resonant
+low-pass current. **Motion Rate**, **Phase Depth**, and signed **Regeneration**
+drive an eight-stage phase network, while **Resonance**, **Warmth**,
+**Softness**, and **Drift** control its analog weight and instability.
+
+The main response field directly edits Filter Center and Filter Sweep and shows
+the cutoff and phase motion captured from the DSP. **Stereo Spread** changes
+only the wet side field, so mono fold-down preserves the wet center. **Mix**
+blends against an immediate dry path with no reported latency, and **Output**
+provides final trim.
+
+---
+
+## Resonant Sculpture
+
+Turns incoming audio into excitation for a twelve-mode virtual object.
+**Material** selects String, Glass, Metal, or Membrane frequency spacing,
+brightness, and decay behavior. **Shape** continuously warps the modal geometry,
+while the object follows the incoming fundamental. **Pitch Offset** transposes
+that tracked pitch by up to two octaves, and **Decay** controls how long the
+object continues ringing. When pitch confidence falls, the last confident
+fundamental is held so an existing modal tail does not wobble or collapse.
+
+**Strike** extracts pick and consonant attacks as sharp impacts. **Bow** converts
+sustained input into continuous excitation; both remain scaled by
+**Excitation**. **Mutation** adds slow independent modal drift, while **Chaos**
+adds deterministic irregular motion without changing the stable decay gain.
+**Stereo Field** spreads alternating modes only in a mono-cancelling side
+field. The animated structure deforms from captured mode energy, attack, shape,
+and chaos telemetry. **Mix** retains an immediate zero-latency dry path.

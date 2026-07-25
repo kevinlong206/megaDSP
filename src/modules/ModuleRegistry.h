@@ -13,7 +13,7 @@ namespace megadsp
 constexpr int slotCount = 8;
 constexpr int controlsPerSlot = 12;
 constexpr int stateSchemaVersion = 9;
-constexpr int moduleTypeCount = 45;
+constexpr int moduleTypeCount = 48;
 
 enum class ModuleType
 {
@@ -61,7 +61,10 @@ enum class ModuleType
     chordLoom = 41,
     volumeSwell = 42,
     spectralNebula = 43,
-    neuralAmpModeler = 44
+    midnightCurrent = 44,
+    autoWah = 45,
+    resonantSculpture = 46,
+    neuralAmpModeler = 47
 };
 
 enum class ModuleCategory
@@ -123,6 +126,9 @@ enum class ModulePresentation
     chordLoom,
     volumeSwell,
     spectralNebula,
+    midnightCurrent,
+    autoWah,
+    resonantSculpture,
     neuralAmpModeler,
     count
 };

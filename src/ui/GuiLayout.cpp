@@ -175,6 +175,10 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::chordLoom: return "Chord Loom";
         case ModuleType::volumeSwell: return "Swell";
         case ModuleType::spectralNebula: return "Nebula";
+        case ModuleType::midnightCurrent: return "Midnight";
+        case ModuleType::autoWah: return "Auto Wah";
+        case ModuleType::resonantSculpture: return "Sculpture";
+        case ModuleType::neuralAmpModeler: return "NAM";
         case ModuleType::empty:
         case ModuleType::delay:
         case ModuleType::limiter:
@@ -276,6 +280,10 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::chordLoom:
         case ModuleType::volumeSwell:
         case ModuleType::spectralNebula:
+        case ModuleType::midnightCurrent:
+        case ModuleType::autoWah:
+        case ModuleType::resonantSculpture:
+        case ModuleType::neuralAmpModeler:
             break;
     }
 

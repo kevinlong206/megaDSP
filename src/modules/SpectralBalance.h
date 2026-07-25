@@ -55,7 +55,7 @@ private:
     static void processFrameCallback(
         void*, FixedLatencyStft::Complex* const*, int, int) noexcept;
     static float outputCallback(
-        void*, int, float, float) noexcept;
+        void*, int, float, float, float) noexcept;
     void processFrame(
         FixedLatencyStft::Complex* const*, int, int) noexcept;
     float targetAt(float frequency) const noexcept;

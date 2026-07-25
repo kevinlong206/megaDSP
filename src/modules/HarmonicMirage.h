@@ -75,6 +75,10 @@ public:
     {
         return FixedLatencyStft::reportedLatencySamples;
     }
+    DryPathTiming dryPathTiming() const override
+    {
+        return DryPathTiming::immediate;
+    }
     double tailSeconds(const ControlValues&) const override;
     float meterValue() const override;
     float detectorValue() const override;
@@ -99,7 +103,7 @@ private:
 
     static void processFrameCallback(
         void*, FixedLatencyStft::Complex* const*, int, int) noexcept;
-    static float outputCallback(void*, int, float, float) noexcept;
+    static float outputCallback(void*, int, float, float, float) noexcept;
     void processFrame(
         FixedLatencyStft::Complex* const*, int, int) noexcept;
     void updateOscillatorTargets(float, float,

@@ -1,9 +1,15 @@
 #include "NeuralAmpModeler.h"
 
 #include <NAM/get_dsp.h>
+#include <NAM/container.h>
+#include <NAM/convnet.h>
 #include <NAM/dsp.h>
+#include <NAM/linear.h>
+#include <NAM/lstm.h>
+#include <NAM/model_config.h>
 #include <NAM/slimmable.h>
 #include <NAM/wavenet/a2_fast.h>
+#include <NAM/wavenet/model.h>
 
 // Provide missing iplug compatibility for AudioDSPTools LanczosResampler
 namespace iplug { constexpr double PI = 3.14159265358979323846; }
@@ -12,32 +18,42 @@ namespace iplug { constexpr double PI = 3.14159265358979323846; }
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <mutex>
 
 namespace megadsp
 {
 namespace
 {
-constexpr float inputTrimLow = -24.0f;
-constexpr float inputTrimHigh = 24.0f;
-constexpr float gateThreshLow = -90.0f;
-constexpr float gateThreshHigh = -20.0f;
-constexpr float gateRelLow = 10.0f;
-constexpr float gateRelHigh = 500.0f;
-constexpr float lcLow = 20.0f;
-constexpr float lcHigh = 250.0f;
-constexpr float hcLow = 4000.0f;
-constexpr float hcHigh = 20000.0f;
-constexpr float outLow = -24.0f;
-constexpr float outHigh = 24.0f;
+constexpr float gainLow = -24.0f;
+constexpr float gainHigh = 24.0f;
+constexpr float toneLow = -12.0f;
+constexpr float toneHigh = 12.0f;
 constexpr double defaultModelRate = 48000.0;
 
-float expMap(float lo, float hi, float n)
-{
-    return lo * std::pow(hi / lo, juce::jlimit(0.0f, 1.0f, n));
-}
 float linMap(float lo, float hi, float n)
 {
     return lo + (hi - lo) * juce::jlimit(0.0f, 1.0f, n);
+}
+
+void ensureNamConfigParsersRegistered()
+{
+    static std::once_flag flag;
+    std::call_once(flag, []
+    {
+        auto& registry = nam::ConfigParserRegistry::instance();
+        const auto registerIfMissing =
+            [&registry](const char* name, nam::ConfigParserFunction parser)
+        {
+            if (!registry.has(name))
+                registry.registerParser(name, std::move(parser));
+        };
+
+        registerIfMissing("Linear", nam::linear::create_config);
+        registerIfMissing("LSTM", nam::lstm::create_config);
+        registerIfMissing("ConvNet", nam::convnet::create_config);
+        registerIfMissing("WaveNet", nam::wavenet::create_config);
+        nam::container::ensure_config_parser_registered();
+    });
 }
 } // namespace
 
@@ -125,10 +141,50 @@ NeuralAmpModelerModule::NeuralAmpModelerModule()
 
 NeuralAmpModelerModule::~NeuralAmpModelerModule() = default;
 
-float NeuralAmpModelerModule::smoothCoeff() const noexcept
+void NeuralAmpModelerModule::updateToneStack(
+    float bassDb, float midDb, float trebleDb) noexcept
 {
-    return 1.0f - std::exp(-1.0f / static_cast<float>(
-        detail::safeSampleRate(hostRate) * 0.005));
+    const auto setPeak = [this](Biquad& filter, float frequency,
+                                float q, float gainDb)
+    {
+        const auto a = std::pow(10.0f, gainDb / 40.0f);
+        const auto omega = juce::MathConstants<float>::twoPi * frequency
+            / static_cast<float>(hostRate);
+        const auto alpha = std::sin(omega) / (2.0f * q);
+        const auto cosine = std::cos(omega);
+        const auto a0 = 1.0f + alpha / a;
+        filter.b0 = (1.0f + alpha * a) / a0;
+        filter.b1 = (-2.0f * cosine) / a0;
+        filter.b2 = (1.0f - alpha * a) / a0;
+        filter.a1 = (-2.0f * cosine) / a0;
+        filter.a2 = (1.0f - alpha / a) / a0;
+    };
+    const auto setShelf = [this](Biquad& filter, float frequency,
+                                 float gainDb, bool high)
+    {
+        const auto a = std::pow(10.0f, gainDb / 40.0f);
+        const auto omega = juce::MathConstants<float>::twoPi * frequency
+            / static_cast<float>(hostRate);
+        const auto cosine = std::cos(omega);
+        const auto sine = std::sin(omega);
+        const auto alpha = sine * std::sqrt(2.0f) * 0.5f;
+        const auto beta = 2.0f * std::sqrt(a) * alpha;
+        const auto sign = high ? -1.0f : 1.0f;
+        const auto a0 = (a + 1.0f) + sign * (a - 1.0f) * cosine + beta;
+        filter.b0 = a * ((a + 1.0f) - sign * (a - 1.0f) * cosine + beta) / a0;
+        filter.b1 = 2.0f * a
+            * (sign * (a - 1.0f) - (a + 1.0f) * cosine) / a0;
+        filter.b2 = a * ((a + 1.0f) - sign * (a - 1.0f) * cosine - beta) / a0;
+        filter.a1 = -2.0f
+            * (sign * (a - 1.0f) + (a + 1.0f) * cosine) / a0;
+        filter.a2 = ((a + 1.0f) + sign * (a - 1.0f) * cosine - beta) / a0;
+    };
+    for (auto& channel : toneFilters)
+    {
+        setShelf(channel[0], 120.0f, bassDb, false);
+        setPeak(channel[1], 750.0f, 0.75f, midDb);
+        setShelf(channel[2], 3200.0f, trebleDb, true);
+    }
 }
 
 void NeuralAmpModelerModule::prepare(const juce::dsp::ProcessSpec& spec)
@@ -137,50 +193,28 @@ void NeuralAmpModelerModule::prepare(const juce::dsp::ProcessSpec& spec)
     preparedBlock = juce::jmax(1, static_cast<int>(spec.maximumBlockSize));
     preparedChans = juce::jmax(1, static_cast<int>(spec.numChannels));
 
-    const auto monoSpec = juce::dsp::ProcessSpec {
-        spec.sampleRate, spec.maximumBlockSize, 1 };
     for (int ch = 0; ch < maxChannels; ++ch)
-    {
-        lowCutFilters[ch].prepare(monoSpec);
-        lowCutFilters[ch].setType(juce::dsp::StateVariableTPTFilterType::highpass);
-        highCutFilters[ch].prepare(monoSpec);
-        highCutFilters[ch].setType(juce::dsp::StateVariableTPTFilterType::lowpass);
         channels[ch]->allocate(preparedBlock);
-    }
-    dryBuffer.setSize(preparedChans, preparedBlock);
     wetBuffer.setSize(preparedChans, preparedBlock);
-    xfadeScratch.setSize(1, preparedBlock);
-    inputGainFrames.resize(static_cast<size_t>(preparedBlock));
-    lowCutFrames.resize(static_cast<size_t>(preparedBlock));
-    highCutFrames.resize(static_cast<size_t>(preparedBlock));
-    dryFrames.resize(static_cast<size_t>(preparedBlock));
-    wetFrames.resize(static_cast<size_t>(preparedBlock));
-    outputFrames.resize(static_cast<size_t>(preparedBlock));
+    for (auto& smoother : controlSmoothers)
+        smoother.reset(hostRate, 0.025);
+    for (auto& frames : controlFrames)
+        frames.resize(static_cast<size_t>(preparedBlock));
+    reset();
 }
 
 void NeuralAmpModelerModule::reset()
 {
     for (int ch = 0; ch < maxChannels; ++ch)
     {
-        lowCutFilters[ch].reset();
-        highCutFilters[ch].reset();
-        gateEnvelope[ch] = 0.0f;
-        gateGain[ch] = 1.0f;
+        for (auto& filter : toneFilters[static_cast<size_t>(ch)])
+            filter.reset();
         channels[ch]->clearBufs();
     }
-    dryBuffer.clear();
     wetBuffer.clear();
-    xfadeScratch.clear();
-    for (auto& channel : dryDelay)
-        std::fill(channel.begin(), channel.end(), 0.0f);
-    dryDelayWritePosition = 0;
-    inputGainCur = inputGainTarget;
-    dryCur = dryTarget;
-    wetCur = wetTarget;
-    outputCur = outputTarget;
-    lowCutCur = lowCutTarget;
-    highCutCur = highCutTarget;
-    xfadePos = 0;
+    const std::array<float, 5> defaults { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+    for (size_t index = 0; index < controlSmoothers.size(); ++index)
+        controlSmoothers[index].setCurrentAndTargetValue(defaults[index]);
 }
 
 void NeuralAmpModelerModule::process(
@@ -209,68 +243,25 @@ void NeuralAmpModelerModule::process(
         return;
     }
 
-    // --- read controls ---
-    inputGainTarget = juce::Decibels::decibelsToGain(
-        linMap(inputTrimLow, inputTrimHigh, controls[0]));
-    const bool gateOn = controls[1] >= 0.5f;
-    const float gateThreshLin = juce::Decibels::decibelsToGain(
-        linMap(gateThreshLow, gateThreshHigh, controls[2]));
-    const float gateRelMs = expMap(gateRelLow, gateRelHigh, controls[3]);
-    lowCutTarget = expMap(lcLow, lcHigh, controls[4]);
-    highCutTarget = expMap(hcLow, hcHigh, controls[5]);
-    const int wantMode = controls[6] < 0.5f ? 0 : 1;
-    dryTarget = controls[7];
-    wetTarget = controls[8];
-    outputTarget = juce::Decibels::decibelsToGain(
-        linMap(outLow, outHigh, controls[9]));
-
-    const float gateRet = 1.0f - std::exp(
-        -1.0f / static_cast<float>(hostRate * gateRelMs * 0.001));
-    const float coeff = smoothCoeff();
+    const std::array<float, 5> targets {
+        juce::Decibels::decibelsToGain(linMap(gainLow, gainHigh, controls[0])),
+        linMap(toneLow, toneHigh, controls[1]),
+        linMap(toneLow, toneHigh, controls[2]),
+        linMap(toneLow, toneHigh, controls[3]),
+        juce::Decibels::decibelsToGain(linMap(gainLow, gainHigh, controls[4]))
+    };
+    for (size_t index = 0; index < controlSmoothers.size(); ++index)
+    {
+        controlSmoothers[index].setTargetValue(targets[index]);
+        auto& frames = controlFrames[index];
+        for (int sample = 0; sample < ns; ++sample)
+            frames[static_cast<size_t>(sample)] =
+                controlSmoothers[index].getNextValue();
+    }
     const bool hasModel = modelReady.load(std::memory_order_acquire);
 
-    // --- precompute per-sample smooth arrays ---
-    // We compute them once and apply identically to all channels.
-    auto* igArr = inputGainFrames.data();
-    auto* lcArr = lowCutFrames.data();
-    auto* hcArr = highCutFrames.data();
-    auto* dArr = dryFrames.data();
-    auto* wArr = wetFrames.data();
-    auto* oArr = outputFrames.data();
-    {
-        float ig = inputGainCur, lc = lowCutCur, hc = highCutCur;
-        float d = dryCur, w = wetCur, o = outputCur;
-        for (int i = 0; i < ns; ++i)
-        {
-            ig += (inputGainTarget - ig) * coeff;
-            lc += (lowCutTarget - lc) * coeff;
-            hc += (highCutTarget - hc) * coeff;
-            d += (dryTarget - d) * coeff;
-            w += (wetTarget - w) * coeff;
-            o += (outputTarget - o) * coeff;
-            igArr[i] = ig; lcArr[i] = lc; hcArr[i] = hc;
-            dArr[i] = d; wArr[i] = w; oArr[i] = o;
-        }
-        inputGainCur = ig; lowCutCur = lc; highCutCur = hc;
-        dryCur = d; wetCur = w; outputCur = o;
-    }
-
-    // --- CPU mode crossfade management ---
-    const auto canSlim = hasModel && channels[0]->slimmable;
-    const auto effectiveMode = canSlim ? wantMode : 1;
-    if (effectiveMode != targetMode)
-    {
-        targetMode = effectiveMode;
-        xfadePos = targetMode == activeMode ? 0 : xfadeLength;
-    }
-    const auto transitionSamples = juce::jmin(xfadePos, ns);
-
-    // --- save dry, build wet ---
     for (int ch = 0; ch < nc; ++ch)
-    {
-        dryBuffer.copyFrom(ch, 0, buffer, ch, 0, ns);
         wetBuffer.copyFrom(ch, 0, buffer, ch, 0, ns);
-    }
 
     if (hasModel && channels[0]->full->model)
     {
@@ -279,69 +270,20 @@ void NeuralAmpModelerModule::process(
             const int ci = juce::jmin(ch, maxChannels - 1);
             float* wet = wetBuffer.getWritePointer(ch);
 
-            // input gain
             for (int i = 0; i < ns; ++i)
-                wet[i] = detail::finiteSample(wet[i]) * igArr[i];
-
-            // per-channel gate
-            if (gateOn)
-            {
-                for (int i = 0; i < ns; ++i)
-                {
-                    const float lv = std::abs(wet[i]);
-                    if (lv > gateEnvelope[ci])
-                        gateEnvelope[ci] = lv;
-                    else
-                        gateEnvelope[ci] *= (1.0f - gateRet);
-                    const float tgt = gateEnvelope[ci] >= gateThreshLin
-                                          ? 1.0f : 0.0f;
-                    gateGain[ci] += (tgt - gateGain[ci]) * gateRet;
-                    wet[i] *= gateGain[ci];
-                }
-            }
-            else
-            {
-                // Click-safe fade gate gain toward 1
-                for (int i = 0; i < ns; ++i)
-                {
-                    gateGain[ci] += (1.0f - gateGain[ci]) * coeff;
-                    wet[i] *= gateGain[ci];
-                }
-            }
-
-            auto* cs = channels[ci].get();
-            if (transitionSamples > 0 && cs->slimmable)
-            {
-                xfadeScratch.copyFrom(
-                    0, 0, wetBuffer, ch, 0, transitionSamples);
-                cs->variant(activeMode)->process(wet, transitionSamples);
-                auto* alt = xfadeScratch.getWritePointer(0);
-                cs->variant(targetMode)->process(alt, transitionSamples);
-                for (int i = 0; i < transitionSamples; ++i)
-                {
-                    const auto oldGain = static_cast<float>(xfadePos - i)
-                        / static_cast<float>(xfadeLength);
-                    wet[i] = wet[i] * oldGain
-                        + alt[i] * (1.0f - oldGain);
-                }
-                if (transitionSamples < ns)
-                    cs->variant(targetMode)->process(
-                        wet + transitionSamples, ns - transitionSamples);
-            }
-            else
-            {
-                cs->variant(activeMode)->process(wet, ns);
-            }
-
-            // per-channel filters with per-sample cutoff
+                wet[i] = detail::finiteSample(wet[i])
+                    * controlFrames[0][static_cast<size_t>(i)];
+            channels[ci]->full->process(wet, ns);
             for (int i = 0; i < ns; ++i)
             {
-                lowCutFilters[ci].setCutoffFrequency(lcArr[i]);
-                highCutFilters[ci].setCutoffFrequency(hcArr[i]);
-                float s = wet[i];
-                s = lowCutFilters[ci].processSample(0, s);
-                s = highCutFilters[ci].processSample(0, s);
-                wet[i] = s;
+                const auto bass = controlFrames[1][static_cast<size_t>(i)];
+                const auto mid = controlFrames[2][static_cast<size_t>(i)];
+                const auto treble = controlFrames[3][static_cast<size_t>(i)];
+                updateToneStack(bass, mid, treble);
+                auto sample = wet[i];
+                for (auto& filter : toneFilters[static_cast<size_t>(ci)])
+                    sample = filter.process(sample);
+                wet[i] = sample * controlFrames[4][static_cast<size_t>(i)];
             }
         }
     }
@@ -350,44 +292,8 @@ void NeuralAmpModelerModule::process(
         wetBuffer.clear(0, ns);
     }
 
-    if (transitionSamples > 0)
-    {
-        xfadePos -= transitionSamples;
-        if (xfadePos == 0)
-            activeMode = targetMode;
-    }
-
-    const auto dryLatency = reportedLatency.load(std::memory_order_relaxed);
-    if (dryLatency > 0)
-    {
-        for (int i = 0; i < ns; ++i)
-        {
-            for (int ch = 0; ch < nc; ++ch)
-            {
-                auto& delayed = dryDelay[static_cast<size_t>(ch)][
-                    static_cast<size_t>(dryDelayWritePosition)];
-                const auto input = dryBuffer.getSample(ch, i);
-                dryBuffer.setSample(ch, i, delayed);
-                delayed = input;
-            }
-            if (++dryDelayWritePosition >= dryLatency)
-                dryDelayWritePosition = 0;
-        }
-    }
-
-    // --- blend dry/wet -> output ---
     for (int ch = 0; ch < nc; ++ch)
-    {
-        float* out = buffer.getWritePointer(ch);
-        const float* dry = dryBuffer.getReadPointer(ch);
-        const float* wet = wetBuffer.getReadPointer(ch);
-        for (int i = 0; i < ns; ++i)
-        {
-            float v = detail::finiteSample(dry[i]) * dArr[i]
-                    + detail::finiteSample(wet[i]) * wArr[i];
-            out[i] = detail::finiteSample(v * oArr[i]);
-        }
-    }
+        buffer.copyFrom(ch, 0, wetBuffer, ch, 0, ns);
 }
 
 int NeuralAmpModelerModule::latencySamples() const
@@ -409,6 +315,7 @@ juce::Result NeuralAmpModelerModule::prepareNamModel(
     auto load = std::make_unique<PreparedLoad>();
     try
     {
+        ensureNamConfigParsersRegistered();
         nam::dspData config;
         auto mdl = nam::get_dsp(
             std::filesystem::path(file.getFullPathName().toStdString()),
@@ -426,7 +333,9 @@ juce::Result NeuralAmpModelerModule::prepareNamModel(
         if (config.architecture == "Linear") kind = NamModelKind::linear;
         else if (config.architecture == "LSTM") kind = NamModelKind::lstm;
         else if (config.architecture == "ConvNet") kind = NamModelKind::convNet;
-        else if (config.architecture == "Container") kind = NamModelKind::container;
+        else if (config.architecture == "Container"
+                 || config.architecture == "SlimmableContainer")
+            kind = NamModelKind::container;
         else if (config.architecture == "WaveNet")
         {
             if (dynamic_cast<nam::SlimmableModel*>(mdl.get()))
@@ -509,20 +418,11 @@ juce::Result NeuralAmpModelerModule::prepareNamModel(
         for (int ch = 0; ch < maxChannels; ++ch)
         {
             auto cs = std::make_unique<ChannelState>();
-            cs->slimmable = isSlim;
+            cs->slimmable = false;
             // full variant
             auto fm = ch == 0 ? std::move(mdl) : loadModel();
             if (!fm) return juce::Result::fail("Stereo model failed.");
             cs->full = makeVariant(std::move(fm), false);
-            // slim variant (distinct instance)
-            if (isSlim)
-            {
-                auto sm = loadModel();
-                if (!sm)
-                    return juce::Result::fail(
-                        "Slim NAM model variant failed.");
-                cs->slim = makeVariant(std::move(sm), true);
-            }
             cs->allocate(blk);
             load->ch[ch] = std::move(cs);
         }
@@ -560,13 +460,7 @@ bool NeuralAmpModelerModule::commitPreparedNamModel(PreparedNamModelPtr& p)
     for (int ch = 0; ch < maxChannels; ++ch)
         channels[ch] = std::move(ld->ch[ch]);
     reportedLatency.store(ld->latency, std::memory_order_relaxed);
-    const auto delaySize = static_cast<size_t>(juce::jmax(0, ld->latency));
-    for (auto& channel : dryDelay)
-        channel.assign(delaySize, 0.0f);
-    dryDelayWritePosition = 0;
     { const juce::ScopedLock sl(infoLock); currentInfo = ld->info; }
-    activeMode = targetMode = 1;
-    xfadePos = 0;
     modelReady.store(true, std::memory_order_release);
     p.reset();
     return true;
@@ -585,9 +479,6 @@ void NeuralAmpModelerModule::clearNamModel()
         c->allocate(juce::jmax(1, preparedBlock));
     }
     reportedLatency.store(0, std::memory_order_relaxed);
-    for (auto& channel : dryDelay)
-        channel.clear();
-    dryDelayWritePosition = 0;
     { const juce::ScopedLock sl(infoLock); currentInfo = {}; }
 }
 

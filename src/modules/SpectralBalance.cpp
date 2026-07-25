@@ -117,7 +117,7 @@ void SpectralBalanceModule::processFrameCallback(
 }
 
 float SpectralBalanceModule::outputCallback(
-    void* context, int channel, float dry, float wet) noexcept
+    void* context, int channel, float, float dry, float wet) noexcept
 {
     auto& module = *static_cast<SpectralBalanceModule*>(context);
     if (channel == 0)

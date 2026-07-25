@@ -172,7 +172,7 @@ void SpectralNebulaModule::processFrameCallback(
 }
 
 float SpectralNebulaModule::outputCallback(
-    void* context, int channel, float dry, float wet) noexcept
+    void* context, int channel, float input, float, float wet) noexcept
 {
     auto& module = *static_cast<SpectralNebulaModule*>(context);
     if (channel == 0)
@@ -183,7 +183,7 @@ float SpectralNebulaModule::outputCallback(
     }
     const auto boundedWet = std::tanh(wet * 1.2f) / 1.2f;
     return detail::finiteSample(
-        (dry * module.currentDry + boundedWet * module.currentCloud)
+        (input * module.currentDry + boundedWet * module.currentCloud)
         * module.currentOutput);
 }
 

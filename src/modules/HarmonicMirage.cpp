@@ -168,10 +168,10 @@ void HarmonicMirageModule::processFrameCallback(
 }
 
 float HarmonicMirageModule::outputCallback(
-    void* context, int channel, float dry, float) noexcept
+    void* context, int channel, float input, float, float) noexcept
 {
     auto& module = *static_cast<HarmonicMirageModule*>(context);
-    const auto output = module.outputSample(channel, dry);
+    const auto output = module.outputSample(channel, input);
     if (channel == module.currentChannelCount - 1)
         module.renderOscillators();
     return output;

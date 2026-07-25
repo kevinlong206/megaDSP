@@ -297,6 +297,38 @@ public:
             expect(!suspendedProcessor.getRack().slotDspSuspended(0));
         }
 
+        beginTest("Creative latency does not contribute to host PDC");
+        {
+            MegaDSPAudioProcessor latencyPolicyProcessor;
+            latencyPolicyProcessor.prepareToPlay(48000.0, 512);
+            const std::array creativeTypes {
+                megadsp::ModuleType::spectralPrism,
+                megadsp::ModuleType::pitchBloom,
+                megadsp::ModuleType::spectralDelayCanvas,
+                megadsp::ModuleType::harmonicMirage,
+                megadsp::ModuleType::timeMosaic,
+                megadsp::ModuleType::spectralNebula
+            };
+            for (const auto type : creativeTypes)
+            {
+                setType(latencyPolicyProcessor, 0, type);
+                latencyPolicyProcessor.flushPendingUpdatesForTesting();
+                expectEquals(latencyPolicyProcessor.getRack().latencySamples(), 0);
+            }
+
+            setType(
+                latencyPolicyProcessor, 1,
+                megadsp::ModuleType::resonanceTamer);
+            latencyPolicyProcessor.flushPendingUpdatesForTesting();
+            expectEquals(
+                latencyPolicyProcessor.getRack().latencySamples(),
+                megadsp::FixedLatencyStft::reportedLatencySamples);
+            setBypass(latencyPolicyProcessor, 1, true);
+            expectEquals(
+                latencyPolicyProcessor.getRack().latencySamples(),
+                megadsp::FixedLatencyStft::reportedLatencySamples);
+        }
+
         beginTest("Latency modules warm up silently before bypass re-entry");
         {
             MegaDSPAudioProcessor latencyProcessor;

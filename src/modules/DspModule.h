@@ -23,6 +23,12 @@ struct ProcessEnvironment
     bool captureTelemetry = false;
 };
 
+enum class DryPathTiming
+{
+    aligned,
+    immediate
+};
+
 class DspModule
 {
 public:
@@ -33,6 +39,10 @@ public:
                          const ControlValues& controls,
                          const ProcessEnvironment& environment) = 0;
     virtual int latencySamples() const { return 0; }
+    virtual DryPathTiming dryPathTiming() const
+    {
+        return DryPathTiming::aligned;
+    }
     virtual double tailSeconds(const ControlValues&) const { return 0.0; }
     virtual float meterValue() const { return 0.0f; }
     virtual float detectorValue() const { return -100.0f; }

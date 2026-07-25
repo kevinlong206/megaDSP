@@ -96,47 +96,34 @@ public:
     int namLatencySamples() const noexcept override;
 
 private:
+    struct Biquad
+    {
+        float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
+        float a1 = 0.0f, a2 = 0.0f;
+        float z1 = 0.0f, z2 = 0.0f;
+
+        float process(float input) noexcept
+        {
+            const auto output = b0 * input + z1;
+            z1 = b1 * input - a1 * output + z2;
+            z2 = b2 * input - a2 * output;
+            return detail::finiteSample(output);
+        }
+        void reset() noexcept { z1 = z2 = 0.0f; }
+    };
+
     struct ModelVariant;
     struct ChannelState;
     struct PreparedLoad;
 
     static constexpr int maxChannels = 2;
-    static constexpr int xfadeLength = 256;
 
     // Per-channel: two model variants (full / slim) with independent state
     std::unique_ptr<ChannelState> channels[maxChannels];
-    juce::AudioBuffer<float> dryBuffer;
     juce::AudioBuffer<float> wetBuffer;
-    juce::AudioBuffer<float> xfadeScratch;
-    std::array<std::vector<float>, maxChannels> dryDelay;
-    int dryDelayWritePosition = 0;
-    std::vector<float> inputGainFrames;
-    std::vector<float> lowCutFrames;
-    std::vector<float> highCutFrames;
-    std::vector<float> dryFrames;
-    std::vector<float> wetFrames;
-    std::vector<float> outputFrames;
-
-    // Per-channel gate
-    float gateEnvelope[maxChannels] {};
-    float gateGain[maxChannels] {};
-
-    // Per-channel filters
-    juce::dsp::StateVariableTPTFilter<float> lowCutFilters[maxChannels];
-    juce::dsp::StateVariableTPTFilter<float> highCutFilters[maxChannels];
-
-    // Smoothing state (shared across channels, advanced once per sample)
-    float inputGainTarget = 1.0f, inputGainCur = 1.0f;
-    float dryTarget = 0.0f, dryCur = 0.0f;
-    float wetTarget = 1.0f, wetCur = 1.0f;
-    float outputTarget = 1.0f, outputCur = 1.0f;
-    float lowCutTarget = 30.0f, lowCutCur = 30.0f;
-    float highCutTarget = 18000.0f, highCutCur = 18000.0f;
-
-    // CPU mode crossfade
-    int activeMode = 1;   // 0 = slim, 1 = full
-    int targetMode = 1;
-    int xfadePos = 0;     // 0 means not crossfading
+    std::array<std::array<Biquad, 3>, maxChannels> toneFilters {};
+    std::array<juce::SmoothedValue<float>, 5> controlSmoothers {};
+    std::array<std::vector<float>, 5> controlFrames;
 
     double hostRate = 44100.0;
     int preparedBlock = 512;
@@ -147,6 +134,6 @@ private:
     mutable juce::CriticalSection infoLock;
     NamModelInfo currentInfo;
 
-    float smoothCoeff() const noexcept;
+    void updateToneStack(float bassDb, float midDb, float trebleDb) noexcept;
 };
 } // namespace megadsp

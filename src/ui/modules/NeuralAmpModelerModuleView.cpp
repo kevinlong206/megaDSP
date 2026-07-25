@@ -15,310 +15,192 @@ class NeuralAmpModelerModuleView final : public ModuleView
 public:
     using ModuleView::ModuleView;
     bool usesFullPanel() const override { return true; }
-    void configureAccessibility(juce::Component& c) const override
+
+    void configureAccessibility(juce::Component& component) const override
     {
-        c.setTitle("Neural Amp Modeler");
-        const auto storedPath = processor.namModelPath(slot);
-        juce::String help =
-            "Drop a single .nam neural amp model file here. ";
-        if (storedPath.isNotEmpty())
-            help += "Stored model: " + storedPath + ". ";
-        help += "Controls: Input Trim, Gate, Low/High Cut, CPU Mode, "
-                "Dry/Wet, Output. Double-click a track to reset.";
-        c.setHelpText(help);
+        component.setTitle("Neural Amp Modeler");
+        component.setHelpText(
+            "Drop a .nam model into the panel. Pre Gain drives the model, "
+            "Bass, Mid, and Treble form a guitar tone stack, and Post Gain "
+            "sets the final modeled level.");
     }
 
-    void paint(juce::Graphics& g, juce::Rectangle<float> bounds) override
-    {
-        auto area = bounds.reduced(12.0f);
-        paintStatus(g, area);
-        area.removeFromTop(8.0f);
-        paintGatePill(g, area);
-        paintCpuPill(g, area);
-        area.removeFromTop(4.0f);
-        paintTracks(g, area);
-    }
-
-    void mouseDown(const juce::MouseEvent& e) override
-    {
-        const auto area = getLocalBounds().toFloat().reduced(12.0f);
-        // Gate pill hit test
-        if (gatePillBounds.contains(e.position))
-        {
-            toggleParameter(1);
-            repaint();
-            return;
-        }
-        // CPU pill hit test (only if slimmable)
-        if (cpuPillBounds.contains(e.position) && cachedInfo.valid
-            && cachedInfo.cpuCapability == NamCpuCapability::slimmable)
-        {
-            cycleChoice(6, 2);
-            repaint();
-            return;
-        }
-        // Track drag
-        const float trackStart = area.getY() + trackYOffset;
-        if (e.position.y < trackStart) return;
-        const int idx = static_cast<int>(
-            (e.position.y - trackStart) / trackSpacing);
-        const int param = trackParam(idx);
-        if (param >= 0)
-        {
-            dragPrimary = param;
-            beginGestures();
-            mouseDrag(e);
-        }
-    }
-
-    void mouseDrag(const juce::MouseEvent& e) override
-    {
-        if (dragPrimary < 0) return;
-        const auto area = getLocalBounds().toFloat().reduced(12.0f);
-        const float trackLeft = 100.0f;
-        const float trackWidth = area.getWidth() - trackLeft;
-        const float p = juce::jlimit(
-            0.0f, 1.0f,
-            (e.position.x - area.getX() - trackLeft) / trackWidth);
-        setValue(dragPrimary, p);
-        updateDefaultDragReadout();
-    }
-
-    void mouseDoubleClick(const juce::MouseEvent& e) override
-    {
-        if (gatePillBounds.contains(e.position)) return;
-        if (cpuPillBounds.contains(e.position)) return;
-        const auto area = getLocalBounds().toFloat().reduced(12.0f);
-        const float trackStart = area.getY() + trackYOffset;
-        if (e.position.y < trackStart) return;
-        const int idx = static_cast<int>(
-            (e.position.y - trackStart) / trackSpacing);
-        const int param = trackParam(idx);
-        if (param >= 0) resetToDefault(param);
-    }
-
-    void timerCallback() override
-    {
-        const auto* mod = processor.getRack().activeModuleInstance(slot);
-        if (mod == nullptr) return;
-        const auto* namCap = mod->namModelCapability();
-        if (namCap == nullptr) return;
-        const auto info = namCap->namModelInfo();
-        if (info.name != cachedInfo.name || info.valid != cachedInfo.valid
-            || info.kind != cachedInfo.kind)
-        {
-            cachedInfo = info;
-            repaint();
-        }
-    }
+    void paint(juce::Graphics&, juce::Rectangle<float>) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
+    void timerCallback() override;
 
     bool isInterestedInFileDrag(const juce::StringArray& files) const override
     {
-        if (files.size() != 1) return false;
-        return files[0].endsWithIgnoreCase(".nam");
+        return files.size() == 1 && files[0].endsWithIgnoreCase(".nam");
     }
 
     void filesDropped(const juce::StringArray& files, int, int) override
     {
-        if (files.size() != 1) return;
-        const juce::File f(files[0]);
-        if (!f.existsAsFile()
-            || f.getFileExtension().toLowerCase() != ".nam")
-        {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::MessageBoxIconType::WarningIcon,
-                "Invalid file", "Please drop a single .nam file.");
+        if (!isInterestedInFileDrag(files))
             return;
-        }
-        const auto result = processor.loadNamModel(slot, f);
+        const auto result = processor.loadNamModel(slot, juce::File(files[0]));
         if (result.failed())
             juce::AlertWindow::showMessageBoxAsync(
                 juce::MessageBoxIconType::WarningIcon,
-                "Could not load NAM model",
-                result.getErrorMessage());
+                "Could not load NAM model", result.getErrorMessage());
     }
 
     std::vector<int> keyboardControls() const override
     {
-        std::vector<int> ctrls { 0, 1, 4, 5, 7, 8, 9 };
-        if (value(1) >= 0.5f)
-        {
-            ctrls.insert(ctrls.begin() + 2, 2);
-            ctrls.insert(ctrls.begin() + 3, 3);
-        }
-        if (cachedInfo.valid
-            && cachedInfo.cpuCapability == NamCpuCapability::slimmable)
-            ctrls.push_back(6);
-        return ctrls;
-    }
-
-    juce::String keyboardLabel(int control) const override
-    {
-        switch (control)
-        {
-            case 0: return "Input Trim";
-            case 1: return "Gate";
-            case 2: return "Gate Threshold";
-            case 3: return "Gate Release";
-            case 4: return "Low Cut";
-            case 5: return "High Cut";
-            case 6: return "CPU Mode";
-            case 7: return "Dry";
-            case 8: return "Wet";
-            case 9: return "Output";
-            default: return {};
-        }
+        return { 0, 1, 2, 3, 4 };
     }
 
 private:
     NamModelInfo cachedInfo;
-    juce::Rectangle<float> gatePillBounds;
-    juce::Rectangle<float> cpuPillBounds;
-    static constexpr float trackSpacing = 20.0f;
-    float trackYOffset = 118.0f;
+    float dragStartValue = 0.0f;
 
-    int trackParam(int idx) const
+    static juce::Rectangle<float> knobBounds(
+        juce::Rectangle<float> area, int control)
     {
-        const bool gateOn = value(1) >= 0.5f;
-        const int map[] = { 0, 4, 5, 7, 8, 9 };
-        const int mapGate[] = { 0, 2, 3, 4, 5, 7, 8, 9 };
-        const auto& m = gateOn ? mapGate : map;
-        const int n = gateOn ? 8 : 6;
-        return idx >= 0 && idx < n ? m[idx] : -1;
+        area.removeFromTop(78.0f);
+        const auto width = area.getWidth() / 5.0f;
+        return { area.getX() + width * static_cast<float>(control),
+                 area.getY(), width, area.getHeight() };
     }
 
-    void paintStatus(juce::Graphics& g, juce::Rectangle<float>& area) const
+    static juce::String kindName(NamModelKind kind)
     {
-        auto statusArea = area.removeFromTop(60.0f);
-        if (!cachedInfo.valid)
+        switch (kind)
         {
-            g.setColour(juce::Colour(0xffa8b3c0));
-            g.setFont(12.0f);
-            g.drawText("No model loaded", statusArea,
-                       juce::Justification::centred);
-            const auto storedPath = processor.namModelPath(slot);
-            if (storedPath.isNotEmpty())
-            {
-                g.setFont(9.0f);
-                g.setColour(juce::Colour(0xffff8866));
-                g.drawText("File not found: "
-                    + juce::File(storedPath).getFileName(),
-                    statusArea.translated(0.0f, 18.0f),
-                    juce::Justification::centred);
-            }
-            else
-            {
-                g.setFont(10.0f);
-                g.drawText("Drop a .nam file or use Load NAM...",
-                           statusArea.translated(0.0f, 18.0f),
-                           juce::Justification::centred);
-            }
-            return;
+            case NamModelKind::waveNetA2Standard: return "A2 Standard";
+            case NamModelKind::waveNetA2Nano: return "A2 Nano";
+            case NamModelKind::slimmableWaveNet: return "Slimmable WaveNet";
+            case NamModelKind::waveNet: return "WaveNet";
+            case NamModelKind::lstm: return "LSTM";
+            case NamModelKind::linear: return "Linear";
+            case NamModelKind::convNet: return "ConvNet";
+            case NamModelKind::container: return "Slimmable Container";
+            case NamModelKind::unknown: return "Unknown";
         }
-        g.setColour(juce::Colours::white);
-        g.setFont(14.0f);
-        auto top = statusArea;
-        g.drawText(cachedInfo.name, top.removeFromTop(20.0f),
-                   juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xffa8b3c0));
-        g.setFont(10.0f);
-        juce::String kindStr;
-        switch (cachedInfo.kind)
-        {
-            case NamModelKind::unknown: kindStr = "Unknown"; break;
-            case NamModelKind::waveNetA2Standard: kindStr = "A2 Standard"; break;
-            case NamModelKind::waveNetA2Nano: kindStr = "A2 Nano"; break;
-            case NamModelKind::slimmableWaveNet: kindStr = "WaveNet (Slimmable)"; break;
-            case NamModelKind::waveNet: kindStr = "WaveNet"; break;
-            case NamModelKind::lstm: kindStr = "LSTM"; break;
-            case NamModelKind::linear: kindStr = "Linear"; break;
-            case NamModelKind::convNet: kindStr = "ConvNet"; break;
-            case NamModelKind::container: kindStr = "Container"; break;
-        }
-        g.drawText("Architecture: " + kindStr, top.removeFromTop(14.0f),
-                   juce::Justification::centredLeft);
-        if (cachedInfo.expectedSampleRate > 0)
-            g.drawText("Expected: "
-                + juce::String(cachedInfo.expectedSampleRate / 1000.0, 1)
-                + " kHz", top.removeFromTop(14.0f),
-                juce::Justification::centredLeft);
-    }
-
-    void paintGatePill(juce::Graphics& g, juce::Rectangle<float>& area)
-    {
-        auto row = area.removeFromTop(20.0f);
-        const bool on = value(1) >= 0.5f;
-        gatePillBounds = row.removeFromLeft(80.0f);
-        g.setColour(on ? accent : juce::Colour(0xff333b44));
-        g.fillRoundedRectangle(gatePillBounds, 4.0f);
-        g.setColour(juce::Colours::white);
-        g.setFont(10.0f);
-        g.drawText(on ? "Gate On" : "Gate Off", gatePillBounds,
-                   juce::Justification::centred);
-    }
-
-    void paintCpuPill(juce::Graphics& g, juce::Rectangle<float>& area)
-    {
-        auto row = area.removeFromTop(20.0f);
-        cpuPillBounds = row.removeFromRight(140.0f);
-        juce::String cpuStr;
-        bool editable = false;
-        if (cachedInfo.valid)
-        {
-            switch (cachedInfo.cpuCapability)
-            {
-                case NamCpuCapability::a2Fast:
-                    cpuStr = "A2 Fast (fixed)"; break;
-                case NamCpuCapability::fullOnly:
-                    cpuStr = "Full CPU (fixed)"; break;
-                case NamCpuCapability::slimmable:
-                    cpuStr = value(6) < 0.5f ? "Slimmed" : "Full CPU";
-                    editable = true;
-                    break;
-            }
-        }
-        else cpuStr = "—";
-        g.setColour(editable ? accent.withAlpha(0.5f) : juce::Colour(0xff333b44));
-        g.fillRoundedRectangle(cpuPillBounds, 4.0f);
-        g.setColour(juce::Colours::white);
-        g.setFont(10.0f);
-        g.drawText("CPU: " + cpuStr, cpuPillBounds,
-                   juce::Justification::centred);
-    }
-
-    void paintTracks(juce::Graphics& g, juce::Rectangle<float>& area) const
-    {
-        auto drawTrack = [&](const juce::String& label, float norm,
-                             juce::Colour colour)
-        {
-            auto row = area.removeFromTop(16.0f);
-            area.removeFromTop(4.0f);
-            g.setColour(juce::Colour(0xffa8b3c0));
-            g.setFont(10.0f);
-            g.drawText(label, row.removeFromLeft(80.0f),
-                       juce::Justification::centredRight);
-            row.removeFromLeft(8.0f);
-            const auto bar = row.reduced(0.0f, 4.0f);
-            g.setColour(colour.withAlpha(0.15f));
-            g.fillRoundedRectangle(bar, 2.0f);
-            g.setColour(colour);
-            auto filled = bar;
-            filled.setWidth(bar.getWidth() * norm);
-            g.fillRoundedRectangle(filled, 2.0f);
-        };
-        drawTrack("Input", value(0), accent);
-        if (value(1) >= 0.5f)
-        {
-            drawTrack("Gate Thresh", value(2), reductionColour);
-            drawTrack("Gate Release", value(3), inputColour);
-        }
-        drawTrack("Low Cut", value(4), accent.withRotatedHue(0.15f));
-        drawTrack("High Cut", value(5), accent.withRotatedHue(0.15f));
-        drawTrack("Dry", value(7), inputColour);
-        drawTrack("Wet", value(8), outputColour);
-        drawTrack("Output", value(9), accent);
+        return "Unknown";
     }
 };
+
+void NeuralAmpModelerModuleView::mouseDown(const juce::MouseEvent& event)
+{
+    const auto area = getLocalBounds().toFloat().reduced(12.0f);
+    for (int control = 0; control < 5; ++control)
+        if (knobBounds(area, control).contains(event.position))
+        {
+            dragPrimary = control;
+            dragStartValue = value(control);
+            beginGestures();
+            return;
+        }
+}
+
+void NeuralAmpModelerModuleView::mouseDrag(const juce::MouseEvent& event)
+{
+    if (dragPrimary < 0)
+        return;
+    setValue(
+        dragPrimary,
+        juce::jlimit(
+            0.0f, 1.0f,
+            dragStartValue - static_cast<float>(event.getDistanceFromDragStartY())
+                / 180.0f));
+    updateDefaultDragReadout();
+}
+
+void NeuralAmpModelerModuleView::mouseDoubleClick(
+    const juce::MouseEvent& event)
+{
+    const auto area = getLocalBounds().toFloat().reduced(12.0f);
+    for (int control = 0; control < 5; ++control)
+        if (knobBounds(area, control).contains(event.position))
+        {
+            resetToDefault(control);
+            return;
+        }
+}
+
+void NeuralAmpModelerModuleView::timerCallback()
+{
+    const auto* module = processor.getRack().activeModuleInstance(slot);
+    const auto* capability =
+        module != nullptr ? module->namModelCapability() : nullptr;
+    if (capability == nullptr)
+        return;
+    const auto info = capability->namModelInfo();
+    if (info.name != cachedInfo.name || info.valid != cachedInfo.valid
+        || info.kind != cachedInfo.kind)
+    {
+        cachedInfo = info;
+        repaint();
+    }
+}
+
+void NeuralAmpModelerModuleView::paint(
+    juce::Graphics& graphics, juce::Rectangle<float> area)
+{
+    const auto fullArea = area;
+    auto header = area.removeFromTop(68.0f);
+    graphics.setColour(juce::Colour(0xff10141b));
+    graphics.fillRoundedRectangle(header, 8.0f);
+    graphics.setColour(cachedInfo.valid
+        ? juce::Colours::white : juce::Colour(0xffa8b3c0));
+    graphics.setFont(juce::FontOptions(14.0f, juce::Font::bold));
+    graphics.drawText(
+        cachedInfo.valid ? cachedInfo.name : "No model loaded",
+        header.removeFromTop(28.0f).reduced(10.0f, 0.0f).toNearestInt(),
+        juce::Justification::centredLeft);
+    graphics.setFont(juce::FontOptions(10.0f));
+    graphics.setColour(juce::Colour(0xffa8b3c0));
+    graphics.drawText(
+        cachedInfo.valid
+            ? kindName(cachedInfo.kind)
+                + (cachedInfo.expectedSampleRate > 0.0
+                       ? "  |  "
+                           + juce::String(
+                               cachedInfo.expectedSampleRate / 1000.0, 1)
+                           + " kHz"
+                       : juce::String())
+            : "Drop a .nam file or use Load NAM...",
+        header.reduced(10.0f, 0.0f).toNearestInt(),
+        juce::Justification::centredLeft);
+
+    static constexpr std::array<const char*, 5> labels {
+        "PRE GAIN", "BASS", "MID", "TREBLE", "POST GAIN"
+    };
+    for (int control = 0; control < 5; ++control)
+    {
+        auto bounds = knobBounds(fullArea, control);
+        const auto diameter = juce::jmin(
+            74.0f, juce::jmin(bounds.getWidth() - 16.0f,
+                              bounds.getHeight() - 42.0f));
+        const auto knob = juce::Rectangle<float>(diameter, diameter)
+            .withCentre({ bounds.getCentreX(), bounds.getCentreY() - 4.0f });
+        graphics.setColour(juce::Colour(0xff242c33));
+        graphics.fillEllipse(knob);
+        const auto start = juce::MathConstants<float>::pi * 0.75f;
+        const auto end = juce::MathConstants<float>::pi * 2.25f;
+        juce::Path arc;
+        arc.addCentredArc(
+            knob.getCentreX(), knob.getCentreY(),
+            diameter * 0.42f, diameter * 0.42f, 0.0f,
+            start, start + (end - start) * value(control), true);
+        graphics.setColour(
+            control == 0 || control == 4 ? outputColour : accent);
+        graphics.strokePath(arc, juce::PathStrokeType(4.0f));
+        graphics.setColour(juce::Colours::white);
+        graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+        graphics.drawText(
+            labels[static_cast<size_t>(control)],
+            bounds.removeFromBottom(22.0f).toNearestInt(),
+            juce::Justification::centred);
+        graphics.setFont(juce::FontOptions(9.0f));
+        graphics.drawText(
+            formatControlValue(type, control, value(control)),
+            knob.toNearestInt(), juce::Justification::centred);
+    }
+}
 } // namespace
 
 std::unique_ptr<ModuleView> createNeuralAmpModelerView(EffectGraph& graph)

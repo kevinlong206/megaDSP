@@ -15,8 +15,9 @@ serial slots and twelve fixed generic controls per slot.
   Orbit 27, Signal Decay 28, Analog Tape 29, Resonance Tamer 30, Spectral
   Balance 31, Phase Coherence 32, Loudness Rider 33, Adaptive Clipper 34,
   Spectral Delay Canvas 35, Formant Forge 36, Harmonic Mirage 37, Chaos Field
-  38, Time Mosaic 39, Guitar Cabinet 40, Chord Loom 41, Volume Swell 42, and
-  Spectral Nebula 43.
+  38, Time Mosaic 39, Guitar Cabinet 40, Chord Loom 41, Volume Swell 42,
+  Spectral Nebula 43, Midnight Current 44, Auto Wah 45, Resonant Sculpture 46,
+  and Neural Amp Modeler 47.
 - Preserve the eight-slot, twelve-control host parameter topology and existing
   parameter IDs.
 - Keep state migration compatible with schema 2 through current schema 9.
@@ -117,9 +118,10 @@ parsing/formatting, and tests.
   latency and aligns dry audio in every model.
 - Diffusion Delay keeps the requested primary repeat time independent of
   diffusion density. Pitch Bloom uses ratio pitch shifting, not Hz-domain
-  translation. Both use filtered bounded feedback and conservative measured
-  tails. Their event telemetry is emitted only for the selected capture slot
-  and visualizes measured DSP activity rather than control-derived events.
+  translation. Pitch Bloom keeps immediate dry and treats shifter delay as wet
+  pre-delay. Both use filtered bounded feedback and conservative measured tails.
+  Their event telemetry is emitted only for the selected capture slot and
+  visualizes measured DSP activity rather than control-derived events.
 - Harmonic Resonator uses smoothly retuned, bounded modal filters to build
   musical chord fields without allocating on the audio thread. Chord Loom uses
   three fixed capture layers and overlapping randomized grains; new strums
@@ -152,7 +154,11 @@ parsing/formatting, and tests.
 - Spectral Delay Canvas and Time Mosaic preallocate their maximum spectral
   histories during `prepare()`. Freeze stops history writes without allocating;
   age/delay transitions crossfade smoothly and event telemetry reflects actual
-  DSP frame activity.
+  DSP frame activity. Spectral Prism, Pitch Bloom, Spectral Delay Canvas,
+  Harmonic Mirage, Time Mosaic, and Spectral Nebula keep immediate dry, treat
+  analysis delay as wet pre-delay, and contribute zero host PDC. Corrective
+  spectral modules and all phase-critical parallel paths retain latency-aligned
+  dry and report their processing latency.
 - Formant Forge keeps formant shifting independent of source pitch and gates its
   deterministic breath by signal energy. Harmonic Mirage uses phase-continuous
   oscillators and releases uncertain tracking. Chaos Field uses deterministic,
@@ -163,6 +169,34 @@ parsing/formatting, and tests.
   prepared states. Stereo input remains stereo, synthetic room side cancels on
   fold-down, Room zero has no artificial long tail, and visuals use only
   capture-gated measured cone, compression, breakup, cabinet, and room telemetry.
+- Midnight Current combines smoothed analog softening, bounded saturation, a
+  resonant moving low-pass filter, and an eight-stage slow phase network. Its
+  signed regeneration remains filtered and sub-unity, Mix zero is exact
+  immediate dry with zero host PDC, and Stereo Spread scales only a
+  mono-cancelling wet side field. Its response view uses capture-gated DSP
+  cutoff, phase, drive, and energy telemetry.
+- Auto Wah uses a fast/slow detector pair to emphasize pick attacks while
+  retaining level-following musicality. Sensitivity is a visible dB threshold;
+  Center Frequency is the midpoint of the bidirectional octave sweep. Low Pass,
+  Band Pass, Peak, and Classic Wah responses crossfade without resetting the
+  state-variable filter. Drive uses bounded reference-level compensation so its
+  upper range adds obvious harmonic push without unbounded output. Mix zero is
+  exact immediate dry, and telemetry reports measured level, threshold, pick
+  activity, envelope position, and actual filter frequency.
+- Resonant Sculpture uses twelve bounded complex modal oscillators with
+  damping-aware excitation. String, Glass, Metal, and Membrane changes
+  crossfade material ratios, brightness, and decay without clearing modal
+  state. Its prepared downsampled autocorrelation tracker follows monophonic
+  input fundamentals without delaying audio; Pitch Offset transposes the
+  tracked modal root, and uncertain tracking holds the last confident pitch.
+  Strike follows measured transients; Bow follows sustained input;
+  Mutation and Chaos alter frequency only and cannot increase decay gain.
+  Synthetic stereo mode energy cancels on fold-down, Mix zero is exact
+  immediate dry, and its deforming structure uses capture-gated mode telemetry.
+- Neural Amp Modeler explicitly registers SlimmableContainer parsing before
+  model loading and runs those models at full size. Its five active controls
+  are Pre Gain, Bass, Mid, Treble, and Post Gain; it has no internal dry/wet
+  blend. All tone and gain controls are smoothed and unloaded models are silent.
 
 ## Build and test
 

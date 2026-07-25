@@ -40,7 +40,7 @@ public:
     {
         const juce::dsp::ProcessSpec spec { sampleRate, 256, 2 };
 
-        beginTest("Both processors report exact latency and aligned dry");
+        beginTest("Both processors keep immediate dry and delayed wet");
         megadsp::SpectralDelayCanvasModule delay;
         megadsp::TimeMosaicModule mosaic;
         delay.prepare(spec);
@@ -49,8 +49,10 @@ public:
             delay.latencySamples(),
             megadsp::FixedLatencyStft::reportedLatencySamples);
         expectEquals(mosaic.latencySamples(), delay.latencySamples());
-        expectAlignedDry(delay, 10, 11);
-        expectAlignedDry(mosaic, 9, 10);
+        expect(delay.dryPathTiming() == megadsp::DryPathTiming::immediate);
+        expect(mosaic.dryPathTiming() == megadsp::DryPathTiming::immediate);
+        expectImmediateDry(delay, 10, 11);
+        expectImmediateDry(mosaic, 9, 10);
 
         beginTest("Reset makes deterministic motion repeat exactly");
         megadsp::ControlValues mosaicControls {};
@@ -159,7 +161,7 @@ private:
     }
 
     template <typename Module>
-    void expectAlignedDry(Module& module, int mixIndex, int outputIndex)
+    void expectImmediateDry(Module& module, int mixIndex, int outputIndex)
     {
         auto buffer = makeSignal(2, 8192);
         auto reference = buffer;
@@ -168,13 +170,11 @@ private:
         controls[static_cast<std::size_t>(outputIndex)] = 0.6f;
         module.reset();
         renderInBlocks(module, buffer, controls);
-        const auto latency = module.latencySamples();
-        expect(buffer.getMagnitude(0, 0, latency) < 1.0e-7f);
         for (int channel = 0; channel < 2; ++channel)
-            for (int sample = latency; sample < buffer.getNumSamples(); ++sample)
+            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
                 expectWithinAbsoluteError(
                     buffer.getSample(channel, sample),
-                    reference.getSample(channel, sample - latency),
+                    reference.getSample(channel, sample),
                     1.0e-6f);
     }
 };

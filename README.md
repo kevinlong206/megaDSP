@@ -7,7 +7,14 @@ or CLAP plugin with a growing collection of high-quality, intuitive effects.
 Use a module on its own or combine up to eight in a serial chain to shape,
 transform, and finish your audio without juggling separate plugins.
 
-Today, megaDSP includes forty-four purpose-built processors with interactive
+Creative spectral effects keep the live dry signal immediate: **Spectral
+Prism**, **Pitch Bloom**, **Spectral Delay Canvas**, **Harmonic Mirage**,
+**Time Mosaic**, and **Spectral Nebula** do not add delay compensation in the
+DAW. Their transformed wet sound arrives after the analysis window as a natural
+pre-delay. Phase-critical correction, lookahead, and nonlinear processors still
+report and align the latency required for accurate processing.
+
+Today, megaDSP includes forty-seven purpose-built processors with interactive
 graphs, realtime analysis, and controls that match the musical quantities they
 edit. The long-term vision is a community-built library spanning dozens—and
 eventually perhaps hundreds—of useful effects in one consistent rack.
@@ -129,6 +136,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | Module | What it does |
 |---|---|
 | **EQ** | Pro-Q-inspired response editor: double-click to add or remove bands, drag to shape, wheel Q, select Bell/Shelf/Cut directly, and compare pre/post spectrum traces |
+| **Auto Wah** | Pick-responsive Low Pass, Band Pass, Peak, or Classic Wah filter with direct center/range editing and a visible sensitivity threshold |
 | **Resonance Tamer** | Adaptive narrow-resonance suppression with transient protection and live detected-reduction traces |
 | **Spectral Balance** | Long-term tonal balancing toward Natural, Warm, Clear, Vocal, or Flat target contours |
 
@@ -141,7 +149,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Analog Tape** | Four cassette/reel machines with level-compensated oversampled saturation, transient softening, bias, head bump, and optional wow/flutter, wear, and hiss |
 | **Harmonic Mirage** | Tracked partial resynthesis for harmonic, subharmonic, hollow, and metallic color |
 | **Guitar Cabinet** | Fully procedural speaker, enclosure, microphone, and room modeling with dynamic cone breakup, power compression, and direct mic placement |
-| **Neural Amp Modeler** | Loads `.nam` neural amp models including A2 Standard/Nano with noise gate, Low/High Cut, independent Dry/Wet, and truthful CPU-mode reporting |
+| **Neural Amp Modeler** | Loads standard, A2, and SlimmableContainer `.nam` models with Pre Gain, a familiar Bass/Mid/Treble guitar tone stack, and Post Gain |
 
 ### Time-Based
 
@@ -167,6 +175,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Studio Phaser** | 2–12 stage all-pass sweeps with DSP-synchronized notch phases and topology crossfades |
 | **Studio Flanger** | Tape, Through-Zero, Jet, and BBD models with DSP-synchronized comb and model transitions |
 | **Chaos Field** | Deterministic attractor-driven filter, delay, pan, and stereo motion |
+| **Midnight Current** | Warm analog drive, a dark resonant filter, and deep slow phasing for submerged psychedelic movement |
 
 ### Glitch & Creative
 
@@ -179,6 +188,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Harmonic Resonator** | Tuned Major, Minor, suspended, seventh, fifth, and octave-drone resonator fields with register, decay, tone, motion, and stereo spread |
 | **Formant Forge** | Direct vowel-field and formant sculpting across human, tube, creature, and metallic models |
 | **Time Mosaic** | Reconstructs evolving frequency tiles from recent spectral history |
+| **Resonant Sculpture** | Tracks the incoming fundamental and excites a morphing virtual object of strings, glass, metal, or membranes with bowed, struck, mutated, and chaotic modal energy |
 
 ### Stereo & Utility
 

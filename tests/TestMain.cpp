@@ -1253,11 +1253,36 @@ public:
             exponentialDefault(1000.0f, 20000.0f, 10000.0f),
             1.0f, 0.48f, linearDefault(-18.0f, 12.0f, 0.0f)
         });
+        expectDefaults(megadsp::ModuleType::midnightCurrent, {
+            exponentialDefault(120.0f, 3000.0f, 520.0f),
+            0.70f,
+            exponentialDefault(0.02f, 1.2f, 0.11f),
+            0.78f,
+            linearDefault(-80.0f, 80.0f, 38.0f),
+            0.55f, 0.45f, 0.55f, 0.15f, 0.55f, 0.70f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
+        expectDefaults(megadsp::ModuleType::autoWah, {
+            linearDefault(-18.0f, -66.0f, -42.0f),
+            exponentialDefault(120.0f, 1600.0f, 720.0f),
+            linearDefault(0.5f, 5.0f, 2.5f),
+            exponentialDefault(0.5f, 80.0f, 7.0f),
+            exponentialDefault(30.0f, 1400.0f, 320.0f),
+            0.52f, megadsp::discreteValue(0, 2), 0.62f, 0.12f,
+            megadsp::discreteValue(3, 4), 0.78f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
+        expectDefaults(megadsp::ModuleType::resonantSculpture, {
+            megadsp::discreteValue(1, 4), 0.45f, 0.5f, 0.62f,
+            exponentialDefault(0.15f, 12.0f, 3.8f),
+            0.18f, 0.12f, 0.72f, 0.58f, 0.08f, 0.72f,
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
 
         beginTest("Host parameter contract remains fixed");
-        expectEquals(megadsp::moduleTypeCount, 45);
+        expectEquals(megadsp::moduleTypeCount, 48);
         expectEquals(megadsp::stateSchemaVersion, 9);
-        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 45);
+        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 48);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
         expectEquals(static_cast<int>(megadsp::ModuleType::compressor), 2);
@@ -1336,8 +1361,14 @@ public:
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::spectralNebula), 43);
         expectEquals(static_cast<int>(
-                         megadsp::ModuleType::neuralAmpModeler), 44);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 45);
+                         megadsp::ModuleType::midnightCurrent), 44);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::autoWah), 45);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::resonantSculpture), 46);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::neuralAmpModeler), 47);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 48);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1370,7 +1401,7 @@ public:
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 45);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 48);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1417,6 +1448,9 @@ public:
                               || type == megadsp::ModuleType::chordLoom
                               || type == megadsp::ModuleType::volumeSwell
                               || type == megadsp::ModuleType::spectralNebula
+                              || type == megadsp::ModuleType::midnightCurrent
+                              || type == megadsp::ModuleType::autoWah
+                              || type == megadsp::ModuleType::resonantSculpture
                               || type == megadsp::ModuleType::gateExpander
                               || type == megadsp::ModuleType::transientDesigner
                               || type
@@ -1737,6 +1771,15 @@ public:
         expectCategory(megadsp::ModuleType::spectralNebula,
                        megadsp::ModuleCategory::reverbAndSpace,
                        "Reverb & Space");
+        expectCategory(megadsp::ModuleType::midnightCurrent,
+                       megadsp::ModuleCategory::modulation,
+                       "Modulation");
+        expectCategory(megadsp::ModuleType::autoWah,
+                       megadsp::ModuleCategory::eqAndFilters,
+                       "EQ & Filters");
+        expectCategory(megadsp::ModuleType::resonantSculpture,
+                       megadsp::ModuleCategory::glitchAndCreative,
+                       "Glitch & Creative");
         expect(megadsp::moduleDefinition(megadsp::ModuleType::empty).category
                == megadsp::ModuleCategory::none);
         expect(juce::String(megadsp::moduleCategoryName(

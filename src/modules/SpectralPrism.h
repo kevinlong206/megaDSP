@@ -14,7 +14,6 @@ public:
     static constexpr int maxChannels = 2;
     static constexpr int spectralDomains = 2;
     static constexpr int reportedLatencySamples = fftSize;
-    static constexpr int dryDelaySize = reportedLatencySamples;
     static constexpr int wetRingSize = fftSize * 4;
 
     void prepare(const juce::dsp::ProcessSpec&) override;
@@ -22,6 +21,10 @@ public:
     void process(juce::AudioBuffer<float>&, const ControlValues&,
                  const ProcessEnvironment&) override;
     int latencySamples() const override { return reportedLatencySamples; }
+    DryPathTiming dryPathTiming() const override
+    {
+        return DryPathTiming::immediate;
+    }
     double tailSeconds(const ControlValues&) const override;
     float meterValue() const override
     {
@@ -50,7 +53,6 @@ private:
     std::array<float, fftSize> analysisWindow {};
     std::array<float, fftSize> synthesisWindow {};
     std::array<std::array<float, fftSize>, maxChannels> inputRing {};
-    std::array<std::array<float, dryDelaySize>, maxChannels> dryDelay {};
     std::array<std::array<float, wetRingSize>, maxChannels> wetRing {};
     std::array<std::array<Complex, fftSize>, maxChannels> fftTimeDomain {};
     std::array<std::array<Complex, fftSize>, maxChannels> fftFrequencyDomain {};
@@ -100,7 +102,6 @@ private:
     float transientEnvelope = 0.0f;
     float meterEnvelope = 0.0f;
     int inputWritePosition = 0;
-    int dryDelayPosition = 0;
     int wetReadPosition = 0;
     int samplesSinceFrame = 0;
     int validInputSamples = 0;

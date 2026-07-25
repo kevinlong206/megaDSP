@@ -134,7 +134,7 @@ void ResonanceTamerModule::processFrameCallback(
 }
 
 float ResonanceTamerModule::outputCallback(
-    void* context, int channel, float dry, float wet) noexcept
+    void* context, int channel, float, float dry, float wet) noexcept
 {
     auto& module = *static_cast<ResonanceTamerModule*>(context);
     if (channel == 0)

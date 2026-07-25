@@ -20,7 +20,7 @@ public:
         const ProcessEnvironment capture { nullptr, 120.0, true };
         auto controls = moduleDefaults(ModuleType::spectralNebula);
 
-        beginTest("Cloud zero is exact fixed-latency dry");
+        beginTest("Cloud zero is exact immediate dry");
         SpectralNebulaModule dry;
         dry.prepare({ rate, 4096, 1 });
         auto dryControls = controls;
@@ -30,8 +30,8 @@ public:
         impulse.setSample(0, 0, 0.5f);
         dry.process(impulse, dryControls, {});
         expectWithinAbsoluteError(
-            impulse.getSample(0, dry.latencySamples()), 0.5f, 0.000001f);
-        for (int sample = 0; sample < dry.latencySamples(); ++sample)
+            impulse.getSample(0, 0), 0.5f, 0.000001f);
+        for (int sample = 1; sample < impulse.getNumSamples(); ++sample)
             expectWithinAbsoluteError(
                 impulse.getSample(0, sample), 0.0f, 0.000001f);
 

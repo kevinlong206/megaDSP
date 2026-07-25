@@ -1,0 +1,35 @@
+diff --git a/NAM/container.cpp b/NAM/container.cpp
+index 1275ac4..371f7e1 100644
+--- a/NAM/container.cpp
++++ b/NAM/container.cpp
+@@ -176,8 +176,16 @@ std::unique_ptr<ModelConfig> create_config(const nlohmann::json& config, double
+   return c;
+ }
+ 
+-// Auto-register
+-static ConfigParserHelper _register_SlimmableContainer("SlimmableContainer", create_config);
++void ensure_config_parser_registered()
++{
++  static std::once_flag flag;
++  std::call_once(flag, []
++  {
++    if (!ConfigParserRegistry::instance().has("SlimmableContainer"))
++      ConfigParserRegistry::instance().registerParser(
++          "SlimmableContainer", create_config);
++  });
++}
+ 
+ } // namespace container
+ } // namespace nam
+diff --git a/NAM/container.h b/NAM/container.h
+index 01eb4c6..5b1f253 100644
+--- a/NAM/container.h
++++ b/NAM/container.h
+@@ -61,6 +61,7 @@ struct ContainerConfig : public ModelConfig
+ };
+ 
+ std::unique_ptr<ModelConfig> create_config(const nlohmann::json& config, double sampleRate);
++void ensure_config_parser_registered();
+ 
+ } // namespace container
+ } // namespace nam
