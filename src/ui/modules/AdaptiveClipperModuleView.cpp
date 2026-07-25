@@ -189,7 +189,7 @@ void AdaptiveClipperModuleView::paint(
     graphics.drawText(
         hasTelemetry
             ? "TRUE PEAK  " + juce::String(truePeakDb, 2)
-                  + " dBTP  ·  MARGIN "
+                  + " dBTP  |  MARGIN "
                   + juce::String(
                       telemetry.values[
                           AdaptiveClipperModule::ceilingMarginDecibels],
@@ -309,7 +309,7 @@ void AdaptiveClipperModuleView::paint(
                       telemetry.values[
                           AdaptiveClipperModule::clippingDecibels],
                       1)
-                  + " dB  ·  "
+                  + " dB  |  "
                   + juce::String(
                       telemetry.values[
                           AdaptiveClipperModule::activeOversampling],

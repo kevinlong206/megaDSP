@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Diagnostics.h"
 #include "ui/GraphStyle.h"
 #include "ui/GuiLayout.h"
 
@@ -11,6 +12,8 @@ MegaDSPAudioProcessor::MegaDSPAudioProcessor()
       parameters(*this, nullptr, "megaDSPState", megadsp::createParameterLayout()),
       rack(parameters)
 {
+    diagnosticInstanceId =
+        megadsp::Diagnostics::instance().registerInstance();
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
         parameters.addParameterListener(
             megadsp::slotParameterId(slot, "type"), this);
@@ -24,6 +27,8 @@ MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
         parameters.removeParameterListener(
             megadsp::slotParameterId(slot, "type"), this);
     cancelPendingUpdate();
+    megadsp::Diagnostics::instance().unregisterInstance(
+        diagnosticInstanceId);
 }
 
 void MegaDSPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
@@ -37,6 +42,12 @@ void MegaDSPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     lastHostBypassLatency = 0;
     pendingLatency.store(rack.latencySamples());
     setLatencySamples(pendingLatency.load());
+    megadsp::Diagnostics::instance().log(
+        "prepare",
+        "instance=" + juce::String(diagnosticInstanceId)
+            + " sampleRate=" + juce::String(sampleRate, 1)
+            + " maxBlock=" + juce::String(samplesPerBlock)
+            + " channels=" + juce::String(getTotalNumOutputChannels()));
 }
 
 void MegaDSPAudioProcessor::releaseResources()
@@ -99,7 +110,22 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     rack.process(main, sidechainPointer, currentBpm());
     const auto latency = rack.latencySamples();
     if (latency != pendingLatency.exchange(latency))
+    {
         latencyDirty.store(true, std::memory_order_release);
+        megadsp::Diagnostics::instance().logRealtime(
+            megadsp::DiagnosticEvent::latencyChanged,
+            diagnosticInstanceId, latency);
+    }
+    if (main.getNumSamples() != lastDiagnosticBlockSize
+        || main.getNumChannels() != lastDiagnosticChannelCount)
+    {
+        lastDiagnosticBlockSize = main.getNumSamples();
+        lastDiagnosticChannelCount = main.getNumChannels();
+        megadsp::Diagnostics::instance().logRealtime(
+            megadsp::DiagnosticEvent::audioConfiguration,
+            diagnosticInstanceId, lastDiagnosticBlockSize,
+            lastDiagnosticChannelCount);
+    }
 }
 
 void MegaDSPAudioProcessor::processBlockBypassed(
@@ -223,6 +249,21 @@ void MegaDSPAudioProcessor::finishTopologyMutation(
     refreshLatency();
     if (publishAlways || compacted || modulesChanged)
         topologyGeneration.fetch_add(1, std::memory_order_release);
+    const auto generation =
+        topologyGeneration.load(std::memory_order_acquire);
+    megadsp::Diagnostics::instance().logRealtime(
+        megadsp::DiagnosticEvent::topologyChanged,
+        diagnosticInstanceId, static_cast<std::int64_t>(generation),
+        rack.activeSlotCount());
+    juce::StringArray moduleNames;
+    for (int slot = 0; slot < rack.activeSlotCount(); ++slot)
+        moduleNames.add(
+            megadsp::moduleDefinition(rack.moduleType(slot)).displayName);
+    megadsp::Diagnostics::instance().log(
+        "topology",
+        "instance=" + juce::String(diagnosticInstanceId)
+            + " generation=" + juce::String(generation)
+            + " modules=[" + moduleNames.joinIntoString(", ") + "]");
     restorePendingImpulseResponses();
     topologyMutationInProgress.store(false, std::memory_order_release);
     if (topologyDirty.load(std::memory_order_acquire))
@@ -296,13 +337,23 @@ void MegaDSPAudioProcessor::setStateInformation(const void* data, int size)
     if (auto xml = getXmlFromBinary(data, size))
     {
         if (!xml->hasTagName(parameters.state.getType()))
+        {
+            megadsp::Diagnostics::instance().logRealtime(
+                megadsp::DiagnosticEvent::stateRejected,
+                diagnosticInstanceId, 1, size);
             return;
+        }
         auto restored = juce::ValueTree::fromXml(*xml);
         const auto schemaVersion = static_cast<int>(
             restored.getProperty("schemaVersion", 0));
         if (schemaVersion < 2
             || schemaVersion > megadsp::stateSchemaVersion)
+        {
+            megadsp::Diagnostics::instance().logRealtime(
+                megadsp::DiagnosticEvent::stateRejected,
+                diagnosticInstanceId, schemaVersion, size);
             return;
+        }
         restored = megadsp::migrateStateToCurrentSchema(restored);
         editorWidth = juce::jlimit(
             megadsp::ui::editorMinimumWidth,
@@ -321,6 +372,10 @@ void MegaDSPAudioProcessor::setStateInformation(const void* data, int size)
         restoreParameterState(restored);
         finishTopologyMutation(true, true, true);
         setSelectedTab(selectedTab);
+        megadsp::Diagnostics::instance().log(
+            "state",
+            "restored instance=" + juce::String(diagnosticInstanceId)
+                + " schema=" + juce::String(schemaVersion));
     }
 }
 
@@ -423,6 +478,12 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     auto result = rack.prepareImpulseResponse(slot, file, load);
     if (result.failed())
     {
+        megadsp::Diagnostics::instance().log(
+            "ir-failed",
+            "instance=" + juce::String(diagnosticInstanceId)
+                + " slot=" + juce::String(slot)
+                + " file=" + file.getFileName()
+                + " error=load-rejected");
         finishDataMutation();
         return result;
     }

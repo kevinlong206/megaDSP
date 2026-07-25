@@ -283,11 +283,11 @@ void SpatialOrbitModuleView::paint(
     graphics.drawText(
         paths[static_cast<size_t>(renderedPath)]
             + (hasTelemetry
-                   ? juce::String("  ·  DSP ")
+                   ? juce::String("  |  DSP ")
                        + juce::String(sourceX, 2) + ", "
-                       + juce::String(sourceY, 2) + "  ·  "
+                       + juce::String(sourceY, 2) + "  |  "
                        + juce::String(actualDistance, 2) + " m"
-                   : juce::String("  ·  DSP TELEMETRY WAITING")),
+                   : juce::String("  |  DSP TELEMETRY WAITING")),
         field.withTrimmedTop(5.0f).removeFromTop(18.0f).toNearestInt(),
         juce::Justification::centred);
 

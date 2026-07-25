@@ -179,7 +179,7 @@ void RotarySpeakerModuleView::mouseDrag(const juce::MouseEvent& event)
         dragReadout =
             "MICROPHONES  "
             + megadsp::formatControlValue(type, 5, value(5))
-            + "  ·  "
+            + "  |  "
             + megadsp::formatControlValue(type, 6, value(6));
     else
         updateDefaultDragReadout();
@@ -244,10 +244,15 @@ void RotarySpeakerModuleView::paint(
     const auto centre = rotor.getCentre();
     const auto cabinetRadius =
         juce::jmin(rotor.getWidth(), rotor.getHeight()) * 0.35f;
-    const auto time = static_cast<float>(
-        juce::Time::getMillisecondCounterHiRes() * 0.001);
+    const auto time = juce::Time::getMillisecondCounterHiRes() * 0.001;
     const auto hornHz = speed == 0 ? 0.0f : speed == 1 ? 0.8f : 6.67f;
     const auto drumHz = speed == 0 ? 0.0f : speed == 1 ? 0.67f : 5.67f;
+    const auto rotorAngle = [time](double frequency, double offset = 0.0)
+    {
+        return static_cast<float>(std::remainder(
+            time * frequency * juce::MathConstants<double>::twoPi + offset,
+            juce::MathConstants<double>::twoPi));
+    };
     const auto balance = value(2);
     const auto motion = value(4);
     const auto spinUp = value(7);
@@ -305,12 +310,11 @@ void RotarySpeakerModuleView::paint(
     };
     drawRotor(
         cabinetRadius * 0.42f,
-        time * hornHz * juce::MathConstants<float>::twoPi,
+        rotorAngle(hornHz),
         accent, true);
     drawRotor(
         cabinetRadius * 0.72f,
-        time * drumHz * juce::MathConstants<float>::twoPi
-            + juce::MathConstants<float>::pi,
+        rotorAngle(drumHz, juce::MathConstants<double>::pi),
         juce::Colour(0xff6f8cff), false);
 
     for (int channel = 0; channel < 2; ++channel)
@@ -327,7 +331,7 @@ void RotarySpeakerModuleView::paint(
     graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
     graphics.drawText(
         "MICS  " + megadsp::formatControlValue(type, 5, value(5))
-            + "  ·  "
+            + "  |  "
             + megadsp::formatControlValue(type, 6, value(6)),
         rotor.toNearestInt(), juce::Justification::bottomRight);
 
@@ -373,7 +377,7 @@ void RotarySpeakerModuleView::paint(
         balanceX - 5.0f, balanceRail.getCentreY() - 5.0f,
         10.0f, 10.0f);
     graphics.drawText(
-        "DRUM  ←  ROTOR BALANCE  →  HORN     "
+        "DRUM  <  ROTOR BALANCE  >  HORN     "
             + megadsp::formatControlValue(type, 2, balance),
         balanceRail.toNearestInt(), juce::Justification::centred);
 }

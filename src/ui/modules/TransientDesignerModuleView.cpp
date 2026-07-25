@@ -279,7 +279,7 @@ void TransientDesignerModuleView::paint(
                       telemetrySnapshot.values[
                           TransientDesignerModule::sustainShapingDb],
                       1)
-                  + " dB · FAST "
+                  + " dB | FAST "
                   + juce::String(
                       telemetrySnapshot.values[
                           TransientDesignerModule::fastEnvelopeDb],

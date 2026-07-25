@@ -145,6 +145,50 @@ juce::ValueTree migrateStateToCurrentSchema(juce::ValueTree state)
             }
         }
     }
+    if (sourceSchema < 8)
+    {
+        for (int slot = 0; slot < slotCount; ++slot)
+        {
+            const auto type = static_cast<ModuleType>(juce::roundToInt(
+                value(slotParameterId(slot, "type"), 0.0f)));
+            if (type != ModuleType::randomGranulizer)
+                continue;
+            const auto mix = juce::jlimit(
+                0.0f, 1.0f,
+                value(controlParameterId(slot, 10), 0.35f));
+            const auto output = juce::Decibels::decibelsToGain(
+                -18.0f + 30.0f * juce::jlimit(
+                    0.0f, 1.0f,
+                    value(controlParameterId(slot, 11), 0.6f)));
+            setValue(
+                controlParameterId(slot, 10),
+                juce::jlimit(
+                    0.0f, 1.0f,
+                    output * std::cos(
+                        mix * juce::MathConstants<float>::halfPi)));
+            setValue(
+                controlParameterId(slot, 11),
+                juce::jlimit(
+                    0.0f, 1.0f,
+                    output * std::sin(
+                        mix * juce::MathConstants<float>::halfPi)));
+        }
+    }
+    if (sourceSchema < 9)
+    {
+        const auto defaults = moduleDefaults(ModuleType::frequencyLab);
+        for (int slot = 0; slot < slotCount; ++slot)
+        {
+            const auto type = static_cast<ModuleType>(juce::roundToInt(
+                value(slotParameterId(slot, "type"), 0.0f)));
+            if (type != ModuleType::frequencyLab)
+                continue;
+            for (int control = 0; control < controlsPerSlot; ++control)
+                setValue(
+                    controlParameterId(slot, control),
+                    defaults[static_cast<size_t>(control)]);
+        }
+    }
     for (int slot = 0; slot < slotCount; ++slot)
         state.removeProperty("advanced" + juce::String(slot), nullptr);
     state.setProperty("schemaVersion", stateSchemaVersion, nullptr);

@@ -17,8 +17,8 @@ void RandomGranulizerModule::prepare(const juce::dsp::ProcessSpec& spec)
         1, juce::roundToInt(sampleRate * 6.0));
     for (auto& channel : history)
         channel.assign(static_cast<size_t>(capacity), 0.0f);
-    mixSmoothed.reset(sampleRate, 0.02);
-    outputSmoothed.reset(sampleRate, 0.02);
+    drySmoothed.reset(sampleRate, 0.02);
+    wetSmoothed.reset(sampleRate, 0.02);
     feedbackSmoothed.reset(sampleRate, 0.04);
     reset();
 }
@@ -41,8 +41,8 @@ void RandomGranulizerModule::reset()
     parametersInitialized = false;
     activeVoices.store(0, std::memory_order_relaxed);
     maximumObservedVoices.store(0, std::memory_order_relaxed);
-    mixSmoothed.setCurrentAndTargetValue(0.0f);
-    outputSmoothed.setCurrentAndTargetValue(1.0f);
+    drySmoothed.setCurrentAndTargetValue(1.0f);
+    wetSmoothed.setCurrentAndTargetValue(0.0f);
     feedbackSmoothed.setCurrentAndTargetValue(0.0f);
     for (auto& event : visual)
     {
@@ -258,17 +258,16 @@ void RandomGranulizerModule::process(
         return std::isfinite(value) ? juce::jlimit(0.0f, 1.0f, value)
                                     : fallback;
     };
-    const auto mixTarget = safe(controls[10], 0.35f);
-    const auto outputTarget = juce::Decibels::decibelsToGain(
-        lerp(-18.0f, 12.0f, safe(controls[11], 0.6f)));
+    const auto dryTarget = safe(controls[10], 0.8526f);
+    const auto wetTarget = safe(controls[11], 0.5225f);
     const auto feedbackTarget = safe(controls[9], 0.125f) * 0.8f;
-    mixSmoothed.setTargetValue(mixTarget);
-    outputSmoothed.setTargetValue(outputTarget);
+    drySmoothed.setTargetValue(dryTarget);
+    wetSmoothed.setTargetValue(wetTarget);
     feedbackSmoothed.setTargetValue(feedbackTarget);
     if (!parametersInitialized)
     {
-        mixSmoothed.setCurrentAndTargetValue(mixTarget);
-        outputSmoothed.setCurrentAndTargetValue(outputTarget);
+        drySmoothed.setCurrentAndTargetValue(dryTarget);
+        wetSmoothed.setCurrentAndTargetValue(wetTarget);
         feedbackSmoothed.setCurrentAndTargetValue(feedbackTarget);
         parametersInitialized = true;
     }
@@ -388,28 +387,17 @@ void RandomGranulizerModule::process(
                 std::isfinite(wet[static_cast<size_t>(channel)])
                     ? wet[static_cast<size_t>(channel)] : 0.0f);
 
-        const auto mix = mixSmoothed.getNextValue();
-        const auto dryGain = mix <= 0.0f
-                                 ? 1.0f
-                                 : std::cos(
-                                       mix
-                                       * juce::MathConstants<float>::halfPi);
-        const auto wetGain = mix <= 0.0f
-                                 ? 0.0f
-                                 : std::sin(
-                                       mix
-                                       * juce::MathConstants<float>::halfPi);
-        const auto output = outputSmoothed.getNextValue();
+        const auto dryGain = drySmoothed.getNextValue();
+        const auto wetGain = wetSmoothed.getNextValue();
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
         {
             const auto index = static_cast<size_t>(juce::jmin(channel, 1));
             const auto granular = buffer.getNumChannels() == 1
                                       ? wet[0] : wet[index];
-            const auto result = (dry[index] * dryGain
-                                 + granular * wetGain) * output;
+            const auto result = dry[index] * dryGain + granular * wetGain;
             buffer.setSample(channel, sample,
                 !std::isfinite(result) ? 0.0f
-                : mix <= 0.0f ? result
+                : wetGain <= 0.0f ? result
                               : juce::jlimit(-32.0f, 32.0f, result));
         }
     }

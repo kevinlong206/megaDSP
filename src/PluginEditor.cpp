@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "Diagnostics.h"
 #include "ui/EffectGraph.h"
 #include "ui/GraphStyle.h"
 #include "ui/GuiLayout.h"
@@ -504,7 +505,11 @@ public:
         close.setDescription("Removes this effect from the rack.");
         close.setHelpText("Press to remove " + name + " from slot "
                           + juce::String(slot + 1) + ".");
-        close.onClick = [this] { editor.removeSlot(slot); };
+        close.onClick = [this]
+        {
+            close.setEnabled(false);
+            editor.requestRemoveSlot(slot);
+        };
         addAndMakeVisible(close);
         bypass.onClick = [this]
         {
@@ -513,7 +518,7 @@ public:
         };
         addAndMakeVisible(bypass);
         setWantsKeyboardFocus(true);
-        setTooltip(name + " — slot " + juce::String(slot + 1));
+        setTooltip(name + " - slot " + juce::String(slot + 1));
         setHelpText(
             "Press Enter to select. Use Left and Right to select adjacent "
             "tabs. Double-click, Space, or B toggles bypass. Drag to reorder.");
@@ -542,8 +547,8 @@ public:
             "Press to " + juce::String(newState ? "enable " : "bypass ")
             + name + ".");
         bypass.setTooltip(
-            newState ? "BYP — " + name + " is bypassed"
-                     : "ON — " + name + " is enabled");
+            newState ? "BYP - " + name + " is bypassed"
+                     : "ON - " + name + " is enabled");
         if (newState != bypassed)
         {
             bypassed = newState;
@@ -554,6 +559,13 @@ public:
                     juce::AccessibilityEvent::valueChanged);
         }
     }
+
+#if defined(MEGADSP_TESTS)
+    void clickCloseButtonForTesting()
+    {
+        close.onClick();
+    }
+#endif
 
     void paint(juce::Graphics& graphics) override
     {
@@ -648,7 +660,9 @@ public:
     void itemDropped(const SourceDetails& details) override
     {
         dragOver = false;
-        editor.reorderSlot(static_cast<int>(details.description), slot);
+        const auto source = static_cast<int>(details.description);
+        const auto destination = slot;
+        editor.requestReorderSlot(source, destination);
     }
 
 private:
@@ -771,7 +785,7 @@ private:
         graphics.setColour(juce::Colour(0xffa8b3c0));
         graphics.drawText(label, row.removeFromLeft(28),
                           juce::Justification::centredLeft);
-        auto readout = row.removeFromRight(channel == 1 ? 70 : 52);
+        auto readout = row.removeFromRight(70);
         auto meter = row.reduced(2, 4);
         graphics.setColour(juce::Colour(0xff303845));
         graphics.fillRoundedRectangle(meter.toFloat(), 2.0f);
@@ -1303,6 +1317,12 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     themeButton.onClick = [this] { showThemePalette(); };
     addAndMakeVisible(themeButton);
 
+    diagnosticsButton.setTitle("Diagnostics");
+    diagnosticsButton.setDescription(
+        "Configure diagnostic logging or open the diagnostics folder.");
+    diagnosticsButton.onClick = [this] { showDiagnosticsMenu(); };
+    addAndMakeVisible(diagnosticsButton);
+
     status.setJustificationType(juce::Justification::centredRight);
     status.setColour(juce::Label::textColourId, juce::Colour(0xff9ba6b5));
     addAndMakeVisible(status);
@@ -1324,6 +1344,8 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
             -1, juce::dontSendNotification);
         selectSlot(0);
         refreshTabs();
+        megadsp::Diagnostics::instance().log(
+            "editor", "opened");
     };
     addAndMakeVisible(factoryPresets);
 
@@ -1389,6 +1411,8 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
 MegaDSPAudioProcessorEditor::~MegaDSPAudioProcessorEditor()
 {
     fileChooser.reset();
+    megadsp::Diagnostics::instance().log(
+        "editor", "closed");
     audioProcessor.getVisualizationData().setSelectedSlot(-1);
 }
 
@@ -1424,6 +1448,8 @@ void MegaDSPAudioProcessorEditor::resized()
         headerTop.removeFromLeft(identityLayout.saveWidth).reduced(2));
     loadButton.setBounds(
         headerTop.removeFromLeft(identityLayout.loadWidth).reduced(2));
+    diagnosticsButton.setBounds(
+        headerTop.removeFromRight(70).reduced(2));
     status.setBounds(headerTop);
 
     auto headerBottom = header.reduced(0, 2);
@@ -1469,6 +1495,9 @@ void MegaDSPAudioProcessorEditor::timerCallback()
 
 void MegaDSPAudioProcessorEditor::selectSlot(int slot)
 {
+    if (refreshingTabs)
+        return;
+
     const auto active = audioProcessor.getRack().activeSlotCount();
     if (active <= 0)
     {
@@ -1488,21 +1517,51 @@ void MegaDSPAudioProcessorEditor::selectSlot(int slot)
 
 void MegaDSPAudioProcessorEditor::refreshTabs()
 {
-    tabs.clear();
+    if (refreshingTabs)
+        return;
+
     const auto active = audioProcessor.getRack().activeSlotCount();
     knownActiveSlots = active;
     knownTopologyGeneration = audioProcessor.getTopologyGeneration();
-    for (int slot = 0; slot < active; ++slot)
     {
-        auto tab = std::make_unique<ModuleTab>(
-            *this, slot, audioProcessor.getRack().moduleType(slot));
-        tabHost.addAndMakeVisible(*tab);
-        tabs.push_back(std::move(tab));
+        const juce::ScopedValueSetter<bool> refreshing(
+            refreshingTabs, true);
+        modulePanel.reset();
+        tabs.clear();
+        for (int slot = 0; slot < active; ++slot)
+        {
+            auto tab = std::make_unique<ModuleTab>(
+                *this, slot, audioProcessor.getRack().moduleType(slot));
+            tabHost.addAndMakeVisible(*tab);
+            tabs.push_back(std::move(tab));
+        }
+        addButton.setVisible(active < megadsp::slotCount);
     }
-    addButton.setVisible(active < megadsp::slotCount);
     selectSlot(juce::jmin(selectedSlot, juce::jmax(0, active - 1)));
     resized();
 }
+
+#if defined(MEGADSP_TESTS)
+void MegaDSPAudioProcessorEditor::clickCloseButtonForTesting(int slot)
+{
+    if (juce::isPositiveAndBelow(slot, static_cast<int>(tabs.size())))
+    {
+        tabs[static_cast<size_t>(slot)]->grabKeyboardFocus();
+        tabs[static_cast<size_t>(slot)]->clickCloseButtonForTesting();
+        applyPendingTabMutation();
+    }
+}
+
+void MegaDSPAudioProcessorEditor::simulateFocusGainDuringRefreshForTesting(
+    int slot)
+{
+    if (!juce::isPositiveAndBelow(slot, static_cast<int>(tabs.size())))
+        return;
+    const juce::ScopedValueSetter<bool> refreshing(refreshingTabs, true);
+    tabs[static_cast<size_t>(slot)]->focusGained(
+        juce::Component::focusChangedDirectly);
+}
+#endif
 
 void MegaDSPAudioProcessorEditor::showModuleBrowser()
 {
@@ -1606,6 +1665,63 @@ void MegaDSPAudioProcessorEditor::showThemePalette()
     callout.setDismissalMouseClicksAreAlwaysConsumed(true);
 }
 
+void MegaDSPAudioProcessorEditor::showDiagnosticsMenu()
+{
+    constexpr int toggleCommand = 1;
+    constexpr int openCommand = 2;
+    auto& diagnostics = megadsp::Diagnostics::instance();
+    juce::PopupMenu menu;
+    menu.addItem(
+        toggleCommand, "Enable Diagnostics", true,
+        diagnostics.isEnabled());
+    menu.addItem(openCommand, "Open Diagnostics Folder");
+
+    juce::Component::SafePointer<MegaDSPAudioProcessorEditor> safeThis(this);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(&diagnosticsButton),
+        [safeThis](int result)
+        {
+            if (safeThis == nullptr || result == 0)
+                return;
+            auto& service = megadsp::Diagnostics::instance();
+            if (result == openCommand)
+            {
+                service.openFolder();
+                return;
+            }
+            if (result != toggleCommand)
+                return;
+            if (service.isEnabled())
+            {
+                service.setEnabled(false);
+                safeThis->refreshIdentityPresentation();
+                return;
+            }
+
+            const auto options = juce::MessageBoxOptions()
+                .withIconType(juce::MessageBoxIconType::WarningIcon)
+                .withTitle("Enable megaDSP Diagnostics?")
+                .withMessage(
+                    "Diagnostics writes bounded local logs and installs fatal "
+                    "crash and terminate handlers in the DAW process. Existing "
+                    "host handling continues and installed handlers are restored when diagnostics is "
+                    "disabled. Logs can include plugin configuration, module "
+                    "topology, audio format, and error messages, but not audio.")
+                .withButton("Enable")
+                .withButton("Cancel")
+                .withAssociatedComponent(safeThis.getComponent());
+            juce::AlertWindow::showAsync(
+                options,
+                [safeThis](int button)
+                {
+                    if (safeThis == nullptr || button != 1)
+                        return;
+                    megadsp::Diagnostics::instance().setEnabled(true);
+                    safeThis->refreshIdentityPresentation();
+                });
+        });
+}
+
 void MegaDSPAudioProcessorEditor::refreshIdentityPresentation()
 {
     if (!instanceName.hasKeyboardFocus(true))
@@ -1625,6 +1741,18 @@ void MegaDSPAudioProcessorEditor::refreshIdentityPresentation()
     themeButton.setColour(
         juce::TextButton::buttonOnColourId, theme.colour.brighter(0.50f));
     themeButton.repaint();
+    const auto diagnosticsEnabled =
+        megadsp::Diagnostics::instance().isEnabled();
+    diagnosticsButton.setButtonText(
+        diagnosticsEnabled ? "DIAG ON" : "DIAG");
+    diagnosticsButton.setTooltip(
+        diagnosticsEnabled
+            ? "Diagnostics are enabled. Click to disable or open the log folder."
+            : "Diagnostics are off. Click to configure diagnostic logging.");
+    diagnosticsButton.setColour(
+        juce::TextButton::buttonColourId,
+        diagnosticsEnabled ? juce::Colour(0xff8b4b45)
+                           : juce::Colour(0xff27313d));
     if (themeIndex != knownThemeIndex)
     {
         knownThemeIndex = themeIndex;
@@ -1712,6 +1840,64 @@ void MegaDSPAudioProcessorEditor::reorderSlot(int source, int destination)
     audioProcessor.moveSlot(source, destination);
     selectedSlot = destination;
     refreshTabs();
+}
+
+void MegaDSPAudioProcessorEditor::requestRemoveSlot(int slot)
+{
+    pendingTabMutation = PendingTabMutation::remove;
+    pendingSourceSlot = slot;
+    pendingDestinationSlot = -1;
+    pendingTopologyGeneration = audioProcessor.getTopologyGeneration();
+    pendingTopologyRequestGeneration =
+        audioProcessor.getTopologyRequestGeneration();
+    const juce::Component::SafePointer<MegaDSPAudioProcessorEditor>
+        safeThis(this);
+    juce::MessageManager::callAsync(
+        [safeThis]
+        {
+            if (safeThis != nullptr)
+                safeThis->applyPendingTabMutation();
+        });
+}
+
+void MegaDSPAudioProcessorEditor::requestReorderSlot(
+    int source, int destination)
+{
+    pendingTabMutation = PendingTabMutation::reorder;
+    pendingSourceSlot = source;
+    pendingDestinationSlot = destination;
+    pendingTopologyGeneration = audioProcessor.getTopologyGeneration();
+    pendingTopologyRequestGeneration =
+        audioProcessor.getTopologyRequestGeneration();
+    const juce::Component::SafePointer<MegaDSPAudioProcessorEditor>
+        safeThis(this);
+    juce::MessageManager::callAsync(
+        [safeThis]
+        {
+            if (safeThis != nullptr)
+                safeThis->applyPendingTabMutation();
+        });
+}
+
+void MegaDSPAudioProcessorEditor::applyPendingTabMutation()
+{
+    const auto mutation = pendingTabMutation;
+    const auto source = pendingSourceSlot;
+    const auto destination = pendingDestinationSlot;
+    const auto generation = pendingTopologyGeneration;
+    const auto requestGeneration = pendingTopologyRequestGeneration;
+    pendingTabMutation = PendingTabMutation::none;
+    pendingSourceSlot = -1;
+    pendingDestinationSlot = -1;
+
+    if (mutation == PendingTabMutation::none
+        || audioProcessor.getTopologyGeneration() != generation
+        || audioProcessor.getTopologyRequestGeneration() != requestGeneration)
+        return;
+    if (mutation == PendingTabMutation::remove)
+        removeSlot(source);
+    else
+        reorderSlot(source, destination);
 }
 
 void MegaDSPAudioProcessorEditor::choosePreset(bool save)

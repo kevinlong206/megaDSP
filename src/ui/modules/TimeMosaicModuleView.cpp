@@ -219,10 +219,10 @@ void TimeMosaicModuleView::paint(
             ? "HISTORY  "
                 + secondsText(
                     telemetry.values[TimeMosaicModule::activeHistorySeconds])
-                + "  ·  MEAN AGE  "
+                + "  |  MEAN AGE  "
                 + secondsText(
                     telemetry.values[TimeMosaicModule::actualMeanAgeSeconds])
-                + "  ·  PITCH  "
+                + "  |  PITCH  "
                 + juce::String(
                     telemetry.values[TimeMosaicModule::actualPitchCents], 1)
                 + " cents"
@@ -237,10 +237,10 @@ void TimeMosaicModuleView::paint(
     graphics.setColour(juce::Colours::white.withAlpha(0.7f));
     graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
     graphics.drawText(
-        "FREQUENCY  LOW → HIGH", map.reduced(8.0f).toNearestInt(),
+        "FREQUENCY  LOW > HIGH", map.reduced(8.0f).toNearestInt(),
         juce::Justification::topLeft);
     graphics.drawText(
-        "HISTORY AGE  NOW → OLDER", map.reduced(8.0f).toNearestInt(),
+        "HISTORY AGE  NOW > OLDER", map.reduced(8.0f).toNearestInt(),
         juce::Justification::topRight);
     for (int division = 0; division <= 4; ++division)
     {
@@ -332,7 +332,7 @@ void TimeMosaicModuleView::paint(
     graphics.drawFittedText(
         "AGE  "
             + controlText(TimeMosaicModule::ageControl)
-            + "  ·  COHERENCE  "
+            + "  |  COHERENCE  "
             + controlText(TimeMosaicModule::coherenceControl),
         juce::Rectangle<float>(230.0f, 15.0f)
             .withCentre(target.translated(0.0f, -14.0f))

@@ -127,5 +127,6 @@ private:
     int focusedControl = -1;
     juce::String dragReadout;
     std::unique_ptr<ModuleView> moduleView;
+    bool bypassVisualsSuspended = false;
 };
 } // namespace megadsp::ui

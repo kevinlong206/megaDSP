@@ -1,4 +1,6 @@
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
+#include "ui/EffectGraph.h"
 #include "ui/GuiLayout.h"
 
 #include <juce_core/juce_core.h>
@@ -91,6 +93,14 @@ public:
                 megadsp::slotParameterId(slot, "type"));
             parameter->setValueNotifyingHost(
                 parameter->convertTo0to1(static_cast<float>(type)));
+        };
+        const auto setBypass = [](MegaDSPAudioProcessor& processor,
+                                 int slot, bool bypassed)
+        {
+            auto* parameter = processor.parameters.getParameter(
+                megadsp::slotParameterId(slot, "bypass"));
+            parameter->setValueNotifyingHost(
+                parameter->convertTo0to1(bypassed ? 1.0f : 0.0f));
         };
 
         beginTest(
@@ -198,6 +208,129 @@ public:
                     megadsp::controlParameterId(1, 0))
                 ->load(),
             0.83f, 0.0001f);
+
+        beginTest("Deferred first-tab removal rejects refresh focus reentry");
+        {
+            auto editorProcessor =
+                std::make_unique<MegaDSPAudioProcessor>();
+            editorProcessor->prepareToPlay(48000.0, 512);
+            editorProcessor->addModule(megadsp::ModuleType::guitarCabinet);
+            editorProcessor->addModule(megadsp::ModuleType::compressor);
+            editorProcessor->setSelectedTab(0);
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
+                *editorProcessor, 1100, 720);
+            expectEquals(editor->tabCountForTesting(), 2);
+            editor->simulateFocusGainDuringRefreshForTesting(1);
+            expectEquals(editorProcessor->getSelectedTab(), 0);
+            editor->clickCloseButtonForTesting(0);
+            expectEquals(editorProcessor->getRack().activeSlotCount(), 1);
+            expectEquals(editor->tabCountForTesting(), 1);
+            expect(editorProcessor->getRack().moduleType(0)
+                   == megadsp::ModuleType::compressor);
+        }
+
+        beginTest("Rotary Speaker paints safely after long system uptime");
+        {
+            MegaDSPAudioProcessor rotaryProcessor;
+            rotaryProcessor.prepareToPlay(48000.0, 512);
+            setType(
+                rotaryProcessor, 0, megadsp::ModuleType::rotarySpeaker);
+            rotaryProcessor.flushPendingUpdatesForTesting();
+            megadsp::ui::EffectGraph graph(
+                rotaryProcessor, 0, megadsp::ModuleType::rotarySpeaker);
+            graph.setBounds(0, 0, 900, 450);
+            juce::Image image(
+                juce::Image::ARGB, graph.getWidth(), graph.getHeight(), true);
+            juce::Graphics graphics(image);
+            graph.paint(graphics);
+            expect(!image.isNull());
+        }
+
+        beginTest("Bypassed slots suspend DSP and visualization capture");
+        {
+            MegaDSPAudioProcessor suspendedProcessor;
+            suspendedProcessor.prepareToPlay(48000.0, 512);
+            setType(
+                suspendedProcessor, 0, megadsp::ModuleType::equalizer);
+            suspendedProcessor.flushPendingUpdatesForTesting();
+            suspendedProcessor.getVisualizationData().setSelectedSlot(0);
+            juce::MidiBuffer bypassMidi;
+            juce::AudioBuffer<float> active(2, 512);
+            for (int channel = 0; channel < active.getNumChannels(); ++channel)
+                juce::FloatVectorOperations::fill(
+                    active.getWritePointer(channel), 0.25f,
+                    active.getNumSamples());
+            suspendedProcessor.processBlock(active, bypassMidi);
+            std::array<float, 1024> bypassCapture {};
+            const auto capturedBefore = suspendedProcessor
+                .getVisualizationData().slotData(0).input.copyLatest(
+                    bypassCapture);
+            expect(capturedBefore > 0);
+
+            setBypass(suspendedProcessor, 0, true);
+            juce::AudioBuffer<float> bypassed(2, 512);
+            for (int block = 0; block < 3; ++block)
+            {
+                for (int channel = 0; channel < bypassed.getNumChannels();
+                     ++channel)
+                    juce::FloatVectorOperations::fill(
+                        bypassed.getWritePointer(channel), 0.25f,
+                        bypassed.getNumSamples());
+                suspendedProcessor.processBlock(bypassed, bypassMidi);
+            }
+            expect(suspendedProcessor.getRack().slotDspSuspended(0));
+            expectEquals(
+                suspendedProcessor.getVisualizationData().slotData(0)
+                    .input.copyLatest(bypassCapture),
+                capturedBefore);
+            expectWithinAbsoluteError(
+                suspendedProcessor.getRack().slotMeter(0), 0.0f, 0.000001f);
+            for (int channel = 0; channel < bypassed.getNumChannels();
+                 ++channel)
+                expectWithinAbsoluteError(
+                    bypassed.getMagnitude(
+                        channel, 0, bypassed.getNumSamples()),
+                    0.25f, 0.000001f);
+
+            setBypass(suspendedProcessor, 0, false);
+            suspendedProcessor.processBlock(bypassed, bypassMidi);
+            expect(!suspendedProcessor.getRack().slotDspSuspended(0));
+        }
+
+        beginTest("Latency modules warm up silently before bypass re-entry");
+        {
+            MegaDSPAudioProcessor latencyProcessor;
+            latencyProcessor.prepareToPlay(48000.0, 512);
+            setType(latencyProcessor, 0, megadsp::ModuleType::limiter);
+            latencyProcessor.flushPendingUpdatesForTesting();
+            juce::MidiBuffer latencyMidi;
+            setBypass(latencyProcessor, 0, true);
+            juce::AudioBuffer<float> steady(2, 512);
+            for (int block = 0; block < 4; ++block)
+            {
+                for (int channel = 0; channel < steady.getNumChannels();
+                     ++channel)
+                    juce::FloatVectorOperations::fill(
+                        steady.getWritePointer(channel), 0.1f,
+                        steady.getNumSamples());
+                latencyProcessor.processBlock(steady, latencyMidi);
+            }
+            expect(latencyProcessor.getRack().slotDspSuspended(0));
+            setBypass(latencyProcessor, 0, false);
+            for (int channel = 0; channel < steady.getNumChannels();
+                 ++channel)
+                juce::FloatVectorOperations::fill(
+                    steady.getWritePointer(channel), 0.1f,
+                    steady.getNumSamples());
+            latencyProcessor.processBlock(steady, latencyMidi);
+            expect(!latencyProcessor.getRack().slotDspSuspended(0));
+            for (int channel = 0; channel < steady.getNumChannels();
+                 ++channel)
+                for (int sample = 0; sample < steady.getNumSamples();
+                     ++sample)
+                    expect(std::abs(steady.getSample(channel, sample))
+                           > 0.09f);
+        }
 
         beginTest(
             "Host bypass delay clears across zero-latency re-entry");

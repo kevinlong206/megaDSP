@@ -64,7 +64,8 @@ void BeatPermuterModule::prepare(const juce::dsp::ProcessSpec& spec)
     sampleRate = juce::jmax(8000.0, spec.sampleRate);
     const auto maximumHistorySeconds =
         (60.0 / 30.0)
-        * static_cast<double>(maximumWindowSlices + 2);
+        * static_cast<double>(
+            maximumWindowSlices + maximumEventSlices + 2);
     const auto capacity = juce::jmax(
         1, juce::roundToInt(maximumHistorySeconds * sampleRate) + 8);
     for (auto& channel : history)
@@ -113,6 +114,19 @@ void BeatPermuterModule::reset()
         event.stereoBias.store(0.0f, std::memory_order_relaxed);
         event.pattern.store(0, std::memory_order_relaxed);
         event.reverse.store(false, std::memory_order_relaxed);
+        event.currentStep.store(0, std::memory_order_relaxed);
+        event.stepCount.store(0, std::memory_order_relaxed);
+        event.windowSlices.store(0, std::memory_order_relaxed);
+        for (int channel = 0; channel < 2; ++channel)
+            for (int step = 0; step < maximumEventSlices; ++step)
+            {
+                event.sourceSlices[static_cast<size_t>(channel)]
+                                  [static_cast<size_t>(step)]
+                    .store(0, std::memory_order_relaxed);
+                event.reversedSteps[static_cast<size_t>(channel)]
+                                   [static_cast<size_t>(step)]
+                    .store(false, std::memory_order_relaxed);
+            }
         event.publicationSequence.fetch_add(
             1, std::memory_order_release);
     }
@@ -218,6 +232,29 @@ void BeatPermuterModule::publishEvent(const PermutationEvent& eventToPublish)
         std::memory_order_relaxed);
     event.pattern.store(eventToPublish.pattern, std::memory_order_relaxed);
     event.reverse.store(reverse, std::memory_order_relaxed);
+    event.currentStep.store(0, std::memory_order_relaxed);
+    event.stepCount.store(
+        eventToPublish.lengthSlices, std::memory_order_relaxed);
+    event.windowSlices.store(
+        eventToPublish.windowSlices, std::memory_order_relaxed);
+    for (int channel = 0; channel < 2; ++channel)
+        for (int step = 0; step < maximumEventSlices; ++step)
+        {
+            event.sourceSlices[static_cast<size_t>(channel)]
+                              [static_cast<size_t>(step)]
+                .store(
+                    eventToPublish.sourceOffsets[static_cast<size_t>(channel)]
+                                                [static_cast<size_t>(step)]
+                        + 1,
+                    std::memory_order_relaxed);
+            event.reversedSteps[static_cast<size_t>(channel)]
+                               [static_cast<size_t>(step)]
+                .store(
+                    eventToPublish.reversePlayback[
+                        static_cast<size_t>(channel)]
+                        [static_cast<size_t>(step)],
+                    std::memory_order_relaxed);
+        }
     event.publicationSequence.fetch_add(
         1, std::memory_order_release);
 }
@@ -344,7 +381,6 @@ void BeatPermuterModule::beginSlice(
         && activeEvent.currentStep + 1 < activeEvent.lengthSlices)
     {
         ++activeEvent.currentStep;
-        activeEvent.sourceBoundary = writtenSamples;
         currentSliceSamples = activeEvent.sliceSamples;
         return;
     }
@@ -413,26 +449,49 @@ std::array<float, 2> BeatPermuterModule::renderWetSample(
         const auto offset =
             activeEvent.sourceOffsets[static_cast<size_t>(channel)][
                 static_cast<size_t>(step)];
-        auto phase = std::fmod(
+        const auto phaseOffset = static_cast<double>(
+            activeEvent.phaseOffsets[static_cast<size_t>(channel)][
+                static_cast<size_t>(step)]);
+        const auto rawPhase =
             static_cast<double>(slicePhase)
                 * static_cast<double>(activeEvent.pitchRatio)
-            + static_cast<double>(
-                activeEvent.phaseOffsets[static_cast<size_t>(channel)][
-                    static_cast<size_t>(step)]),
-            1.0);
-        if (phase < 0.0)
-            phase += 1.0;
-        auto localPosition = phase * activeEvent.sliceSamples;
-        if (activeEvent.reversePlayback[static_cast<size_t>(channel)][
-                static_cast<size_t>(step)])
-            localPosition =
-                juce::jmax(0.0, activeEvent.sliceSamples - 1.0 - localPosition);
-
+            + phaseOffset;
+        const auto reverse =
+            activeEvent.reversePlayback[static_cast<size_t>(channel)][
+                static_cast<size_t>(step)];
         const auto sourceStart =
             static_cast<double>(activeEvent.sourceBoundary)
             - static_cast<double>(offset + 1) * activeEvent.sliceSamples;
-        wet[static_cast<size_t>(channel)] =
-            readHistory(channel, sourceStart + localPosition) * gate;
+        const auto readPhase = [this, channel, sourceStart, reverse](
+                                   double phase)
+        {
+            phase -= std::floor(phase);
+            auto localPosition = phase * activeEvent.sliceSamples;
+            if (reverse)
+                localPosition = juce::jmax(
+                    0.0, activeEvent.sliceSamples - 1.0 - localPosition);
+            return readHistory(channel, sourceStart + localPosition);
+        };
+
+        const auto neutralRead =
+            std::abs(activeEvent.pitchRatio - 1.0f) < 0.0001f
+            && std::abs(phaseOffset) < 0.0001;
+        if (neutralRead)
+            wet[static_cast<size_t>(channel)] = readPhase(rawPhase) * gate;
+        else
+        {
+            auto phaseA = rawPhase - std::floor(rawPhase);
+            auto phaseB = phaseA + 0.5;
+            if (phaseB >= 1.0)
+                phaseB -= 1.0;
+            const auto sine =
+                std::sin(juce::MathConstants<double>::pi * phaseA);
+            const auto weightA = static_cast<float>(sine * sine);
+            wet[static_cast<size_t>(channel)] =
+                (readPhase(phaseA) * weightA
+                 + readPhase(phaseB) * (1.0f - weightA))
+                * gate;
+        }
     }
 
     return wet;
@@ -462,6 +521,8 @@ void BeatPermuterModule::updateVisualProgress()
         1, std::memory_order_acq_rel);
     event.progress.store(
         juce::jlimit(0.0f, 1.0f, progress), std::memory_order_relaxed);
+    event.currentStep.store(
+        activeEvent.currentStep, std::memory_order_relaxed);
     event.publicationSequence.fetch_add(
         1, std::memory_order_release);
 }
@@ -654,6 +715,27 @@ BeatPermuterModule::beatPermutationVisualEvents() const noexcept
                 visual[index].pattern.load(std::memory_order_relaxed);
             candidate.reverse =
                 visual[index].reverse.load(std::memory_order_relaxed);
+            candidate.currentStep =
+                visual[index].currentStep.load(std::memory_order_relaxed);
+            candidate.stepCount =
+                visual[index].stepCount.load(std::memory_order_relaxed);
+            candidate.windowSlices =
+                visual[index].windowSlices.load(std::memory_order_relaxed);
+            for (int step = 0; step < maximumEventSlices; ++step)
+            {
+                candidate.leftSourceSlices[static_cast<size_t>(step)] =
+                    visual[index].sourceSlices[0][static_cast<size_t>(step)]
+                        .load(std::memory_order_relaxed);
+                candidate.rightSourceSlices[static_cast<size_t>(step)] =
+                    visual[index].sourceSlices[1][static_cast<size_t>(step)]
+                        .load(std::memory_order_relaxed);
+                candidate.leftReverse[static_cast<size_t>(step)] =
+                    visual[index].reversedSteps[0][static_cast<size_t>(step)]
+                        .load(std::memory_order_relaxed);
+                candidate.rightReverse[static_cast<size_t>(step)] =
+                    visual[index].reversedSteps[1][static_cast<size_t>(step)]
+                        .load(std::memory_order_relaxed);
+            }
 
             if (visual[index].publicationSequence.load(
                     std::memory_order_acquire)

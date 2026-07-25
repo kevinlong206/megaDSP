@@ -372,12 +372,12 @@ void GateExpanderModuleView::paint(
     graphics.setColour(juce::Colour(0xffa8b3c0));
     graphics.drawText(
         hasTelemetry
-            ? "DSP DETECTOR / ATTENUATION · "
+            ? "DSP DETECTOR / ATTENUATION | "
                   + juce::String(
                       telemetrySnapshot.values[
                           GateExpanderModule::detectorDb],
                       1)
-                  + " dB · "
+                  + " dB | "
                   + (telemetrySnapshot.values[
                          GateExpanderModule::openFraction] >= 0.999f
                          ? "OPEN"
@@ -385,7 +385,7 @@ void GateExpanderModuleView::paint(
                            GateExpanderModule::openFraction] <= 0.001f
                          ? "CLOSED"
                          : "SPLIT")
-                  + " · ENV "
+                  + " | ENV "
                   + juce::String(
                       telemetrySnapshot.values[
                           GateExpanderModule::gainEnvelopeDb],
@@ -399,7 +399,7 @@ void GateExpanderModuleView::paint(
     const std::array<juce::String, 2> pills {
         available
             ? external ? "SIDECHAIN  EXTERNAL" : "SIDECHAIN  INTERNAL"
-            : external ? "EXTERNAL UNAVAILABLE  ·  INPUT"
+            : external ? "EXTERNAL UNAVAILABLE  |  INPUT"
                        : "SIDECHAIN  UNAVAILABLE",
         value(9) >= 0.5f ? "DETECTOR LISTEN  ON"
                          : "DETECTOR LISTEN  OFF"
@@ -452,7 +452,7 @@ void GateExpanderModuleView::paint(
     graphics.setColour(juce::Colours::white);
     graphics.drawText(
         "DETECTOR  " + formatControlValue(type, 6, value(6))
-            + " – " + formatControlValue(type, 7, value(7)),
+            + " - " + formatControlValue(type, 7, value(7)),
         detector.toNearestInt(), juce::Justification::centred);
 
     const auto link = linkArea(area);

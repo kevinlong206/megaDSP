@@ -95,7 +95,7 @@ private:
     static juce::String pitchText(float frequency)
     {
         if (frequency <= 0.0f)
-            return "—";
+            return "-";
         static constexpr std::array<const char*, 12> notes {
             "C", "C#", "D", "D#", "E", "F",
             "F#", "G", "G#", "A", "A#", "B"
@@ -361,7 +361,7 @@ void HarmonicMirageModuleView::paint(
     graphics.drawFittedText(
         "PARTIALS  "
             + controlText(HarmonicMirageModule::partialsControl)
-            + "  ·  EVEN / ODD  "
+            + "  |  EVEN / ODD  "
             + controlText(HarmonicMirageModule::evenOddControl),
         juce::Rectangle<float>(260.0f, 15.0f)
             .withCentre(target.translated(0.0f, -14.0f))
@@ -375,7 +375,7 @@ void HarmonicMirageModuleView::paint(
                 + juce::String(
                     telemetry.values[HarmonicMirageModule::trackingConfidence]
                         * 100.0f, 0)
-                + "%  ·  ACTIVE  "
+                + "%  |  ACTIVE  "
                 + juce::String(juce::roundToInt(
                     telemetry.values[HarmonicMirageModule::activePartialCount]))
                 + " PARTIALS",

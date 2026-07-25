@@ -296,7 +296,7 @@ void ResonanceTamerModuleView::paint(
     graphics.setColour(juce::Colours::white.withAlpha(0.72f));
     graphics.setFont(juce::FontOptions(10.0f));
     graphics.drawFittedText(
-        "INPUT   ·   LEARNED BASELINE   ·   EXCESS   ·   REDUCTION",
+        "INPUT   |   LEARNED BASELINE   |   EXCESS   |   REDUCTION",
         header.reduced(5.0f, 0.0f).toNearestInt(),
         juce::Justification::centredRight, 1, 0.65f);
 

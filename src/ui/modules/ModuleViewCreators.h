@@ -46,4 +46,8 @@ std::unique_ptr<ModuleView> createFormantForgeView(EffectGraph&);
 std::unique_ptr<ModuleView> createHarmonicMirageView(EffectGraph&);
 std::unique_ptr<ModuleView> createChaosFieldView(EffectGraph&);
 std::unique_ptr<ModuleView> createTimeMosaicView(EffectGraph&);
+std::unique_ptr<ModuleView> createGuitarCabinetView(EffectGraph&);
+std::unique_ptr<ModuleView> createChordLoomView(EffectGraph&);
+std::unique_ptr<ModuleView> createVolumeSwellView(EffectGraph&);
+std::unique_ptr<ModuleView> createSpectralNebulaView(EffectGraph&);
 } // namespace megadsp::ui

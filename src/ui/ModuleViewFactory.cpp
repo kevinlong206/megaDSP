@@ -65,7 +65,11 @@ constexpr std::array<ViewCreator,
         &createFormantForgeView,
         &createHarmonicMirageView,
         &createChaosFieldView,
-        &createTimeMosaicView
+        &createTimeMosaicView,
+        &createGuitarCabinetView,
+        &createChordLoomView,
+        &createVolumeSwellView,
+        &createSpectralNebulaView
     };
 
 static_assert([]

@@ -16,6 +16,11 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+#if defined(MEGADSP_TESTS)
+    void clickCloseButtonForTesting(int slot);
+    void simulateFocusGainDuringRefreshForTesting(int slot);
+    int tabCountForTesting() const { return static_cast<int>(tabs.size()); }
+#endif
 
 private:
     class ModuleTab;
@@ -29,9 +34,13 @@ private:
     void showModuleSearch();
     void removeSlot(int slot);
     void reorderSlot(int source, int destination);
+    void requestRemoveSlot(int slot);
+    void requestReorderSlot(int source, int destination);
+    void applyPendingTabMutation();
     void choosePreset(bool save);
     void commitInstanceName();
     void showThemePalette();
+    void showDiagnosticsMenu();
     void refreshIdentityPresentation();
     void showResult(const juce::Result&);
 #if defined(MEGADSP_CAPTURE_SCREENSHOTS)
@@ -44,6 +53,7 @@ private:
     juce::Label instanceLabel;
     juce::TextEditor instanceName;
     juce::TextButton themeButton { "COLOR" };
+    juce::TextButton diagnosticsButton { "DIAG" };
     juce::Label status;
     juce::TextButton saveButton { "Save" };
     juce::TextButton loadButton { "Load" };
@@ -64,6 +74,18 @@ private:
     int knownActiveSlots = -1;
     std::uint64_t knownTopologyGeneration = 0;
     int knownThemeIndex = -1;
+    bool refreshingTabs = false;
+    enum class PendingTabMutation
+    {
+        none,
+        remove,
+        reorder
+    };
+    PendingTabMutation pendingTabMutation = PendingTabMutation::none;
+    int pendingSourceSlot = -1;
+    int pendingDestinationSlot = -1;
+    std::uint64_t pendingTopologyGeneration = 0;
+    std::uint64_t pendingTopologyRequestGeneration = 0;
 #if defined(MEGADSP_CAPTURE_SCREENSHOTS)
     int screenshotPhase = 0;
     int screenshotDelay = 0;

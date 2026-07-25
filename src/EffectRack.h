@@ -36,6 +36,7 @@ public:
     const DspModule* activeModuleInstance(int slot) const;
     float slotMeter(int slot) const;
     float slotDetectorMeter(int slot) const;
+    bool slotDspSuspended(int slot) const;
     int latencySamples() const;
     double tailSeconds() const;
     float inputMeterDb() { return inputMeter.exchange(-100.0f); }
@@ -85,6 +86,8 @@ private:
         juce::String observedImpulsePath;
         bool impulseRestorePending = false;
         juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> wet;
+        bool dspSuspended = false;
+        int reactivationSamplesRemaining = 0;
 
         ControlValues values() const;
     };

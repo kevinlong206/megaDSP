@@ -51,7 +51,8 @@ void RandomGranulizerModuleView::configureAccessibility(
         "the label is duration. Drag Capture Range, Stereo Spread, and "
         "Rhythmic Delay Chance directly on the timeline. Drag either "
         "MIN/MAX size-window handle through the other, or a lower track; "
-        "double-click it to restore its default.");
+        "Dry and Wet are independent level controls. Double-click any "
+        "control to restore its default.");
 }
 
 juce::Rectangle<float> RandomGranulizerModuleView::grainTimelineBounds(
@@ -276,7 +277,7 @@ void RandomGranulizerModuleView::paint(
     graphics.drawText(
         "CAPTURE RANGE  "
             + megadsp::formatControlValue(type, 3, value(3))
-            + "    ← RECENT INPUT · NOW →",
+            + "    < RECENT INPUT | NOW >",
         captureRail.reduced(7.0f, 0.0f).toNearestInt(),
         juce::Justification::centred);
 

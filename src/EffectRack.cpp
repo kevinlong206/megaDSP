@@ -83,6 +83,8 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
         std::vector<float>().swap(channel);
     slot.latencyWritePosition = 0;
     slot.previousLatency = 0;
+    slot.dspSuspended = false;
+    slot.reactivationSamplesRemaining = 0;
 
     if (type == ModuleType::empty)
         return;
@@ -107,6 +109,8 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
         slot.wet.reset(preparedSpec.sampleRate, 0.01);
         slot.wet.setCurrentAndTargetValue(
             slot.bypass->load() >= 0.5f ? 0.0f : 1.0f);
+        slot.dspSuspended = slot.bypass->load() >= 0.5f;
+        slot.reactivationSamplesRemaining = 0;
     }
 
     slot.previousLatency = module->latencySamples();
@@ -162,6 +166,9 @@ void EffectRack::prepare(double sampleRate, int newMaximumBlockSize, int channel
     {
         slot.wet.reset(sampleRate, 0.01);
         slot.wet.setCurrentAndTargetValue(slot.bypass->load() >= 0.5f ? 0.0f : 1.0f);
+        slot.dspSuspended =
+            slot.activeModule != nullptr && slot.bypass->load() >= 0.5f;
+        slot.reactivationSamplesRemaining = 0;
     }
 
     inputGainLinear.reset(sampleRate, 0.02);
@@ -216,6 +223,9 @@ void EffectRack::reset()
             std::fill(channel.begin(), channel.end(), 0.0f);
         slot.latencyWritePosition = 0;
         slot.previousLatency = 0;
+        slot.dspSuspended =
+            slot.activeModule != nullptr && slot.bypass->load() >= 0.5f;
+        slot.reactivationSamplesRemaining = 0;
     }
 }
 
@@ -278,15 +288,21 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
         if (module == nullptr)
             continue;
 
+        const auto bypassRequested = slot.bypass->load() >= 0.5f;
+        if (bypassRequested)
+            slot.wet.setTargetValue(0.0f);
+        else if (!slot.dspSuspended
+                 && slot.reactivationSamplesRemaining <= 0)
+            slot.wet.setTargetValue(1.0f);
         const auto captureVisualization =
-            visualization.getSelectedSlot() == slotIndex;
+            !bypassRequested
+            && visualization.getSelectedSlot() == slotIndex;
         const ProcessEnvironment environment {
             sidechain, bpm, captureVisualization
         };
         if (captureVisualization)
             visualization.captureInput(slotIndex, main);
 
-        const auto controlValues = slot.values();
         const auto moduleLatency = module->latencySamples();
         if (moduleLatency != slot.previousLatency)
         {
@@ -322,6 +338,24 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
             }
         }
 
+        if (bypassRequested && slot.dspSuspended)
+        {
+            for (int channel = 0; channel < main.getNumChannels(); ++channel)
+                main.copyFrom(
+                    channel, 0, slot.dryBuffer, channel, 0,
+                    main.getNumSamples());
+            continue;
+        }
+
+        if (!bypassRequested && slot.dspSuspended)
+        {
+            slot.dspSuspended = false;
+            slot.reactivationSamplesRemaining = moduleLatency;
+            slot.wet.setCurrentAndTargetValue(0.0f);
+            if (slot.reactivationSamplesRemaining <= 0)
+                slot.wet.setTargetValue(1.0f);
+        }
+        const auto controlValues = slot.values();
         module->process(main, controlValues, environment);
         if (captureVisualization)
         {
@@ -329,17 +363,32 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
             visualization.captureGainReduction(
                 slotIndex, module->meterValue(), main.getNumSamples());
         }
-        slot.wet.setTargetValue(slot.bypass->load() >= 0.5f ? 0.0f : 1.0f);
-
         for (int sample = 0; sample < main.getNumSamples(); ++sample)
         {
-            const auto wetAmount = slot.wet.getNextValue();
+            auto wetAmount = 0.0f;
+            if (!bypassRequested
+                && slot.reactivationSamplesRemaining > 0)
+            {
+                if (--slot.reactivationSamplesRemaining == 0)
+                    slot.wet.setTargetValue(1.0f);
+            }
+            else
+            {
+                wetAmount = slot.wet.getNextValue();
+            }
             for (int channel = 0; channel < main.getNumChannels(); ++channel)
             {
                 const auto dry = slot.dryBuffer.getSample(channel, sample);
                 const auto wetSample = main.getSample(channel, sample);
                 main.setSample(channel, sample, dry + (wetSample - dry) * wetAmount);
             }
+        }
+        if (bypassRequested && !slot.wet.isSmoothing()
+            && slot.wet.getCurrentValue() <= 0.0f)
+        {
+            module->reset();
+            slot.dspSuspended = true;
+            slot.reactivationSamplesRemaining = 0;
         }
     }
 
@@ -382,7 +431,10 @@ float EffectRack::slotMeter(int slot) const
 {
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return 0.0f;
-    const auto* module = selectedModule(slots[static_cast<size_t>(slot)]);
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (rackSlot.bypass->load() >= 0.5f)
+        return 0.0f;
+    const auto* module = selectedModule(rackSlot);
     return module != nullptr ? module->meterValue() : 0.0f;
 }
 
@@ -390,8 +442,17 @@ float EffectRack::slotDetectorMeter(int slot) const
 {
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return -100.0f;
-    const auto* module = selectedModule(slots[static_cast<size_t>(slot)]);
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (rackSlot.bypass->load() >= 0.5f)
+        return -100.0f;
+    const auto* module = selectedModule(rackSlot);
     return module != nullptr ? module->detectorValue() : -100.0f;
+}
+
+bool EffectRack::slotDspSuspended(int slot) const
+{
+    return juce::isPositiveAndBelow(slot, slotCount)
+        && slots[static_cast<size_t>(slot)].dspSuspended;
 }
 
 int EffectRack::latencySamples() const
@@ -768,6 +829,8 @@ GrainVisualEvents EffectRack::grainVisualEvents(int slot) const
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return {};
     const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (rackSlot.bypass->load() >= 0.5f)
+        return {};
     if (const auto* module = selectedModule(rackSlot))
         if (const auto* visualizationCapability =
                 module->grainVisualizationCapability())
@@ -778,6 +841,9 @@ GrainVisualEvents EffectRack::grainVisualEvents(int slot) const
 BeatPermutationVisualEvents EffectRack::beatPermutationVisualEvents(
     int slot) const
 {
+    if (!juce::isPositiveAndBelow(slot, slotCount)
+        || slots[static_cast<size_t>(slot)].bypass->load() >= 0.5f)
+        return {};
     if (const auto* module = activeModuleInstance(slot))
     {
         if (const auto* visualizationCapability =
@@ -791,6 +857,8 @@ bool EffectRack::readContinuousTelemetry(
     int slot, ContinuousTelemetrySnapshot& snapshot) const noexcept
 {
     if (visualization.getSelectedSlot() != slot
+        || !juce::isPositiveAndBelow(slot, slotCount)
+        || slots[static_cast<size_t>(slot)].bypass->load() >= 0.5f
         || !activeModuleHasCapability(
             slot, ModuleCapability::continuousTelemetry))
         return false;
@@ -806,6 +874,8 @@ bool EffectRack::readEventTelemetry(
     int slot, EventTelemetrySnapshot& snapshot) const noexcept
 {
     if (visualization.getSelectedSlot() != slot
+        || !juce::isPositiveAndBelow(slot, slotCount)
+        || slots[static_cast<size_t>(slot)].bypass->load() >= 0.5f
         || !activeModuleHasCapability(
             slot, ModuleCapability::eventTelemetry))
         return false;

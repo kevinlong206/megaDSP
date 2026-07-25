@@ -225,7 +225,8 @@ void AnalogTapeModule::process(juce::AudioBuffer<float>& buffer,
         return detail::normalizedControl(
             controls[static_cast<size_t>(index)], fallback);
     };
-    const auto machine = discreteIndex(normalized(0, 0.375f), machineCount);
+    const auto machine = discreteIndex(
+        normalized(0, discreteValue(2, machineCount)), machineCount);
     const auto speed = discreteIndex(normalized(4, 0.625f), speedCount);
     const auto& machineProfile =
         machineProfiles[static_cast<size_t>(machine)];
@@ -234,7 +235,7 @@ void AnalogTapeModule::process(juce::AudioBuffer<float>& buffer,
     const auto inputDb = lerp(-18.0f, 18.0f, normalized(1, 0.5f));
     const auto inputTarget = std::abs(inputDb) < 0.0001f
         ? 1.0f : juce::Decibels::decibelsToGain(inputDb);
-    const auto driveTarget = normalized(2, 0.30f);
+    const auto driveTarget = normalized(2, 0.25f);
     const auto biasTarget = lerp(-1.0f, 1.0f, normalized(3, 0.5f));
     const auto hfCutoffTarget = machineProfile.hfCutoffHz * speedProfile.hfMultiplier;
     const auto headBumpFreqTarget =
@@ -257,11 +258,11 @@ void AnalogTapeModule::process(juce::AudioBuffer<float>& buffer,
     wowFlutterScaleSmoothed.setTargetValue(wowFlutterScaleTarget);
     noiseFloorSmoothed.setTargetValue(noiseFloorTarget);
 
-    const auto headBumpTarget = normalized(5, 0.35f);
-    const auto wowTarget = normalized(6, 0.20f);
-    const auto flutterTarget = normalized(7, 0.20f);
-    const auto wearTarget = normalized(8, 0.15f);
-    const auto noiseTarget = normalized(9, 0.20f);
+    const auto headBumpTarget = normalized(5, 0.15f);
+    const auto wowTarget = normalized(6, 0.0f);
+    const auto flutterTarget = normalized(7, 0.0f);
+    const auto wearTarget = normalized(8, 0.0f);
+    const auto noiseTarget = normalized(9, 0.0f);
     const auto mixTarget = normalized(10, 1.0f);
     const auto outputDb = lerp(-18.0f, 12.0f, normalized(11, 0.60f));
     const auto outputTarget = std::abs(outputDb) < 0.0001f
@@ -338,6 +339,7 @@ void AnalogTapeModule::process(juce::AudioBuffer<float>& buffer,
         / static_cast<float>(processingRate));
     const auto driveGainTotal =
         1.0f + driveBlock * 3.0f * driveHardnessBlock;
+    const auto driveMakeup = 1.0f / juce::jmax(1.0f, driveGainTotal);
     const auto biasOffset = biasBlock * biasSensitivityBlock * 0.6f;
     const auto biasNull = std::tanh(biasOffset);
     const auto hysteresisTotal =
@@ -366,7 +368,7 @@ void AnalogTapeModule::process(juce::AudioBuffer<float>& buffer,
             memory += (driven - memory) * memoryCoefficient;
             const auto nonlinear = std::tanh(hyst + biasOffset) - biasNull;
             hfState = hfCoefficient * hfState + (1.0f - hfCoefficient) * nonlinear;
-            samples[sample] = hfState;
+            samples[sample] = hfState * driveMakeup;
         }
     }
     oversampling->processSamplesDown(inputBlock);
@@ -472,7 +474,7 @@ void AnalogTapeModule::process(juce::AudioBuffer<float>& buffer,
                                                [static_cast<size_t>(dryLatencyPosition)];
             const auto dryAligned = delayedDry;
             delayedDry = dryBuffer.getSample(channel, sample);
-            const auto dryFinal = dryAligned * inputGainBlock;
+            const auto dryFinal = dryAligned;
 
             const auto blended = dryGain * dryFinal + wetGain * wetSample;
             const auto result = blended * output;

@@ -62,6 +62,10 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/FrequencyLab.cpp
     src/modules/FormantForge.cpp
     src/modules/GateExpander.cpp
+    src/modules/GuitarCabinet.cpp
+    src/modules/ChordLoom.cpp
+    src/modules/VolumeSwell.cpp
+    src/modules/SpectralNebula.cpp
     src/modules/Limiter.cpp
     src/modules/LoudnessRider.cpp
     src/modules/MidSideDecoder.cpp
@@ -109,6 +113,10 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/FrequencyLab.h
     src/modules/FormantForge.h
     src/modules/GateExpander.h
+    src/modules/GuitarCabinet.h
+    src/modules/ChordLoom.h
+    src/modules/VolumeSwell.h
+    src/modules/SpectralNebula.h
     src/modules/Limiter.h
     src/modules/LoudnessRider.h
     src/modules/MidSideDecoder.h
@@ -165,6 +173,10 @@ set(MEGADSP_UI_SOURCES
     src/ui/modules/FrequencyLabModuleView.cpp
     src/ui/modules/FormantForgeModuleView.cpp
     src/ui/modules/GateExpanderModuleView.cpp
+    src/ui/modules/GuitarCabinetModuleView.cpp
+    src/ui/modules/ChordLoomModuleView.cpp
+    src/ui/modules/VolumeSwellModuleView.cpp
+    src/ui/modules/SpectralNebulaModuleView.cpp
     src/ui/modules/LimiterModuleView.cpp
     src/ui/modules/LoudnessRiderModuleView.cpp
     src/ui/modules/MidSideDecoderModuleView.cpp
@@ -196,6 +208,8 @@ target_sources(megaDSP PRIVATE
     ${MEGADSP_MODULE_SOURCES}
     ${MEGADSP_MODULE_HEADERS}
     ${MEGADSP_UI_SOURCES}
+    src/Diagnostics.cpp
+    src/Diagnostics.h
     src/EffectRack.cpp
     src/EffectRack.h
     src/Parameters.cpp
@@ -212,7 +226,8 @@ target_compile_definitions(megaDSP
         JUCE_REPORT_APP_USAGE=0
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_USE_CURL=0
-        JUCE_WEB_BROWSER=0)
+        JUCE_WEB_BROWSER=0
+        MEGADSP_VERSION="${PROJECT_VERSION}")
 if(MEGADSP_CAPTURE_SCREENSHOTS)
     target_compile_definitions(megaDSP PRIVATE
         MEGADSP_CAPTURE_SCREENSHOTS=1)
@@ -252,15 +267,22 @@ target_sources(megaDSPTests PRIVATE
     tests/SpectralAdaptiveModulesTests.cpp
     tests/SpectralHistoryPairTests.cpp
     tests/DynamicsTelemetryTests.cpp
+    tests/DiagnosticsTests.cpp
     tests/TelemetryFoundationTests.cpp
     tests/TimeTelemetryTests.cpp
     tests/GuiLayoutTests.cpp
+    tests/GuitarCabinetTests.cpp
+    tests/ChordLoomTests.cpp
+    tests/VolumeSwellTests.cpp
+    tests/SpectralNebulaTests.cpp
     tests/ModuleBrowserTests.cpp
     tests/NextTenUtilityTests.cpp
     tests/ProcessorTests.cpp
     ${MEGADSP_MODULE_SOURCES}
     ${MEGADSP_MODULE_HEADERS}
     ${MEGADSP_UI_SOURCES}
+    src/Diagnostics.cpp
+    src/Diagnostics.h
     src/EffectRack.cpp
     src/EffectRack.h
     src/Parameters.cpp
@@ -275,6 +297,7 @@ target_compile_definitions(megaDSPTests PRIVATE
     MEGADSP_TESTS=1
     JUCE_USE_CURL=0
     JUCE_WEB_BROWSER=0
+    MEGADSP_VERSION="${PROJECT_VERSION}"
     JucePlugin_Name="megaDSP")
 target_link_libraries(megaDSPTests PRIVATE
     juce::juce_audio_utils

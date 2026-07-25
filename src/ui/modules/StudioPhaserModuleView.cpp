@@ -161,7 +161,7 @@ void StudioPhaserModuleView::mouseDrag(const juce::MouseEvent& event)
             (response.getBottom() - event.position.y) / response.getHeight()));
         dragReadout =
             "CENTER  " + megadsp::formatControlValue(type, 5, value(5))
-            + "  ·  SWEEP  "
+            + "  |  SWEEP  "
             + megadsp::formatControlValue(type, 6, value(6));
         repaint();
         return;
@@ -303,11 +303,11 @@ void StudioPhaserModuleView::paint(
     graphics.drawText(
         "NOTCH FIELD   "
             + megadsp::formatControlValue(type, 5, value(5))
-            + "  ·  " + megadsp::formatControlValue(type, 6, value(6))
+            + "  |  " + megadsp::formatControlValue(type, 6, value(6))
             + (!hasTelemetry
-                   ? "  ·  DSP TELEMETRY WAITING"
+                   ? "  |  DSP TELEMETRY WAITING"
                    : transitionAmount < 0.999f
-                       ? "  ·  DSP XFADE "
+                       ? "  |  DSP XFADE "
                            + juce::String(transitionAmount * 100.0f, 0) + "%"
                        : ""),
         response.reduced(8.0f).toNearestInt(),

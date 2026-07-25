@@ -178,7 +178,7 @@ void DiffusionDelayModuleView::paint(
     auto title = area.removeFromTop(28.0f);
     graphics.setColour(accent);
     graphics.setFont(juce::FontOptions(12.0f, juce::Font::bold));
-    graphics.drawText("PRIMARY ECHO → DIFFUSION CLOUD",
+    graphics.drawText("PRIMARY ECHO > DIFFUSION CLOUD",
                       title.reduced(7.0f, 0.0f).toNearestInt(),
                       juce::Justification::centredLeft);
     const auto sync = syncBounds(fullArea);

@@ -11,157 +11,195 @@ namespace
 using detail::exponential;
 using detail::lerp;
 
-float onePoleCoefficient(double sampleRate, float frequency)
+constexpr std::array<std::array<int, FrequencyLabModule::resonatorCount>,
+                     FrequencyLabModule::harmonyCount> harmonyIntervals {{
+    {{ 0, 4, 7, 12, 16, 19, 24, 31 }},
+    {{ 0, 3, 7, 12, 15, 19, 24, 31 }},
+    {{ 0, 2, 7, 12, 14, 19, 24, 31 }},
+    {{ 0, 5, 7, 12, 17, 19, 24, 31 }},
+    {{ 0, 7, 12, 19, 24, 31, 36, 43 }},
+    {{ 0, 4, 7, 11, 12, 16, 19, 24 }},
+    {{ 0, 3, 7, 10, 12, 15, 19, 24 }},
+    {{ 0, 12, 19, 24, 31, 36, 43, 48 }}
+}};
+
+constexpr std::array<int, FrequencyLabModule::registerCount> registerMidi {
+    36, 48, 60, 72
+};
+constexpr float defaultDecay = 0.6922378f;
+constexpr float defaultMotionRate = 0.3802911f;
+constexpr float defaultLowCut = 0.3543676f;
+constexpr float defaultHighCut = 0.6989700f;
+
+float onePoleCoefficient(double rate, float frequency)
 {
     return 1.0f - std::exp(
         -juce::MathConstants<float>::twoPi * frequency
-        / static_cast<float>(sampleRate));
+        / static_cast<float>(rate));
 }
 } // namespace
 
-void FrequencyLabModule::advance(Oscillator& oscillator, float radians) noexcept
+float FrequencyLabModule::Resonator::process(
+    float input, float excitation, float feedback, float damping) noexcept
 {
-    const auto x2 = radians * radians;
-    const auto x4 = x2 * x2;
-    const auto x6 = x4 * x2;
-    const auto x8 = x4 * x4;
-    const auto sine = radians * (1.0f - x2 * (1.0f / 6.0f)
-                                  + x4 * (1.0f / 120.0f)
-                                  - x6 * (1.0f / 5040.0f)
-                                  + x8 * (1.0f / 362880.0f));
-    const auto cosine = 1.0f - x2 * 0.5f + x2 * x2 * (1.0f / 24.0f)
-                        - x6 * (1.0f / 720.0f)
-                        + x8 * (1.0f / 40320.0f)
-                        - x8 * x2 * (1.0f / 3628800.0f);
+    const auto output =
+        excitation * input + feedback * previous + damping * older;
+    older = previous;
+    previous = std::isfinite(output) ? output : 0.0f;
+    if (!std::isfinite(output))
+        older = 0.0f;
+    return previous;
+}
+
+void FrequencyLabModule::Resonator::reset() noexcept
+{
+    previous = 0.0f;
+    older = 0.0f;
+}
+
+void FrequencyLabModule::advance(
+    Oscillator& oscillator, float radians) noexcept
+{
+    const auto sine = std::sin(radians);
+    const auto cosine = std::cos(radians);
     const auto oldCosine = oscillator.cosine;
     oscillator.cosine = oldCosine * cosine - oscillator.sine * sine;
     oscillator.sine = oscillator.sine * cosine + oldCosine * sine;
 }
 
+float FrequencyLabModule::resonatorFrequency(
+    int root, int harmony, int registerIndex, int resonator) noexcept
+{
+    const auto midi = registerMidi[static_cast<size_t>(
+                          juce::jlimit(0, registerCount - 1, registerIndex))]
+        + juce::jlimit(0, rootCount - 1, root)
+        + harmonyIntervals[static_cast<size_t>(
+              juce::jlimit(0, harmonyCount - 1, harmony))]
+                          [static_cast<size_t>(
+                              juce::jlimit(0, resonatorCount - 1, resonator))];
+    return 440.0f * std::pow(2.0f, (static_cast<float>(midi) - 69.0f) / 12.0f);
+}
+
 void FrequencyLabModule::prepare(const juce::dsp::ProcessSpec& spec)
 {
     sampleRate = detail::safeSampleRate(spec.sampleRate);
-    for (auto* smoother : { &shiftSmoothed, &fineSmoothed, &feedbackSmoothed,
-                            &depthSmoothed, &offsetSmoothed, &mixSmoothed })
-        smoother->reset(sampleRate, 0.035);
-    for (auto* smoother : { &rateSmoothed, &lowCutSmoothed, &highCutSmoothed,
-                            &outputSmoothed })
-        smoother->reset(sampleRate, 0.035);
-
-    coefficients.fill(0.0f);
-    constexpr auto centre = reportedLatencySamples;
-    for (int tap = 0; tap < hilbertTaps; ++tap)
-    {
-        const auto offset = tap - centre;
-        if (offset != 0 && (std::abs(offset) & 1) != 0)
-        {
-            const auto phase = juce::MathConstants<float>::twoPi
-                               * static_cast<float>(tap)
-                               / static_cast<float>(hilbertTaps - 1);
-            const auto window = 0.42f - 0.5f * std::cos(phase)
-                                + 0.08f * std::cos(2.0f * phase);
-            coefficients[static_cast<size_t>(tap)] =
-                2.0f * window
-                / (juce::MathConstants<float>::pi
-                   * static_cast<float>(offset));
-        }
-    }
+    for (auto& smoother : frequencySmoothed)
+        smoother.reset(sampleRate, 0.06);
+    for (auto* smoother : { &toneSmoothed, &depthSmoothed, &spreadSmoothed,
+                            &mixSmoothed })
+        smoother->reset(sampleRate, 0.04);
+    for (auto* smoother : { &decaySmoothed, &rateSmoothed, &lowCutSmoothed,
+                            &highCutSmoothed, &outputSmoothed })
+        smoother->reset(sampleRate, 0.04);
     reset();
 }
 
 void FrequencyLabModule::reset()
 {
-    for (auto& history : inputHistory)
-        history.fill(0.0f);
-    for (auto& history : dryHistory)
-        history.fill(0.0f);
-    highPassState.fill(0.0f);
+    for (auto& channel : resonators)
+        for (auto& resonator : channel)
+            resonator.reset();
     lowPassState.fill(0.0f);
-    feedbackState.fill(0.0f);
-    carrier = {};
-    lfo = {};
-    historyPosition = 0;
-    dryPosition = 0;
+    highPassState.fill(0.0f);
+    motion = {};
     renormalizeCounter = 0;
     initialized = false;
     telemetrySequence = 0;
     telemetry.clear();
 }
 
-void FrequencyLabModule::process(juce::AudioBuffer<float>& buffer,
-                                 const ControlValues& controls,
-                                 const ProcessEnvironment& environment)
+void FrequencyLabModule::process(
+    juce::AudioBuffer<float>& buffer, const ControlValues& controls,
+    const ProcessEnvironment& environment)
 {
     const auto channels = juce::jlimit(0, 2, buffer.getNumChannels());
-    if (channels == 0)
+    if (channels == 0 || buffer.getNumSamples() <= 0)
         return;
 
-    const auto shift = lerp(
-        -5000.0f, 5000.0f, detail::normalizedControl(controls[0], 0.51f));
-    const auto fine = lerp(
-        -50.0f, 50.0f, detail::normalizedControl(controls[1], 0.5f));
-    const auto feedback = lerp(-0.8f, 0.8f,
-        detail::normalizedControl(controls[2], 0.5f));
+    const auto root = discreteIndex(
+        detail::normalizedControl(controls[0], discreteValue(0, rootCount)),
+        rootCount);
+    const auto harmony = discreteIndex(
+        detail::normalizedControl(controls[1], discreteValue(0, harmonyCount)),
+        harmonyCount);
+    const auto registerIndex = discreteIndex(
+        detail::normalizedControl(controls[2], discreteValue(1, registerCount)),
+        registerCount);
+    const auto decay = exponential(
+        0.08f, 4.0f, detail::normalizedControl(controls[3], defaultDecay));
+    const auto tone = detail::normalizedControl(controls[4], 0.5f);
     const auto rate = exponential(
-        0.02f, 20.0f, detail::normalizedControl(controls[3], 0.0f));
+        0.02f, 4.0f,
+        detail::normalizedControl(controls[5], defaultMotionRate));
     const auto depth =
-        detail::normalizedControl(controls[4], 0.0f) * 2000.0f;
-    const auto offset = lerp(
-        -500.0f, 500.0f, detail::normalizedControl(controls[5], 0.5f));
-    const auto lowCut = exponential(20.0f, 2000.0f,
-        detail::normalizedControl(controls[6], 0.15f));
-    const auto highCut = exponential(1000.0f, 20000.0f,
-        detail::normalizedControl(controls[7], 0.9f));
-    const auto mix = detail::normalizedControl(controls[8], 1.0f);
+        detail::normalizedControl(controls[6], 0.12f) * 25.0f;
+    const auto spread = detail::normalizedControl(controls[7], 0.6f);
+    const auto lowCut = exponential(
+        20.0f, 1000.0f,
+        detail::normalizedControl(controls[8], defaultLowCut));
+    const auto highCut = exponential(
+        2000.0f, 20000.0f,
+        detail::normalizedControl(controls[9], defaultHighCut));
+    const auto mix = detail::normalizedControl(controls[10], 0.35f);
     const auto output = juce::Decibels::decibelsToGain(
-        lerp(-18.0f, 12.0f,
-             detail::normalizedControl(controls[9], 0.6f)));
+        lerp(-18.0f, 12.0f, detail::normalizedControl(controls[11], 0.6f)));
+
+    std::array<float, resonatorCount> frequencies {};
+    for (int voice = 0; voice < resonatorCount; ++voice)
+    {
+        frequencies[static_cast<size_t>(voice)] =
+            resonatorFrequency(root, harmony, registerIndex, voice);
+        frequencySmoothed[static_cast<size_t>(voice)].setTargetValue(
+            frequencies[static_cast<size_t>(voice)]);
+    }
+    decaySmoothed.setTargetValue(decay);
+    toneSmoothed.setTargetValue(tone);
+    rateSmoothed.setTargetValue(rate);
+    depthSmoothed.setTargetValue(depth);
+    spreadSmoothed.setTargetValue(spread);
+    lowCutSmoothed.setTargetValue(lowCut);
+    highCutSmoothed.setTargetValue(highCut);
+    mixSmoothed.setTargetValue(mix);
+    outputSmoothed.setTargetValue(output);
 
     if (!initialized)
     {
-        shiftSmoothed.setCurrentAndTargetValue(shift);
-        fineSmoothed.setCurrentAndTargetValue(fine);
-        feedbackSmoothed.setCurrentAndTargetValue(feedback);
+        for (int voice = 0; voice < resonatorCount; ++voice)
+            frequencySmoothed[static_cast<size_t>(voice)]
+                .setCurrentAndTargetValue(
+                    frequencies[static_cast<size_t>(voice)]);
+        decaySmoothed.setCurrentAndTargetValue(decay);
+        toneSmoothed.setCurrentAndTargetValue(tone);
         rateSmoothed.setCurrentAndTargetValue(rate);
         depthSmoothed.setCurrentAndTargetValue(depth);
-        offsetSmoothed.setCurrentAndTargetValue(offset);
+        spreadSmoothed.setCurrentAndTargetValue(spread);
         lowCutSmoothed.setCurrentAndTargetValue(lowCut);
         highCutSmoothed.setCurrentAndTargetValue(highCut);
         mixSmoothed.setCurrentAndTargetValue(mix);
         outputSmoothed.setCurrentAndTargetValue(output);
         initialized = true;
     }
-    shiftSmoothed.setTargetValue(shift);
-    fineSmoothed.setTargetValue(fine);
-    feedbackSmoothed.setTargetValue(feedback);
-    rateSmoothed.setTargetValue(rate);
-    depthSmoothed.setTargetValue(depth);
-    offsetSmoothed.setTargetValue(offset);
-    lowCutSmoothed.setTargetValue(lowCut);
-    highCutSmoothed.setTargetValue(highCut);
-    mixSmoothed.setTargetValue(mix);
-    outputSmoothed.setTargetValue(output);
 
-    const auto inverseSampleRate = 1.0f / static_cast<float>(sampleRate);
-    float telemetryCommonShift = 0.0f;
-    float telemetryOffset = 0.0f;
-    float telemetryRate = 0.0f;
-    float telemetryDepth = 0.0f;
-    std::array<float, 2> telemetryFrequency {};
+    std::array<float, resonatorCount> telemetryFrequencies {};
+    float maximumWet = 0.0f;
+    float telemetryMotion = 0.0f;
+    float telemetryDecay = decay;
+    const auto inverseRate = 1.0f / static_cast<float>(sampleRate);
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
         const auto currentRate = rateSmoothed.getNextValue();
-        advance(lfo, juce::MathConstants<float>::twoPi
-                         * currentRate * inverseSampleRate);
-        const auto commonShift = shiftSmoothed.getNextValue()
-            + fineSmoothed.getNextValue()
-            + depthSmoothed.getNextValue() * lfo.sine;
-        const auto currentOffset = offsetSmoothed.getNextValue();
-        telemetryCommonShift = commonShift;
-        telemetryOffset = currentOffset;
-        telemetryRate = currentRate;
-        telemetryDepth = depthSmoothed.getCurrentValue();
-        const auto currentFeedback = feedbackSmoothed.getNextValue();
+        advance(motion, juce::MathConstants<float>::twoPi
+                            * currentRate * inverseRate);
+        const auto currentDepth = depthSmoothed.getNextValue();
+        const auto currentMotion = motion.sine * currentDepth;
+        telemetryMotion = currentMotion;
+        const auto currentDecay = decaySmoothed.getNextValue();
+        telemetryDecay = currentDecay;
+        const auto radius = std::exp(
+            std::log(0.001f)
+            / juce::jmax(1.0f, currentDecay * static_cast<float>(sampleRate)));
+        const auto currentTone = toneSmoothed.getNextValue();
+        const auto currentSpread = spreadSmoothed.getNextValue();
         const auto lowCoefficient = onePoleCoefficient(
             sampleRate, lowCutSmoothed.getNextValue());
         const auto highCoefficient = onePoleCoefficient(
@@ -171,81 +209,89 @@ void FrequencyLabModule::process(juce::AudioBuffer<float>& buffer,
         const auto currentMix = mixSmoothed.getNextValue();
         const auto currentOutput = outputSmoothed.getNextValue();
 
+        std::array<float, resonatorCount> currentFrequencies {};
+        std::array<float, resonatorCount> weights {};
+        std::array<float, resonatorCount> excitationCoefficients {};
+        std::array<float, resonatorCount> feedbackCoefficients {};
+        float weightEnergy = 0.0f;
+        const auto motionRatio = std::pow(2.0f, currentMotion / 1200.0f);
+        for (int voice = 0; voice < resonatorCount; ++voice)
+        {
+            const auto position = static_cast<float>(voice)
+                                  / static_cast<float>(resonatorCount - 1);
+            const auto tiltDb = (currentTone - 0.5f) * 18.0f
+                                * (position * 2.0f - 1.0f);
+            const auto weight = juce::Decibels::decibelsToGain(tiltDb);
+            weights[static_cast<size_t>(voice)] = weight;
+            weightEnergy += weight * weight;
+            const auto frequency =
+                frequencySmoothed[static_cast<size_t>(voice)].getNextValue()
+                * motionRatio;
+            currentFrequencies[static_cast<size_t>(voice)] = juce::jlimit(
+                20.0f, static_cast<float>(sampleRate * 0.45), frequency);
+            const auto radians = juce::MathConstants<float>::twoPi
+                * currentFrequencies[static_cast<size_t>(voice)]
+                / static_cast<float>(sampleRate);
+            excitationCoefficients[static_cast<size_t>(voice)] =
+                2.0f * (1.0f - radius) * std::sin(radians);
+            feedbackCoefficients[static_cast<size_t>(voice)] =
+                2.0f * radius * std::cos(radians);
+        }
+        const auto normalization =
+            1.0f / std::sqrt(juce::jmax(1.0f, weightEnergy));
+
         for (int channel = 0; channel < channels; ++channel)
         {
-            const auto dryInput =
+            const auto dry =
                 detail::finiteSample(buffer.getSample(channel, sample));
-            auto& history = inputHistory[static_cast<size_t>(channel)];
-            history[static_cast<size_t>(historyPosition)] =
-                dryInput + feedbackState[static_cast<size_t>(channel)]
-                               * currentFeedback;
-
-            float quadrature = 0.0f;
-            for (int tap = 0; tap < hilbertTaps; ++tap)
-            {
-                auto index = historyPosition - tap;
-                if (index < 0)
-                    index += hilbertTaps;
-                quadrature += coefficients[static_cast<size_t>(tap)]
-                              * history[static_cast<size_t>(index)];
-            }
-            auto realIndex = historyPosition - reportedLatencySamples;
-            if (realIndex < 0)
-                realIndex += hilbertTaps;
-            const auto delayedReal = history[static_cast<size_t>(realIndex)];
-
-            const auto channelOffset = channels > 1
-                ? (channel == 0 ? -0.5f : 0.5f) * currentOffset : 0.0f;
-            const auto frequency = juce::jlimit(
-                -0.45f * static_cast<float>(sampleRate),
-                0.45f * static_cast<float>(sampleRate),
-                commonShift + channelOffset);
-            telemetryFrequency[static_cast<size_t>(channel)] = frequency;
-            auto& oscillator = carrier[static_cast<size_t>(channel)];
-            const auto translated = delayedReal * oscillator.cosine
-                                     - quadrature * oscillator.sine;
-            advance(oscillator, juce::MathConstants<float>::twoPi
-                                    * frequency * inverseSampleRate);
-
-            auto& lowState = highPassState[static_cast<size_t>(channel)];
-            lowState += lowCoefficient * (translated - lowState);
-            const auto highPassed = translated - lowState;
-            auto& highState = lowPassState[static_cast<size_t>(channel)];
+            auto& lowState = lowPassState[static_cast<size_t>(channel)];
+            lowState += lowCoefficient * (dry - lowState);
+            const auto highPassed = dry - lowState;
+            auto& highState = highPassState[static_cast<size_t>(channel)];
             highState += highCoefficient * (highPassed - highState);
-            const auto wet = std::isfinite(highState) ? highState : 0.0f;
-            feedbackState[static_cast<size_t>(channel)] = wet;
 
-            auto& dryDelay = dryHistory[static_cast<size_t>(channel)];
-            const auto delayedDry = dryDelay[static_cast<size_t>(dryPosition)];
-            dryDelay[static_cast<size_t>(dryPosition)] = dryInput;
+            float wet = 0.0f;
+            for (int voice = 0; voice < resonatorCount; ++voice)
+            {
+                const auto pan = static_cast<float>(voice * 2)
+                                     / static_cast<float>(resonatorCount - 1)
+                                 - 1.0f;
+                const auto panGain = channels > 1
+                    ? std::sqrt(juce::jmax(
+                          0.0f, 1.0f
+                              + (channel == 0 ? -pan : pan) * currentSpread))
+                    : 1.0f;
+                wet += resonators[static_cast<size_t>(channel)]
+                                 [static_cast<size_t>(voice)]
+                           .process(
+                               highState,
+                               excitationCoefficients[static_cast<size_t>(voice)],
+                               feedbackCoefficients[static_cast<size_t>(voice)],
+                               -radius * radius)
+                    * weights[static_cast<size_t>(voice)] * panGain;
+            }
+            wet *= normalization;
+            wet = std::tanh(wet * 1.25f) / 1.25f;
+            maximumWet = juce::jmax(maximumWet, std::abs(wet));
+            const auto result =
+                (dry + (wet - dry) * currentMix) * currentOutput;
             buffer.setSample(
-                channel, sample,
-                detail::finiteSample(
-                    (delayedDry + (wet - delayedDry) * currentMix)
-                    * currentOutput));
+                channel, sample, detail::finiteSample(result));
         }
-        historyPosition = (historyPosition + 1) % hilbertTaps;
-        dryPosition = (dryPosition + 1) % reportedLatencySamples;
+        telemetryFrequencies = currentFrequencies;
 
-        if (++renormalizeCounter >= 128)
+        if (++renormalizeCounter >= 256)
         {
             renormalizeCounter = 0;
-            auto normalize = [](Oscillator& oscillator)
+            const auto magnitude = std::sqrt(
+                motion.cosine * motion.cosine + motion.sine * motion.sine);
+            if (std::isfinite(magnitude) && magnitude > 0.5f)
             {
-                const auto magnitude = std::sqrt(
-                    oscillator.cosine * oscillator.cosine
-                    + oscillator.sine * oscillator.sine);
-                if (std::isfinite(magnitude) && magnitude > 0.5f)
-                {
-                    oscillator.cosine /= magnitude;
-                    oscillator.sine /= magnitude;
-                }
-                else
-                    oscillator = {};
-            };
-            normalize(lfo);
-            for (auto& oscillator : carrier)
-                normalize(oscillator);
+                motion.cosine /= magnitude;
+                motion.sine /= magnitude;
+            }
+            else
+                motion = {};
         }
     }
 
@@ -254,14 +300,16 @@ void FrequencyLabModule::process(juce::AudioBuffer<float>& buffer,
         ContinuousTelemetrySnapshot snapshot;
         snapshot.sequence = ++telemetrySequence;
         snapshot.valueCount = telemetryValueCount;
-        snapshot.values[commonShiftHz] = telemetryCommonShift;
-        snapshot.values[leftShiftHz] = telemetryFrequency[0];
-        snapshot.values[rightShiftHz] =
-            channels > 1 ? telemetryFrequency[1] : telemetryFrequency[0];
-        snapshot.values[lfoPosition] = lfo.sine;
-        snapshot.values[lfoRateHz] = telemetryRate;
-        snapshot.values[modulationDepthHz] = telemetryDepth;
-        snapshot.values[stereoOffsetHz] = telemetryOffset;
+        snapshot.values[rootNote] = static_cast<float>(root);
+        snapshot.values[selectedHarmony] = static_cast<float>(harmony);
+        snapshot.values[selectedRegister] = static_cast<float>(registerIndex);
+        snapshot.values[motionPosition] = motion.sine;
+        snapshot.values[motionCents] = telemetryMotion;
+        snapshot.values[decaySeconds] = telemetryDecay;
+        for (int voice = 0; voice < resonatorCount; ++voice)
+            snapshot.values[static_cast<size_t>(frequency0 + voice)] =
+                telemetryFrequencies[static_cast<size_t>(voice)];
+        snapshot.values[wetEnvelope] = maximumWet;
         telemetry.publish(snapshot);
     }
 }
@@ -274,14 +322,8 @@ bool FrequencyLabModule::readContinuousTelemetry(
 
 double FrequencyLabModule::tailSeconds(const ControlValues& controls) const
 {
-    const auto feedback = std::abs(lerp(
-        -0.8f, 0.8f, detail::normalizedControl(controls[2], 0.5f)));
-    if (feedback < 0.001f)
-        return static_cast<double>(reportedLatencySamples) / sampleRate;
-    return juce::jlimit(
-        0.0, 8.0,
-        std::log(0.001) / std::log(static_cast<double>(feedback))
-            * static_cast<double>(hilbertTaps) / sampleRate
-            + static_cast<double>(hilbertTaps) / sampleRate);
+    return exponential(
+        0.08f, 4.0f,
+        detail::normalizedControl(controls[3], defaultDecay));
 }
 } // namespace megadsp

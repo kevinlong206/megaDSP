@@ -7,7 +7,7 @@ or CLAP plugin with a growing collection of high-quality, intuitive effects.
 Use a module on its own or combine up to eight in a serial chain to shape,
 transform, and finish your audio without juggling separate plugins.
 
-Today, megaDSP includes thirty-nine purpose-built processors with interactive
+Today, megaDSP includes forty purpose-built processors with interactive
 graphs, realtime analysis, and controls that match the musical quantities they
 edit. The long-term vision is a community-built library spanning dozens—and
 eventually perhaps hundreds—of useful effects in one consistent rack.
@@ -87,11 +87,26 @@ megaDSP.clap → ~/.clap
 2. Click the **+** tab and choose a module from the standard category submenus. **Search Modules…** at the top opens a separate searchable list; **↑↓** and **Enter** work there.
 3. Select a tab to see its interactive graph and controls.
 4. Drag tabs left or right to reorder the signal chain.
-5. **Double-click** a tab (or press **Space / Return / B**) to bypass it — the tab is greyed and labeled **BYPASSED**.
+5. **Double-click** a tab (or press **Space / Return / B**) to bypass it — the tab is greyed and labeled **BYPASSED**. After its short click-safe fade, the module DSP and live visualization are suspended; only latency-preserving dry routing remains.
 6. Click the **×** icon on a tab to remove it.
 7. Use the header **Output Trim** and peak meter to manage the final output level. The meter shows peak hold, near-clip colour zones, and a resettable **CLIP** indicator.
 
 ![Module browser with categorized search results and keyboard navigation](docs/images/module-browser.png)
+
+## Diagnostics and bug reports
+
+Click **DIAG ON** in the plugin header to disable global diagnostics or open the
+diagnostics folder. Diagnostics are enabled by default and remain disabled if
+you turn them off. While enabled, megaDSP keeps
+bounded rotating local logs of plugin lifecycle, audio configuration, topology,
+state rejection, latency, and file-loading errors. It also installs fatal crash
+and uncaught-exception handlers in the DAW process and writes a minimal crash
+marker before allowing the existing host/OS crash handling to continue.
+
+Logs stay on your computer and never contain audio. Before attaching them to a
+[GitHub issue](https://github.com/kevinlong206/megaDSP/issues), review
+`megaDSP.log` and `megaDSP-crash.txt`, then include the DAW or operating-system
+crash report when one exists. Logs rotate at 1 MB and retain three older files.
 
 ## Effects
 
@@ -104,6 +119,7 @@ megaDSP.clap → ~/.clap
 | **Dynamic EQ / De-Esser** | Single-band stackable processor — drag frequency/range/threshold in the graph, mouse-wheel Q, 10-second gain history, external sidechain with fallback, and Listen |
 | **Gate / Expander** | Hysteresis, detector passband, sidechain audition, and DSP-synchronized detector/envelope/attenuation/open telemetry |
 | **Transient Designer** | Level-independent Attack and Sustain shaping with DSP fast/slow and shaping-component telemetry |
+| **Volume Swell** | Automatically ducks each detected chord attack, then rises along an editable curve like a guitarist's volume pedal or knob |
 | **Multiband Compressor** | Three reconstructing bands with direct editing and actual per-band reduction/state telemetry |
 | **Loudness Rider** | Long-term gated LUFS riding with bounded gain, lookahead, and crest preservation |
 | **Adaptive Clipper** | Transient-aware oversampled clipping with true-peak ceiling control and auto trim |
@@ -122,8 +138,9 @@ megaDSP.clap → ~/.clap
 |---|---|
 | **Saturator** | Transfer curve with input/output waveforms; level-compensated auto-gain keeps density and harmonics audible without loudness jumps |
 | **Signal Decay** | Measured degradation waveforms plus DSP-synchronized clock, stereo-wear, and dropout state |
-| **Analog Tape** | Four cassette/reel machines with oversampled saturation, bias, head bump, wow/flutter, wear, hiss, and DSP-synchronized transport motion |
+| **Analog Tape** | Four cassette/reel machines with level-compensated oversampled saturation, transient softening, bias, head bump, and optional wow/flutter, wear, and hiss |
 | **Harmonic Mirage** | Tracked partial resynthesis for harmonic, subharmonic, hollow, and metallic color |
+| **Guitar Cabinet** | Fully procedural speaker, enclosure, microphone, and room modeling with dynamic cone breakup, power compression, and direct mic placement |
 
 ### Time-Based
 
@@ -136,6 +153,8 @@ megaDSP.clap → ~/.clap
 | **Resonant Matrix** | Tuned resonators routed through evolving signed feedback patterns for pitched, metallic spaces |
 | **Pitch Bloom** | Musical interval shifting with actual repeat-event arcs for interval, progress, energy, pan, and spread |
 | **Spectral Delay Canvas** | Frequency-dependent low, mid, and high spectral delay with diffusion, feedback, and freeze |
+| **Chord Loom** | Automatically captures each guitar strum and sustains it as a continuously woven pad, smoothly replacing the previous held chord |
+| **Spectral Nebula** | Continuously absorbs guitar or vocals into a drifting, shimmering spectral cloud with tonal/noise focus and freeze |
 
 ### Modulation
 
@@ -156,7 +175,7 @@ megaDSP.clap → ~/.clap
 | **Beat Permuter** | Rearranges recent tempo-locked slices into precise repeats, reverses, scatters, and rhythmic glitches |
 | **Spectral Prism** | Bends, shifts, smears, and freezes sound around a visual spectral pivot |
 | **Wavefold Garden** | Grows animated antialiased harmonics with envelope-responsive wavefolding |
-| **Frequency Lab** | Measured spectra with actual DSP-smoothed translated hertz, stereo offset, and LFO position |
+| **Harmonic Resonator** | Tuned Major, Minor, suspended, seventh, fifth, and octave-drone resonator fields with register, decay, tone, motion, and stereo spread |
 | **Formant Forge** | Direct vowel-field and formant sculpting across human, tube, creature, and metallic models |
 | **Time Mosaic** | Reconstructs evolving frequency tiles from recent spectral history |
 

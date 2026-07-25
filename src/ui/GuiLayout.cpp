@@ -171,6 +171,10 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::harmonicMirage: return "Mirage";
         case ModuleType::chaosField: return "Chaos";
         case ModuleType::timeMosaic: return "Mosaic";
+        case ModuleType::guitarCabinet: return "Gtr Cab";
+        case ModuleType::chordLoom: return "Chord Loom";
+        case ModuleType::volumeSwell: return "Swell";
+        case ModuleType::spectralNebula: return "Nebula";
         case ModuleType::empty:
         case ModuleType::delay:
         case ModuleType::limiter:
@@ -258,6 +262,20 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::frequencyLab:
         case ModuleType::signalDecay:
         case ModuleType::analogTape:
+        case ModuleType::resonanceTamer:
+        case ModuleType::spectralBalance:
+        case ModuleType::phaseCoherence:
+        case ModuleType::loudnessRider:
+        case ModuleType::adaptiveClipper:
+        case ModuleType::spectralDelayCanvas:
+        case ModuleType::formantForge:
+        case ModuleType::harmonicMirage:
+        case ModuleType::chaosField:
+        case ModuleType::timeMosaic:
+        case ModuleType::guitarCabinet:
+        case ModuleType::chordLoom:
+        case ModuleType::volumeSwell:
+        case ModuleType::spectralNebula:
             break;
     }
 

@@ -11,14 +11,15 @@ serial slots and twelve fixed generic controls per slot.
 - Preserve existing `ModuleType` integer values. Append new module types.
 - Current appended values continue through Wavefold Garden 18, Gate / Expander
   19, Transient Designer 20, Multiband Compressor 21, Studio Phaser 22, Studio
-  Flanger 23, Diffusion Delay 24, Pitch Bloom 25, Frequency Lab 26, Spatial
+  Flanger 23, Diffusion Delay 24, Pitch Bloom 25, Harmonic Resonator 26, Spatial
   Orbit 27, Signal Decay 28, Analog Tape 29, Resonance Tamer 30, Spectral
   Balance 31, Phase Coherence 32, Loudness Rider 33, Adaptive Clipper 34,
   Spectral Delay Canvas 35, Formant Forge 36, Harmonic Mirage 37, Chaos Field
-  38, and Time Mosaic 39.
+  38, Time Mosaic 39, Guitar Cabinet 40, Chord Loom 41, Volume Swell 42, and
+  Spectral Nebula 43.
 - Preserve the eight-slot, twelve-control host parameter topology and existing
   parameter IDs.
-- Keep state migration compatible with schema 2 through current schema 7.
+- Keep state migration compatible with schema 2 through current schema 9.
 - Module type parameters are not automatable; saved integer module values must
   continue to restore exactly.
 - Processing after `prepare()` must be allocation-free, lock-free, finite, and
@@ -119,8 +120,20 @@ parsing/formatting, and tests.
   translation. Both use filtered bounded feedback and conservative measured
   tails. Their event telemetry is emitted only for the selected capture slot
   and visualizes measured DSP activity rather than control-derived events.
-- Frequency Lab translates the analytic signal in hertz and delay-aligns dry
-  audio to its fixed Hilbert group delay. Spatial Orbit preserves incoming side
+- Harmonic Resonator uses smoothly retuned, bounded modal filters to build
+  musical chord fields without allocating on the audio thread. Chord Loom uses
+  three fixed capture layers and overlapping randomized grains; new strums
+  crossfade held layers without reading unwritten capture memory or producing
+  an obvious repeated loop. Volume Swell uses one fixed reported lookahead in
+  every setting, fades the previous level down without a discontinuity, and
+  begins the configured rise before the detected attack reaches output.
+  Spectral Nebula uses the shared fixed-latency STFT foundation, stores bounded
+  per-bin cloud magnitude and pitch-tracked phase advance, peak-locks spectral
+  lobes, replaces unsupported old-note energy while input is active, and limits
+  shimmer to stable tonal peaks. It resynthesizes off-bin notes without
+  frame-rate amplitude pulsing, stops state updates during Freeze without
+  allocating, and scales only the side domain for mono-safe Width.
+  Spatial Orbit preserves incoming side
   information and mono fold-down while applying bounded Doppler. Signal Decay
   uses a resettable deterministic PRNG and a fixed aligned modulation latency.
 - Analog Tape uses its prepared 4x oversampled nonlinear path and one fixed,
@@ -144,6 +157,12 @@ parsing/formatting, and tests.
   deterministic breath by signal energy. Harmonic Mirage uses phase-continuous
   oscillators and releases uncertain tracking. Chaos Field uses deterministic,
   bounded attractor integration and stable sub-unity feedback.
+- Guitar Cabinet is a fully procedural post-amp speaker, enclosure, microphone,
+  and room model with no IR or neural asset dependency. Its fixed 4x nonlinear
+  path reports one latency; speaker, cabinet, and microphone changes crossfade
+  prepared states. Stereo input remains stereo, synthetic room side cancels on
+  fold-down, Room zero has no artificial long tail, and visuals use only
+  capture-gated measured cone, compression, breakup, cabinet, and room telemetry.
 
 ## Build and test
 
@@ -241,7 +260,9 @@ values rather than assertions derived only from mutable constants.
   Balance, Motion, Mic Distance/Spread, and Spin-up; Cabinet Color and Ambience
   retain their exact DSP meanings.
 - Keep tab bypass available by double-click and keyboard, with an explicit
-  non-color-only bypass label.
+  non-color-only bypass label. After the click-safe fade reaches fully dry,
+  bypassed slots must suspend module DSP, telemetry, capture, meters, and
+  visualization timers while retaining only latency-preserving dry routing.
 - Update `README.md` when user-visible processors, controls, compatibility, or
   build instructions change.
 - Do not commit generated build artifacts or installed plugin bundles.

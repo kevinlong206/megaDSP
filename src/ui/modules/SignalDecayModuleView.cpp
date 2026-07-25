@@ -225,16 +225,16 @@ void SignalDecayModuleView::paint(
     graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
     graphics.drawText(
         formatControlValue(type, 0, value(0))
-            + (hasTelemetry ? "  ·  DSP " : "  ·  CONTROL ")
+            + (hasTelemetry ? "  |  DSP " : "  |  CONTROL ")
             + juce::String(currentRate, 0) + " Hz"
             + (hasTelemetry
-                   ? "  ·  WEAR "
+                   ? "  |  WEAR "
                        + juce::String(
                            telemetry.values[SignalDecayModule::stereoWearAmount]
                                * 100.0f,
                            0)
                        + "%"
-                   : "  ·  DSP TELEMETRY WAITING"),
+                   : "  |  DSP TELEMETRY WAITING"),
         field.withHeight(22.0f).reduced(8.0f, 0.0f).toNearestInt(),
         juce::Justification::centredLeft);
     graphics.setColour(reductionColour.withAlpha(0.85f));

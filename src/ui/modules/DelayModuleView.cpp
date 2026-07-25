@@ -98,7 +98,7 @@ void DelayModuleView::mouseDrag(const juce::MouseEvent& event)
         dragReadout =
             "MOVEMENT  "
             + megadsp::formatControlValue(type, 7, value(7))
-            + "  ·  "
+            + "  |  "
             + megadsp::formatControlValue(type, 8, value(8));
         repaint();
         return;
@@ -211,7 +211,7 @@ void DelayModuleView::paint(juce::Graphics& graphics, juce::Rectangle<float> are
     graphics.drawText(
         "MOVEMENT  RATE "
             + megadsp::formatControlValue(type, 7, value(7))
-            + "  ·  DEPTH "
+            + "  |  DEPTH "
             + megadsp::formatControlValue(type, 8, value(8)),
         movement.reduced(7.0f, 0.0f).toNearestInt(),
         juce::Justification::centredLeft);

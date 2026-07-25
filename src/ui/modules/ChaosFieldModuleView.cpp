@@ -340,7 +340,7 @@ void ChaosFieldModuleView::paint(
             ? "FILTER  "
                   + compactFrequency(
                       telemetry.values[ChaosFieldModule::actualFilterHz])
-            : juce::String("FILTER  —"),
+            : juce::String("FILTER  -"),
         hasTelemetry
             ? "DELAY  "
                   + juce::String(
@@ -348,11 +348,11 @@ void ChaosFieldModuleView::paint(
                           ChaosFieldModule::actualDelayMilliseconds],
                       1)
                   + " ms"
-            : juce::String("DELAY  —"),
+            : juce::String("DELAY  -"),
         hasTelemetry
             ? "PAN  "
                   + panText(telemetry.values[ChaosFieldModule::actualPan])
-            : juce::String("PAN  —")
+            : juce::String("PAN  -")
     };
     for (int index = 0; index < 3; ++index)
     {

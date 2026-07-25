@@ -213,7 +213,7 @@ void VintageChorusModuleView::mouseDrag(
         dragReadout =
             "DELAY  "
             + megadsp::formatControlValue(type, 3, value(3))
-            + "  ·  WIDTH "
+            + "  |  WIDTH "
             + megadsp::formatControlValue(type, 5, value(5));
         repaint();
         return;
@@ -485,7 +485,7 @@ void VintageChorusModuleView::paint(
     graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
     graphics.drawText(
         "DELAY " + megadsp::formatControlValue(type, 3, value(3))
-            + "  ·  WIDTH "
+            + "  |  WIDTH "
             + megadsp::formatControlValue(type, 5, value(5)),
         primaryLabel.toNearestInt(), juce::Justification::centred);
     graphics.drawText(
@@ -504,7 +504,7 @@ void VintageChorusModuleView::paint(
     regenerationBounds = regenerationBounds.removeFromBottom(16.0f);
     regenerationBounds = regenerationBounds.removeFromRight(180.0f);
     graphics.drawText(
-        juce::String(regeneration >= 0.0f ? "↻  " : "↺  ")
+        juce::String(regeneration >= 0.0f ? "CW  " : "CCW  ")
             + megadsp::formatControlValue(type, 6, value(6))
             + " REGENERATION",
         regenerationBounds.toNearestInt(),

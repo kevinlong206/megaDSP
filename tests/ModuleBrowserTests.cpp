@@ -51,7 +51,7 @@ public:
         beginTest("Category matching supports multiple tokens");
         const auto colorModules = flatten(
             megadsp::ui::filterAndGroupModules("SATURATION & color"));
-        expectEquals(static_cast<int>(colorModules.size()), 4);
+        expectEquals(static_cast<int>(colorModules.size()), 5);
         expect(std::find(colorModules.begin(), colorModules.end(),
                          megadsp::ModuleType::saturator)
                != colorModules.end());
@@ -63,6 +63,9 @@ public:
                != colorModules.end());
         expect(std::find(colorModules.begin(), colorModules.end(),
                         megadsp::ModuleType::harmonicMirage)
+               != colorModules.end());
+        expect(std::find(colorModules.begin(), colorModules.end(),
+                        megadsp::ModuleType::guitarCabinet)
                != colorModules.end());
 
         beginTest("Description matching finds module copy");
@@ -83,6 +86,10 @@ public:
         expectOnly("tuned metallic", megadsp::ModuleType::resonantMatrix);
         expectOnly("nonlinear envelope", megadsp::ModuleType::wavefoldGarden);
         expectOnly("reel cassette warmth", megadsp::ModuleType::analogTape);
+        expectOnly("speaker cone physical", megadsp::ModuleType::guitarCabinet);
+        expectOnly("infinite granular strum", megadsp::ModuleType::chordLoom);
+        expectOnly("volume pedal knob", megadsp::ModuleType::volumeSwell);
+        expectOnly("spectral cloud smear", megadsp::ModuleType::spectralNebula);
 
         beginTest("Next-ten search identities are unique");
         const std::array nextTenSearches {
@@ -100,7 +107,7 @@ public:
                         megadsp::ModuleType::diffusionDelay },
             std::pair { "shimmer octave fifth",
                         megadsp::ModuleType::pitchBloom },
-            std::pair { "hilbert sideband",
+            std::pair { "tuned modal chord",
                         megadsp::ModuleType::frequencyLab },
             std::pair { "autopan trajectory",
                         megadsp::ModuleType::spatialOrbit },
@@ -153,7 +160,7 @@ public:
             std::pair { megadsp::ModuleType::pitchBloom,
                         megadsp::ModuleCategory::reverbAndSpace },
             std::pair { megadsp::ModuleType::frequencyLab,
-                        megadsp::ModuleCategory::glitchAndCreative },
+                        megadsp::ModuleCategory::reverbAndSpace },
             std::pair { megadsp::ModuleType::spatialOrbit,
                         megadsp::ModuleCategory::stereoAndUtility },
             std::pair { megadsp::ModuleType::signalDecay,

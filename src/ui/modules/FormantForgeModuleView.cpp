@@ -258,8 +258,8 @@ void FormantForgeModuleView::paint(
     graphics.setFont(juce::FontOptions(9.2f, juce::Font::bold));
     graphics.drawFittedText(
         hasTelemetry
-            ? "VOWEL FIELD  ·  OUTLINE TARGET / BRIGHT DSP"
-            : "VOWEL FIELD  ·  DSP TELEMETRY WAITING",
+            ? "VOWEL FIELD  |  OUTLINE TARGET / BRIGHT DSP"
+            : "VOWEL FIELD  |  DSP TELEMETRY WAITING",
         vowel.withHeight(23.0f).reduced(7.0f, 0.0f).toNearestInt(),
         juce::Justification::centredLeft, 1);
 
@@ -362,7 +362,7 @@ void FormantForgeModuleView::paint(
         graphics.drawFittedText(
             "F" + juce::String(formant + 1) + "  "
                 + (hasTelemetry ? compactFrequency(frequency)
-                                : juce::String("—")),
+                                : juce::String("-")),
             cell.toNearestInt(), juce::Justification::centred, 1);
     }
 

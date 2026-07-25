@@ -40,3 +40,7 @@
 #include "modules/HarmonicMirage.h"
 #include "modules/ChaosField.h"
 #include "modules/TimeMosaic.h"
+#include "modules/GuitarCabinet.h"
+#include "modules/ChordLoom.h"
+#include "modules/VolumeSwell.h"
+#include "modules/SpectralNebula.h"

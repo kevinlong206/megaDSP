@@ -126,7 +126,11 @@ public:
         expect(formatControlValue(
                    ModuleType::frequencyLab, 0,
                    moduleDefaults(ModuleType::frequencyLab)[0])
-                   .endsWith("Hz"));
+                   == "C");
+        expect(formatControlValue(
+                   ModuleType::frequencyLab, 3,
+                   moduleDefaults(ModuleType::frequencyLab)[3])
+                   .endsWith("s"));
         expect(formatControlValue(
                    ModuleType::spatialOrbit, 6,
                    moduleDefaults(ModuleType::spatialOrbit)[6])
@@ -212,7 +216,7 @@ public:
                 type, moduleDefaults(type), true, true).size()), 10);
         expectEquals(static_cast<int>(keyboardControlOrder(
             ModuleType::frequencyLab,
-            moduleDefaults(ModuleType::frequencyLab), true, true).size()), 10);
+            moduleDefaults(ModuleType::frequencyLab), true, true).size()), 12);
 
         beginTest("Next-ten keyboard order follows each visual workflow");
         expect(keyboardControlOrder(

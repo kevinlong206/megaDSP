@@ -102,11 +102,12 @@ The codebase is a standard JUCE plugin project. Key layers:
 
 | Source | Role |
 |---|---|
-| `src/Parameters.*` | Fixed host parameter layout, descriptors from the registry, and state migration (schemas 2–7) |
+| `src/Parameters.*` | Fixed host parameter layout, descriptors from the registry, and state migration (schemas 2–9) |
 | `src/modules/ModuleRegistry.*` | Stable module enum, presentation metadata, control labels, defaults, formatting/parsing, contextual predicates, factories, and capabilities |
 | `src/modules/*` | Per-module DSP declarations, implementations, and shared DSP helpers |
 | `src/DspModules.h` | Compatibility umbrella for all DSP module declarations |
 | `src/EffectRack.*` | Slot ownership, serial routing, bypass interpolation, latency alignment, visualization capture, and tail aggregation |
+| `src/Diagnostics.*` | Default-on rotating logs, lock-free realtime event capture, and chained fatal crash markers |
 | `src/PluginProcessor.*` | Host buses, state, presets, latency reporting, and rack topology operations |
 | `src/PluginEditor.*` | Tabbed rack shell and semantic module controls |
 | `src/ui/*` | Reusable effect graph shell, module view interface, and view factory |
@@ -139,7 +140,7 @@ These constraints are non-negotiable:
 
 - The host parameter topology is **fixed**: eight slots, twelve controls per slot. Parameter IDs must not change.
 - `ModuleType` integer values are **stable**. Existing values must not be reassigned; new values are always appended.
-- State migration must remain compatible with schemas 2 through the current schema (7). All past migration paths must continue to work.
+- State migration must remain compatible with schemas 2 through the current schema (9). All past migration paths must continue to work.
 - Module-type parameters are not automatable; saved integer values must restore exactly.
 - Host automation is tied to **rack slot numbers**, not module identity. Reordering modules moves settings between slots; existing automation stays with its original slot number.
 
@@ -155,6 +156,11 @@ Processing inside `processBlock` (or equivalent) must be:
 - **Safe for both mono and stereo buffers** — do not assume channel count.
 
 Smooth every audible continuous parameter. Structural changes (mode switches, IR loads, model crossfades) must be click-safe. IR file work for Convolution Reverb must remain entirely off the audio thread.
+
+Realtime diagnostics must use `Diagnostics::logRealtime`; never call the
+string/file logging path from audio processing. Crash handlers may use only
+async-signal-safe operations and must chain and restore handlers owned by the
+host.
 
 ---
 

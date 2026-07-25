@@ -171,7 +171,7 @@ constexpr Metadata rotarySpeakerMetadata {{
     { "Mic Spread", ControlKind::horizontal, false, "Microphones",
       "Sets the angle between the virtual stereo microphones from 0 to 180 degrees." },
     { "Spin-up", ControlKind::rotary, false, "Rotor",
-      "Scales the independent horn and drum acceleration times from 0.40× to 2.50×." },
+      "Scales the independent horn and drum acceleration times from 0.40x to 2.50x." },
     { "Cabinet Color", ControlKind::rotary, false, "Cabinet",
       "Sets wooden cabinet resonance and leakage coloration." },
     { "Ambience", ControlKind::rotary, false, "Cabinet",
@@ -198,7 +198,7 @@ constexpr Metadata reverbMetadata {{
     { "Decay", ControlKind::rotary, true, "Space",
       "Sets how long the reverb tail lasts." },
     { "Room Scale", ControlKind::rotary, true, "Space",
-      "Changes the apparent room scale from Compact to Vast; the readout also shows the exact 25–200% scale." },
+      "Changes the apparent room scale from Compact to Vast; the readout also shows the exact 25-200% scale." },
     { "Dry", ControlKind::level, true, "Levels",
       "Sets the independent level of the unprocessed signal." },
     { "Wet", ControlKind::level, true, "Levels",
@@ -280,10 +280,10 @@ constexpr Metadata randomGranulizerMetadata {{
       "Sets the brightest randomized per-grain low-pass cutoff from 500 Hz to 20 kHz." },
     { "Regeneration", ControlKind::horizontal, true, "Texture",
       "Returns 0 to 80% controlled wet grain energy to capture history." },
-    { "Mix", ControlKind::horizontal, true, "Output",
-      "Blends dry and granular signals with constant power." },
-    { "Output", ControlKind::level, true, "Output",
-      "Adjusts level after the dry/wet blend." }
+    { "Dry", ControlKind::level, true, "Output",
+      "Sets the independent level of the original input from 0 to 100%." },
+    { "Wet", ControlKind::level, true, "Output",
+      "Sets the independent level of the granular signal from 0 to 100%." }
 }};
 constexpr Metadata vintageChorusMetadata {{
     { "Model", ControlKind::choice, true, "Model",
@@ -312,26 +312,26 @@ constexpr Metadata vintageChorusMetadata {{
       "Adjusts level after the blend." }
 }};
 constexpr Metadata beatPermuterMetadata {{
-    { "Grid", ControlKind::choice, true, "Sequence",
-      "Sets the host-tempo slice duration." },
-    { "Activity", ControlKind::horizontal, true, "Sequence",
-      "Sets the chance that a grid boundary starts a permutation." },
+    { "Slice", ControlKind::choice, true, "Timing",
+      "Sets the tempo-locked length of each captured and emitted slice." },
+    { "Chance", ControlKind::horizontal, true, "Timing",
+      "Sets the chance that each slice boundary starts a new permutation." },
     { "Pattern", ControlKind::choice, true, "Sequence",
-      "Selects repeat, reverse, rotate, or scatter permutation." },
-    { "Window", ControlKind::horizontal, true, "Sequence",
-      "Sets how many recent slices are available to the pattern." },
-    { "Repeats", ControlKind::horizontal, true, "Sequence",
-      "Sets the event duration in grid steps." },
-    { "Gate", ControlKind::horizontal, false, "Shape",
-      "Sets the click-free audible length of each emitted slice." },
+      "Selects Repeat, Reverse, Rotate, or Shuffle behavior." },
+    { "History", ControlKind::horizontal, true, "Sequence",
+      "Sets how many recent slices the pattern can choose from." },
+    { "Length", ControlKind::horizontal, true, "Sequence",
+      "Sets how many output steps each triggered permutation lasts." },
+    { "Slice Length", ControlKind::horizontal, false, "Shape",
+      "Sets the click-free audible portion of every emitted slice." },
     { "Pitch", ControlKind::horizontal, true, "Shape",
       "Transposes permuted audio from -12 to +12 semitones." },
-    { "Variation", ControlKind::horizontal, false, "Sequence",
-      "Adds deterministic per-event changes to the selected pattern." },
-    { "Stereo Offset", ControlKind::horizontal, false, "Stereo",
-      "Offsets complementary left and right slice permutations." },
-    { "Regeneration", ControlKind::horizontal, true, "Texture",
-      "Returns up to 75% filtered wet energy to capture history." },
+    { "Variation", ControlKind::horizontal, false, "Shape",
+      "Adds pattern-dependent movement while preserving the selected timing." },
+    { "Stereo", ControlKind::horizontal, false, "Shape",
+      "Offsets left and right source slices while preserving mono fold-down." },
+    { "Feedback", ControlKind::horizontal, false, "Shape",
+      "Returns up to 75% of the filtered permuted signal to capture history." },
     { "Mix", ControlKind::horizontal, true, "Output",
       "Blends the latency-matched dry and permuted signals." },
     { "Output", ControlKind::level, true, "Output",
@@ -587,27 +587,30 @@ constexpr Metadata pitchBloomMetadata {{
     unused
 }};
 constexpr Metadata frequencyLabMetadata {{
-    { "Shift", ControlKind::horizontal, true, "Frequency",
-      "Translates every frequency by a signed number of hertz." },
-    { "Fine", ControlKind::horizontal, true, "Frequency",
-      "Fine-tunes translation by up to 50 hertz." },
-    { "Feedback", ControlKind::horizontal, true, "Regeneration",
-      "Returns a signed, filtered shifted signal." },
-    { "LFO Rate", ControlKind::horizontal, false, "Motion",
-      "Sets frequency-shift modulation speed." },
-    { "LFO Depth", ControlKind::horizontal, false, "Motion",
-      "Sets frequency-shift modulation range in hertz." },
-    { "Stereo Offset", ControlKind::horizontal, true, "Stereo",
-      "Offsets left and right translations by a signed hertz amount." },
+    { "Root", ControlKind::choice, true, "Harmony",
+      "Sets the root note shared by the tuned resonators." },
+    { "Harmony", ControlKind::choice, true, "Harmony",
+      "Selects the chord voiced across the resonator bank." },
+    { "Register", ControlKind::choice, true, "Harmony",
+      "Moves the resonator bank between low and airy registers." },
+    { "Decay", ControlKind::horizontal, true, "Resonance",
+      "Sets how long the tuned resonances ring." },
+    { "Tone", ControlKind::horizontal, true, "Resonance",
+      "Balances energy between low and high resonator voices." },
+    { "Motion Rate", ControlKind::horizontal, false, "Motion",
+      "Sets the speed of gentle pitch movement." },
+    { "Motion Depth", ControlKind::horizontal, false, "Motion",
+      "Sets resonator pitch movement in cents." },
+    { "Stereo Spread", ControlKind::horizontal, true, "Stereo",
+      "Spreads alternating chord voices across the stereo field." },
     { "Low Cut", ControlKind::horizontal, false, "Passband",
-      "Removes low frequencies from the shifted path." },
+      "Removes low frequencies from the resonator excitation." },
     { "High Cut", ControlKind::horizontal, false, "Passband",
-      "Removes high frequencies from the shifted path." },
+      "Removes high frequencies from the resonator excitation." },
     { "Mix", ControlKind::horizontal, true, "Output",
-      "Blends latency-aligned dry and shifted signals." },
+      "Blends dry audio with the tuned resonator field." },
     { "Output", ControlKind::level, true, "Output",
-      "Adjusts level after frequency shifting." },
-    unused, unused
+      "Adjusts level after the blend." }
 }};
 constexpr Metadata spatialOrbitMetadata {{
     { "Path", ControlKind::choice, true, "Orbit",
@@ -666,7 +669,7 @@ constexpr Metadata analogTapeMetadata {{
     { "Input", ControlKind::level, true, "Level",
       "Sets the level printed to the tape before saturation and compression." },
     { "Drive", ControlKind::horizontal, true, "Character",
-      "Adds tape saturation and compression intensity independent of level." },
+      "Adds level-compensated saturation, density, and transient softening." },
     { "Bias", ControlKind::horizontal, false, "Character",
       "Moves from brighter underbias to darker overbias." },
     { "Tape Speed", ControlKind::choice, true, "Machine",
@@ -678,7 +681,7 @@ constexpr Metadata analogTapeMetadata {{
     { "Flutter", ControlKind::horizontal, false, "Transport",
       "Sets fast transport pitch variation." },
     { "Wear", ControlKind::horizontal, false, "Transport",
-      "Adds hysteresis smear, high-frequency loss, and gentle dropout modulation." },
+      "Adds hysteresis smear and gentle dropout modulation." },
     { "Noise", ControlKind::horizontal, false, "Character",
       "Sets energy-gated tape hiss." },
     { "Mix", ControlKind::horizontal, true, "Output",
@@ -920,6 +923,100 @@ constexpr Metadata timeMosaicMetadata {{
       "Adjusts level after the blend." },
     unused
 }};
+constexpr Metadata guitarCabinetMetadata {{
+    { "Speaker", ControlKind::choice, true, "Models",
+      "Selects a generic guitar-speaker family." },
+    { "Cabinet", ControlKind::choice, true, "Models",
+      "Selects the modeled enclosure size and construction." },
+    { "Microphone", ControlKind::choice, true, "Microphone",
+      "Selects a dynamic, ribbon, or condenser response." },
+    { "Mic Position", ControlKind::horizontal, true, "Microphone",
+      "Moves the microphone from the bright cone center toward the softer edge." },
+    { "Mic Distance", ControlKind::horizontal, true, "Microphone",
+      "Sets microphone distance from the speaker in centimeters." },
+    { "Speaker Drive", ControlKind::level, true, "Speaker",
+      "Drives the speaker mechanics into power compression and breakup." },
+    { "Cone Breakup", ControlKind::horizontal, true, "Speaker",
+      "Sets the level of upper cone-resonance modes." },
+    { "Cabinet Resonance", ControlKind::horizontal, true, "Cabinet",
+      "Scales enclosure resonance and low-frequency bloom." },
+    { "Damping", ControlKind::horizontal, true, "Cabinet",
+      "Moves the speaker and cabinet response from loose to tight." },
+    { "Room", ControlKind::horizontal, true, "Room",
+      "Adds a compact modeled recording-room field." },
+    { "Room Width", ControlKind::horizontal, false, "Room",
+      "Sets the mono-compatible width of the modeled room." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the cabinet and room model." }
+}};
+constexpr Metadata chordLoomMetadata {{
+    { "Sensitivity", ControlKind::horizontal, true, "Capture",
+      "Higher sensitivity lowers the visible input threshold and requires less "
+      "attack contrast before a new strum replaces the held chord." },
+    { "Capture", ControlKind::horizontal, true, "Capture",
+      "Sets how much of each new chord is gathered for the sustain texture." },
+    { "Transition", ControlKind::horizontal, true, "Capture",
+      "Sets how smoothly the previous chord gives way to the new chord." },
+    { "Texture", ControlKind::horizontal, true, "Sustain",
+      "Moves from long smooth grains to a more animated woven texture." },
+    { "Motion", ControlKind::horizontal, false, "Sustain",
+      "Adds subtle independent pitch drift to the sustaining grains." },
+    { "Octave Bloom", ControlKind::horizontal, false, "Sustain",
+      "Blends a soft octave layer into the held chord." },
+    { "Stereo Spread", ControlKind::horizontal, true, "Stereo",
+      "Spreads overlapping grains while preserving mono fold-down." },
+    { "Low Cut", ControlKind::horizontal, false, "Passband",
+      "Removes low frequencies from the sustained layer." },
+    { "High Cut", ControlKind::horizontal, false, "Passband",
+      "Removes high frequencies from the sustained layer." },
+    { "Dry", ControlKind::level, true, "Levels",
+      "Sets the independent live-input level." },
+    { "Sustain", ControlKind::level, true, "Levels",
+      "Sets the independent held-chord level." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the dry and sustained layers." }
+}};
+constexpr Metadata volumeSwellMetadata {{
+    { "Sensitivity", ControlKind::horizontal, true, "Detector",
+      "Higher sensitivity lowers both thresholds for detecting a new chord." },
+    { "Swell Time", ControlKind::horizontal, true, "Envelope",
+      "Sets how long the volume takes to rise after each detected chord." },
+    { "Curve", ControlKind::horizontal, true, "Envelope",
+      "Shapes the rise from a fast start through linear to a slow start." },
+    { "Floor", ControlKind::level, true, "Envelope",
+      "Sets how quiet the signal becomes at the start of each swell." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the latency-aligned dry signal with the automatic swell." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the swell envelope." },
+    unused, unused, unused, unused, unused, unused
+}};
+constexpr Metadata spectralNebulaMetadata {{
+    { "Smear", ControlKind::horizontal, true, "Cloud",
+      "Slows spectral absorption so notes bloom and morph into one another." },
+    { "Decay", ControlKind::horizontal, true, "Cloud",
+      "Sets how long absorbed spectral energy remains after the input stops." },
+    { "Drift", ControlKind::horizontal, true, "Motion",
+      "Adds slow bounded pitch movement to the synthesized cloud." },
+    { "Shimmer", ControlKind::horizontal, true, "Harmonics",
+      "Adds a soft octave-above image derived from stored spectral energy." },
+    { "Focus", ControlKind::horizontal, true, "Texture",
+      "Moves from airy noise through a balanced cloud to stable tonal partials." },
+    { "Freeze", ControlKind::toggle, true, "Cloud",
+      "Stops spectral-state updates while phase motion continues smoothly." },
+    { "Width", ControlKind::horizontal, true, "Stereo",
+      "Scales only the cloud's side domain, preserving mono fold-down." },
+    { "Low Cut", ControlKind::horizontal, false, "Passband",
+      "Removes low-frequency energy from the synthesized cloud." },
+    { "High Cut", ControlKind::horizontal, false, "Passband",
+      "Removes high-frequency energy from the synthesized cloud." },
+    { "Dry", ControlKind::level, true, "Levels",
+      "Sets the independent latency-aligned input level." },
+    { "Cloud", ControlKind::level, true, "Levels",
+      "Sets the independent synthesized cloud level." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the dry and cloud paths." }
+}};
 constexpr Names emptyNames { "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-" };
 constexpr Names eqNames {
     "Low Frequency", "Low Gain", "Low Q",
@@ -975,15 +1072,15 @@ constexpr Names dynamicEqualizerNames {
 constexpr Names randomGranulizerNames {
     "Voices", "Size Minimum", "Grain Rate", "Capture Range", "Size Maximum",
     "Reverse Chance", "Stereo Spread", "Rhythmic Delay Chance", "Brightness",
-    "Regeneration", "Mix", "Output"
+    "Regeneration", "Dry", "Wet"
 };
 constexpr Names vintageChorusNames {
     "Model", "Rate", "Depth", "Delay", "Density", "Width", "Regeneration",
     "Tone", "Age", "Stereo Phase", "Mix", "Output"
 };
 constexpr Names beatPermuterNames {
-    "Grid", "Activity", "Pattern", "Window", "Repeats", "Gate", "Pitch",
-    "Variation", "Stereo Offset", "Regeneration", "Mix", "Output"
+    "Slice", "Chance", "Pattern", "History", "Length", "Slice Length", "Pitch",
+    "Variation", "Stereo", "Feedback", "Mix", "Output"
 };
 constexpr Names spectralPrismNames {
     "Warp", "Pivot", "Shift", "Smear", "Freeze", "Motion Rate",
@@ -1028,8 +1125,8 @@ constexpr Names pitchBloomNames {
     "Low Cut", "High Cut", "Ducking", "Mix", "Output", "-"
 };
 constexpr Names frequencyLabNames {
-    "Shift", "Fine", "Feedback", "LFO Rate", "LFO Depth", "Stereo Offset",
-    "Low Cut", "High Cut", "Mix", "Output", "-", "-"
+    "Root", "Harmony", "Register", "Decay", "Tone", "Motion Rate",
+    "Motion Depth", "Stereo Spread", "Low Cut", "High Cut", "Mix", "Output"
 };
 constexpr Names spatialOrbitNames {
     "Path", "Rate", "Sync", "Division", "Azimuth Span", "Width", "Distance",
@@ -1083,6 +1180,24 @@ constexpr Names chaosFieldNames {
 constexpr Names timeMosaicNames {
     "History", "Tile Width", "Tile Time", "Age", "Motion", "Coherence",
     "Pitch Drift", "Freeze", "Stereo Spread", "Mix", "Output", "-"
+};
+constexpr Names guitarCabinetNames {
+    "Speaker", "Cabinet", "Microphone", "Mic Position", "Mic Distance",
+    "Speaker Drive", "Cone Breakup", "Cabinet Resonance", "Damping", "Room",
+    "Room Width", "Output"
+};
+constexpr Names chordLoomNames {
+    "Sensitivity", "Capture", "Transition", "Texture", "Motion",
+    "Octave Bloom", "Stereo Spread", "Low Cut", "High Cut", "Dry",
+    "Sustain", "Output"
+};
+constexpr Names volumeSwellNames {
+    "Sensitivity", "Swell Time", "Curve", "Floor", "Mix", "Output",
+    "-", "-", "-", "-", "-", "-"
+};
+constexpr Names spectralNebulaNames {
+    "Smear", "Decay", "Drift", "Shimmer", "Focus", "Freeze", "Width",
+    "Low Cut", "High Cut", "Dry", "Cloud", "Output"
 };
 const std::array<std::array<float, 16>, 3> premiumEarlyMilliseconds {{
     { 11.3f, 18.7f, 27.1f, 37.9f, 51.7f, 69.1f, 79.3f, 88.7f,
@@ -1297,7 +1412,7 @@ ControlOptions optionsFor(ModuleType type, int control)
     if (type == ModuleType::beatPermuter && control == 0)
         return { { "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32" }, 6 };
     if (type == ModuleType::beatPermuter && control == 2)
-        return { { "Repeat", "Reverse", "Rotate", "Scatter" }, 4 };
+        return { { "Repeat", "Reverse", "Rotate", "Shuffle" }, 4 };
     if (type == ModuleType::resonantMatrix && control == 1)
         return { { "Major", "Minor", "Dorian", "Pentatonic", "Whole Tone", "Octaves" }, 6 };
     if (type == ModuleType::resonantMatrix && control == 3)
@@ -1320,6 +1435,14 @@ ControlOptions optionsFor(ModuleType type, int control)
     if (type == ModuleType::pitchBloom && control == 0)
         return { { "Unison", "Fifth", "Octave", "Octave + Fifth",
                    "Two Octaves" }, 5 };
+    if (type == ModuleType::frequencyLab && control == 0)
+        return { { "C", "C#", "D", "D#", "E", "F",
+                   "F#", "G", "G#", "A", "A#", "B" }, 12 };
+    if (type == ModuleType::frequencyLab && control == 1)
+        return { { "Major", "Minor", "Sus 2", "Sus 4", "Fifths",
+                   "Major 7", "Minor 7", "Octave Drone" }, 8 };
+    if (type == ModuleType::frequencyLab && control == 2)
+        return { { "Low", "Warm", "Bright", "Air" }, 4 };
     if (type == ModuleType::spatialOrbit && control == 0)
         return { { "Circle", "Figure Eight", "Pendulum", "Wander" }, 4 };
     if (type == ModuleType::analogTape && control == 0)
@@ -1357,6 +1480,14 @@ ControlOptions optionsFor(ModuleType type, int control)
     if (type == ModuleType::chaosField && control == 3)
         return { { "1 bar", "1/2", "1/4.", "1/4",
                    "1/8.", "1/8", "1/16.", "1/16" }, 8 };
+    if (type == ModuleType::guitarCabinet && control == 0)
+        return { { "American Clean", "British Vintage", "British Modern",
+                   "High-Power" }, 4 };
+    if (type == ModuleType::guitarCabinet && control == 1)
+        return { { "1x12 Open", "2x12 Open", "2x12 Closed",
+                   "4x12 Closed" }, 4 };
+    if (type == ModuleType::guitarCabinet && control == 2)
+        return { { "Dynamic", "Ribbon", "Condenser" }, 3 };
     return {};
 }
 
@@ -1471,8 +1602,9 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 0.35f, exponentialNormalized(50.0f, 2000.0f, 280.0f),
                 0.20f, 0.65f, 0.30f,
                 exponentialNormalized(500.0f, 20000.0f, 12000.0f),
-                0.10f / 0.80f, 0.35f,
-                linearNormalized(-18.0f, 12.0f, 0.0f)
+                0.10f / 0.80f,
+                std::cos(0.35f * juce::MathConstants<float>::halfPi),
+                std::sin(0.35f * juce::MathConstants<float>::halfPi)
             };
             break;
         case ModuleType::vintageChorus:
@@ -1625,12 +1757,14 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
             break;
         case ModuleType::frequencyLab:
             values = {
-                linearNormalized(-5000.0f, 5000.0f, 100.0f), 0.5f, 0.5f,
-                exponentialNormalized(0.02f, 20.0f, 0.2f), 0.0f, 0.5f,
-                exponentialNormalized(20.0f, 2000.0f, 40.0f),
-                exponentialNormalized(1000.0f, 20000.0f, 16000.0f),
-                1.0f, linearNormalized(-18.0f, 12.0f, 0.0f),
-                0.5f, 0.5f
+                discreteValue(0, 12), discreteValue(0, 8),
+                discreteValue(1, 4),
+                exponentialNormalized(0.08f, 4.0f, 1.2f), 0.5f,
+                exponentialNormalized(0.02f, 4.0f, 0.15f),
+                3.0f / 25.0f, 0.60f,
+                exponentialNormalized(20.0f, 1000.0f, 80.0f),
+                exponentialNormalized(2000.0f, 20000.0f, 10000.0f),
+                0.35f, linearNormalized(-18.0f, 12.0f, 0.0f)
             };
             break;
         case ModuleType::spatialOrbit:
@@ -1659,10 +1793,10 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
             break;
         case ModuleType::analogTape:
             values = {
-                discreteValue(1, 4),
+                discreteValue(2, 4),
                 linearNormalized(-18.0f, 18.0f, 0.0f),
-                0.30f, 0.5f, discreteValue(2, 4),
-                0.35f, 0.20f, 0.20f, 0.15f, 0.20f, 1.0f,
+                0.25f, 0.5f, discreteValue(2, 4),
+                0.15f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
                 linearNormalized(-18.0f, 12.0f, 0.0f)
             };
             break;
@@ -1758,6 +1892,50 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 linearNormalized(-18.0f, 12.0f, 0.0f), 0.5f
             };
             break;
+        case ModuleType::guitarCabinet:
+            values = {
+                discreteValue(1, 4), discreteValue(3, 4),
+                discreteValue(0, 3), 0.62f,
+                exponentialNormalized(1.0f, 100.0f, 4.0f),
+                linearNormalized(0.0f, 24.0f, 6.0f),
+                0.35f, 0.50f, 0.50f, 0.12f, 0.50f,
+                linearNormalized(-18.0f, 12.0f, -3.0f)
+            };
+            break;
+        case ModuleType::chordLoom:
+            values = {
+                0.62f,
+                exponentialNormalized(0.25f, 2.0f, 0.9f),
+                exponentialNormalized(0.10f, 2.0f, 0.5f),
+                0.42f, 0.25f, 0.12f, 0.65f,
+                exponentialNormalized(20.0f, 1000.0f, 80.0f),
+                exponentialNormalized(2000.0f, 20000.0f, 10000.0f),
+                1.0f, 0.55f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::volumeSwell:
+            values = {
+                0.75f,
+                exponentialNormalized(0.05f, 5.0f, 1.0f),
+                0.62f,
+                linearNormalized(-60.0f, -6.0f, -48.0f),
+                1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+            };
+            break;
+        case ModuleType::spectralNebula:
+            values = {
+                0.62f,
+                exponentialNormalized(0.2f, 30.0f, 3.5f),
+                0.18f, 0.12f, 0.62f, 0.0f, 0.55f,
+                exponentialNormalized(20.0f, 1000.0f, 80.0f),
+                exponentialNormalized(1000.0f, 20000.0f, 10000.0f),
+                1.0f, 0.48f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
         case ModuleType::empty: break;
     }
     return values;
@@ -1819,7 +1997,7 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 1)
             {
                 const auto percent = linear(25.0f, 200.0f, value);
-                return juce::String(roomScaleName(percent)) + "  ·  "
+                return juce::String(roomScaleName(percent)) + "  |  "
                        + juce::String(percent, 0) + "%";
             }
             if (control == 2 || control == 3)
@@ -1911,14 +2089,14 @@ juce::String formatControlValue(ModuleType type, int control, float value)
                        + " grains/s";
             if (control == 3)
                 return formatGrainSize(value * 6000.0f);
-            if (control == 5 || control == 6 || control == 7 || control == 10)
+            if (control == 10 || control == 11)
+                return juce::String(juce::roundToInt(value * 100.0f)) + "%";
+            if (control == 5 || control == 6 || control == 7)
                 return juce::String(value * 100.0f, 0) + "%";
             if (control == 8)
                 return formatFrequency(exponential(500.0f, 20000.0f, value));
             if (control == 9)
                 return juce::String(value * 80.0f, 0) + "%";
-            if (control == 11)
-                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::vintageChorus:
             if (control == 1) return juce::String(exponential(0.05f, 8.0f, value), 2) + " Hz";
@@ -2124,28 +2302,20 @@ juce::String formatControlValue(ModuleType type, int control, float value)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::frequencyLab:
-            if (control == 0 || control == 1 || control == 5)
-            {
-                const auto amount = control == 0
-                    ? linear(-5000.0f, 5000.0f, value)
-                    : control == 1 ? linear(-50.0f, 50.0f, value)
-                                   : linear(-500.0f, 500.0f, value);
-                return (amount > 0.05f ? "+" : "")
-                       + juce::String(amount, std::abs(amount) < 100.0f ? 1 : 0)
-                       + " Hz";
-            }
-            if (control == 2)
-            {
-                const auto feedback = linear(-80.0f, 80.0f, value);
-                return (feedback > 0.5f ? "+" : "")
-                       + juce::String(feedback, 0) + "%";
-            }
-            if (control == 3) return juce::String(exponential(0.02f, 20.0f, value), 2) + " Hz";
-            if (control == 4) return juce::String(value * 2000.0f, 0) + " Hz";
-            if (control == 6) return formatFrequency(exponential(20.0f, 2000.0f, value));
-            if (control == 7) return formatFrequency(exponential(1000.0f, 20000.0f, value));
-            if (control == 8) return juce::String(value * 100.0f, 0) + "%";
+            if (control == 3)
+                return formatSeconds(exponential(0.08f, 4.0f, value));
+            if (control == 4 || control == 7 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 5)
+                return juce::String(
+                    exponential(0.02f, 4.0f, value), 2) + " Hz";
+            if (control == 6)
+                return juce::String(value * 25.0f, 1) + " cents";
+            if (control == 8)
+                return formatFrequency(exponential(20.0f, 1000.0f, value));
             if (control == 9)
+                return formatFrequency(exponential(2000.0f, 20000.0f, value));
+            if (control == 11)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::spatialOrbit:
@@ -2289,6 +2459,99 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 6) return juce::String(value * 50.0f, 1) + " cents";
             if (control == 10) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
+        case ModuleType::guitarCabinet:
+            if (control == 3)
+                return value <= 0.005f
+                    ? "Center"
+                    : value >= 0.995f
+                          ? "Edge"
+                          : juce::String(value * 100.0f, 0) + "% Edge";
+            if (control == 4)
+                return juce::String(exponential(1.0f, 100.0f, value), 1)
+                    + " cm";
+            if (control == 5)
+                return juce::String(linear(0.0f, 24.0f, value), 1) + " dB";
+            if (control == 6 || control == 7 || control == 9
+                || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 8)
+                return value < 0.495f
+                    ? "Loose " + juce::String((0.5f - value) * 200.0f, 0) + "%"
+                    : value > 0.505f
+                          ? "Tight "
+                                + juce::String((value - 0.5f) * 200.0f, 0)
+                                + "%"
+                          : "Neutral";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::chordLoom:
+            if (control == 0)
+                return juce::String(linear(-24.0f, -60.0f, value), 1) + " dB";
+            if (control == 3 || control == 6 || control == 9 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 1)
+                return formatSeconds(exponential(0.25f, 2.0f, value));
+            if (control == 2)
+                return formatSeconds(exponential(0.10f, 2.0f, value));
+            if (control == 4)
+                return juce::String(value * 20.0f, 1) + " cents";
+            if (control == 5)
+                return juce::String(value * 50.0f, 0) + "%";
+            if (control == 7)
+                return formatFrequency(exponential(20.0f, 1000.0f, value));
+            if (control == 8)
+                return formatFrequency(exponential(2000.0f, 20000.0f, value));
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::volumeSwell:
+            if (control == 0)
+                return juce::String(linear(-24.0f, -60.0f, value), 1) + " dB";
+            if (control == 1)
+                return formatSeconds(exponential(0.05f, 5.0f, value));
+            if (control == 2)
+            {
+                if (value < 0.495f)
+                    return "Fast "
+                        + juce::String((0.5f - value) * 200.0f, 0) + "%";
+                if (value > 0.505f)
+                    return "Slow "
+                        + juce::String((value - 0.5f) * 200.0f, 0) + "%";
+                return "Linear";
+            }
+            if (control == 3)
+                return juce::String(linear(-60.0f, -6.0f, value), 1) + " dB";
+            if (control == 4)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 5)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::spectralNebula:
+            if (control == 0 || control == 3 || control == 6
+                || control == 9 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 1)
+                return formatSeconds(exponential(0.2f, 30.0f, value));
+            if (control == 2)
+                return juce::String(value * 40.0f, 1) + " cents";
+            if (control == 4)
+                return value < 0.495f
+                    ? "Noise "
+                        + juce::String((0.5f - value) * 200.0f, 0) + "%"
+                    : value > 0.505f
+                        ? "Tonal "
+                            + juce::String((value - 0.5f) * 200.0f, 0) + "%"
+                        : "Balanced";
+            if (control == 5)
+                return value >= 0.5f ? "Frozen" : "Absorb";
+            if (control == 7)
+                return formatFrequency(exponential(20.0f, 1000.0f, value));
+            if (control == 8)
+                return formatFrequency(exponential(1000.0f, 20000.0f, value));
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
         case ModuleType::empty: break;
     }
     return juce::String(value * 100.0f, 0) + "%";
@@ -2316,9 +2579,21 @@ std::optional<float> parseControlValue(ModuleType type, int control,
     if (type == ModuleType::analogTape && control == 3
         && text.trim().equalsIgnoreCase("neutral"))
         return 0.5f;
+    if (type == ModuleType::guitarCabinet && control == 3)
+    {
+        if (text.trim().equalsIgnoreCase("center")) return 0.0f;
+        if (text.trim().equalsIgnoreCase("edge")) return 1.0f;
+    }
+    if (type == ModuleType::guitarCabinet && control == 8
+        && text.trim().equalsIgnoreCase("neutral"))
+        return 0.5f;
     if (type == ModuleType::algorithmicReverb && control == 1)
         if (const auto named = namedRoomScale(text))
             return named;
+    if (type == ModuleType::spectralNebula && control == 4
+        && (text.trim().equalsIgnoreCase("full")
+            || text.trim().equalsIgnoreCase("balanced")))
+        return 0.5f;
 
     const auto parsedValue = numericValue(text);
     if (!parsedValue.has_value())
@@ -2463,14 +2738,13 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 3)
                 return juce::jlimit(
                     0.0f, 1.0f, parsedMilliseconds(text, value) / 6000.0f);
-            if (control == 5 || control == 6 || control == 7 || control == 10)
+            if (control == 5 || control == 6 || control == 7
+                || control == 10 || control == 11)
                 return juce::jlimit(0.0f, 1.0f, value / 100.0f);
             if (control == 8) return exponentialNormalized(
                 500.0f, 20000.0f, parsedFrequency(text, value));
             if (control == 9)
                 return juce::jlimit(0.0f, 1.0f, value / 80.0f);
-            if (control == 11)
-                return linearNormalized(-18.0f, 12.0f, value);
             break;
         case ModuleType::vintageChorus:
             if (control == 1) return exponentialNormalized(0.05f, 8.0f, value);
@@ -2644,18 +2918,20 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
             break;
         case ModuleType::frequencyLab:
-            if (control == 0) return linearNormalized(-5000.0f, 5000.0f, value);
-            if (control == 1) return linearNormalized(-50.0f, 50.0f, value);
-            if (control == 2) return linearNormalized(-80.0f, 80.0f, value);
-            if (control == 3) return exponentialNormalized(0.02f, 20.0f, value);
-            if (control == 4) return juce::jlimit(0.0f, 1.0f, value / 2000.0f);
-            if (control == 5) return linearNormalized(-500.0f, 500.0f, value);
-            if (control == 6) return exponentialNormalized(
-                20.0f, 2000.0f, parsedFrequency(text, value));
-            if (control == 7) return exponentialNormalized(
-                1000.0f, 20000.0f, parsedFrequency(text, value));
-            if (control == 8) return juce::jlimit(0.0f, 1.0f, value / 100.0f);
-            if (control == 9) return linearNormalized(-18.0f, 12.0f, value);
+            if (control == 3) return exponentialNormalized(
+                0.08f, 4.0f, parsedSeconds(text, value));
+            if (control == 4 || control == 7 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 5)
+                return exponentialNormalized(0.02f, 4.0f, value);
+            if (control == 6)
+                return juce::jlimit(0.0f, 1.0f, value / 25.0f);
+            if (control == 8) return exponentialNormalized(
+                20.0f, 1000.0f, parsedFrequency(text, value));
+            if (control == 9) return exponentialNormalized(
+                2000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
             break;
         case ModuleType::spatialOrbit:
             if (control == 1) return exponentialNormalized(0.02f, 5.0f, value);
@@ -2804,6 +3080,114 @@ std::optional<float> parseControlValue(ModuleType type, int control,
                 return juce::jlimit(0.0f, 1.0f, value / 50.0f);
             if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
             break;
+        case ModuleType::guitarCabinet:
+            if (control == 3)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 6 || control == 7 || control == 9 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 4)
+                return exponentialNormalized(
+                    1.0f, 100.0f, juce::jlimit(1.0f, 100.0f, value));
+            if (control == 5) return linearNormalized(0.0f, 24.0f, value);
+            if (control == 8)
+            {
+                const auto amount =
+                    juce::jlimit(0.0f, 100.0f, std::abs(value)) / 200.0f;
+                if (text.containsIgnoreCase("loose"))
+                    return 0.5f - amount;
+                if (text.containsIgnoreCase("tight"))
+                    return 0.5f + amount;
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            }
+            if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::chordLoom:
+            if (control == 0)
+            {
+                if (text.containsChar('%'))
+                    return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+                return juce::jlimit(0.0f, 1.0f, (-24.0f - value) / 36.0f);
+            }
+            if (control == 3 || control == 6 || control == 9 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 1) return exponentialNormalized(
+                0.25f, 2.0f, parsedSeconds(text, value));
+            if (control == 2) return exponentialNormalized(
+                0.10f, 2.0f, parsedSeconds(text, value));
+            if (control == 4)
+                return juce::jlimit(0.0f, 1.0f, value / 20.0f);
+            if (control == 5)
+                return juce::jlimit(0.0f, 1.0f, value / 50.0f);
+            if (control == 7) return exponentialNormalized(
+                20.0f, 1000.0f, parsedFrequency(text, value));
+            if (control == 8) return exponentialNormalized(
+                2000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::volumeSwell:
+            if (control == 0)
+            {
+                if (text.containsChar('%'))
+                    return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+                return juce::jlimit(0.0f, 1.0f, (-24.0f - value) / 36.0f);
+            }
+            if (control == 1)
+                return exponentialNormalized(
+                    0.05f, 5.0f, parsedSeconds(text, value));
+            if (control == 2)
+            {
+                if (text.containsIgnoreCase("linear"))
+                    return 0.5f;
+                const auto amount =
+                    juce::jlimit(0.0f, 100.0f, value) / 200.0f;
+                if (text.containsIgnoreCase("fast"))
+                    return 0.5f - amount;
+                if (text.containsIgnoreCase("slow"))
+                    return 0.5f + amount;
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            }
+            if (control == 3)
+                return linearNormalized(-60.0f, -6.0f, value);
+            if (control == 4)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 5)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::spectralNebula:
+            if (control == 0 || control == 3 || control == 6
+                || control == 9 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 1)
+                return exponentialNormalized(
+                    0.2f, 30.0f, parsedSeconds(text, value));
+            if (control == 2)
+                return juce::jlimit(0.0f, 1.0f, value / 40.0f);
+            if (control == 4)
+            {
+                if (text.containsIgnoreCase("full"))
+                    return 0.5f;
+                const auto amount =
+                    juce::jlimit(0.0f, 100.0f, value) / 200.0f;
+                if (text.containsIgnoreCase("noise"))
+                    return 0.5f - amount;
+                if (text.containsIgnoreCase("tonal"))
+                    return 0.5f + amount;
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            }
+            if (control == 5)
+                return text.containsIgnoreCase("frozen")
+                    || text.containsIgnoreCase("on") || value >= 0.5f
+                    ? 1.0f : 0.0f;
+            if (control == 7)
+                return exponentialNormalized(
+                    20.0f, 1000.0f, parsedFrequency(text, value));
+            if (control == 8)
+                return exponentialNormalized(
+                    1000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
         case ModuleType::empty: break;
     }
     return juce::jlimit(0.0f, 1.0f, value / 100.0f);
@@ -2918,6 +3302,10 @@ bool isControlContextuallyVisible(
         case ModuleType::formantForge:
         case ModuleType::harmonicMirage:
         case ModuleType::timeMosaic:
+        case ModuleType::guitarCabinet:
+        case ModuleType::chordLoom:
+        case ModuleType::volumeSwell:
+        case ModuleType::spectralNebula:
             break;
     }
     return true;
@@ -3169,9 +3557,9 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::eventTelemetry),
         makeDefinition(
             ModuleType::frequencyLab, ModulePresentation::frequencyLab,
-            "Frequency Lab", ModuleCategory::glitchAndCreative,
-            "Translate frequencies in hertz with animated stereo feedback.",
-            "frequency shifter hilbert sideband ring metallic creative",
+            "Harmonic Resonator", ModuleCategory::reverbAndSpace,
+            "Turn incoming sound into tuned, moving chord resonances.",
+            "harmonic resonator chord tuned modal strings drone musical",
             frequencyLabNames, frequencyLabMetadata,
             &makeModule<FrequencyLabModule>,
             ModuleCapability::continuousTelemetry),
@@ -3281,7 +3669,39 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             timeMosaicNames, timeMosaicMetadata,
             &makeModule<TimeMosaicModule>,
             ModuleCapability::continuousTelemetry
-                | ModuleCapability::eventTelemetry)
+                | ModuleCapability::eventTelemetry),
+        makeDefinition(
+            ModuleType::guitarCabinet, ModulePresentation::guitarCabinet,
+            "Guitar Cabinet", ModuleCategory::saturationAndColor,
+            "Model a responsive guitar speaker, enclosure, microphone, and room.",
+            "guitar cabinet speaker cab microphone cone breakup physical room",
+            guitarCabinetNames, guitarCabinetMetadata,
+            &makeModule<GuitarCabinetModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::chordLoom, ModulePresentation::chordLoom,
+            "Chord Loom", ModuleCategory::reverbAndSpace,
+            "Hold each guitar chord as a continuously woven pad until the next strum.",
+            "guitar chord sustain freeze pad infinite granular hold strum",
+            chordLoomNames, chordLoomMetadata,
+            &makeModule<ChordLoomModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::volumeSwell, ModulePresentation::volumeSwell,
+            "Volume Swell", ModuleCategory::dynamics,
+            "Automatically softens each chord attack and rises like a guitarist's volume pedal.",
+            "guitar auto swell volume pedal knob attack fade chord texture",
+            volumeSwellNames, volumeSwellMetadata,
+            &makeModule<VolumeSwellModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::spectralNebula, ModulePresentation::spectralNebula,
+            "Spectral Nebula", ModuleCategory::reverbAndSpace,
+            "Dissolve guitar or vocals into a drifting, shimmering spectral cloud.",
+            "spectral cloud smear freeze shimmer ambient vocal guitar texture",
+            spectralNebulaNames, spectralNebulaMetadata,
+            &makeModule<SpectralNebulaModule>,
+            ModuleCapability::continuousTelemetry)
     }};
     return definitions;
 }

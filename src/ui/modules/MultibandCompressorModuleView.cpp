@@ -339,7 +339,7 @@ void MultibandCompressorModuleView::paint(
                                 MultibandCompressorModule::lowReductionDb)
                             + index],
                         1)
-                    + " dB · "
+                    + " dB | "
                     + (telemetrySnapshot.values[
                            static_cast<size_t>(
                                MultibandCompressorModule::lowActive)
@@ -351,7 +351,7 @@ void MultibandCompressorModuleView::paint(
     }
     graphics.setColour(reductionColour);
     graphics.drawText(
-        hasTelemetry ? "DSP PER-BAND GAIN REDUCTION · CAPTURED BLOCKS"
+        hasTelemetry ? "DSP PER-BAND GAIN REDUCTION | CAPTURED BLOCKS"
                      : "DSP TELEMETRY WAITING",
         plot.toNearestInt(), juce::Justification::centredBottom);
 

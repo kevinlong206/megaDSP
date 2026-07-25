@@ -162,7 +162,7 @@ void StudioFlangerModuleView::mouseDrag(const juce::MouseEvent& event)
         dragReadout =
             "MANUAL DELAY  "
             + megadsp::formatControlValue(type, 5, value(5))
-            + "  ·  DEPTH  "
+            + "  |  DEPTH  "
             + megadsp::formatControlValue(type, 4, value(4));
         repaint();
         return;
@@ -284,12 +284,12 @@ void StudioFlangerModuleView::paint(
         juce::String(captions[static_cast<size_t>(renderedModel)]).toUpperCase()
             + "   " + megadsp::formatControlValue(type, 5, value(5))
             + (hasTelemetry
-                   ? "  ·  DSP " + juce::String(delayMs, 2) + " ms"
-                   : "  ·  CONTROL "
+                   ? "  |  DSP " + juce::String(delayMs, 2) + " ms"
+                   : "  |  CONTROL "
                        + juce::String(delayMs, 2)
-                       + " ms  ·  DSP TELEMETRY WAITING")
+                       + " ms  |  DSP TELEMETRY WAITING")
             + (hasTelemetry && transitionAmount < 0.999f
-                   ? "  ·  XFADE "
+                   ? "  |  XFADE "
                        + juce::String(transitionAmount * 100.0f, 0) + "%"
                    : ""),
         comb.reduced(8.0f).toNearestInt(), juce::Justification::topLeft);

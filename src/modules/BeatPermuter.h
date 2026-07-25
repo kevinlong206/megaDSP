@@ -77,6 +77,13 @@ private:
         std::atomic<float> stereoBias { 0.0f };
         std::atomic<int> pattern { 0 };
         std::atomic<bool> reverse { false };
+        std::atomic<int> currentStep { 0 };
+        std::atomic<int> stepCount { 0 };
+        std::atomic<int> windowSlices { 0 };
+        std::array<std::array<std::atomic<int>, maximumEventSlices>, 2>
+            sourceSlices {};
+        std::array<std::array<std::atomic<bool>, maximumEventSlices>, 2>
+            reversedSteps {};
     };
 
     std::uint32_t nextRandom();

@@ -132,7 +132,7 @@ void AlgorithmicReverbModuleView::mouseDrag(
         (tail.getBottom() - event.position.y) / tail.getHeight()));
     dragReadout =
         "DECAY  " + megadsp::formatControlValue(type, 0, value(0))
-        + "  ·  ROOM SCALE  "
+        + "  |  ROOM SCALE  "
         + megadsp::formatControlValue(type, 1, value(1));
     repaint();
 }
@@ -300,7 +300,7 @@ void AlgorithmicReverbModuleView::paint(juce::Graphics& graphics, juce::Rectangl
     graphics.drawText(
         "INPUT PASSBAND  "
             + megadsp::formatControlValue(type, 10, value(10))
-            + " – "
+            + " - "
             + megadsp::formatControlValue(type, 11, value(11)),
         filter.reduced(8.0f, 0.0f).toNearestInt(),
         juce::Justification::centred);

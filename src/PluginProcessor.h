@@ -98,6 +98,10 @@ public:
     {
         return topologyGeneration.load(std::memory_order_acquire);
     }
+    std::uint64_t getTopologyRequestGeneration() const noexcept
+    {
+        return topologyRequestGeneration.load(std::memory_order_acquire);
+    }
     void loadFactoryPreset(int presetIndex);
     int getSelectedTab() const { return selectedTab; }
     void setSelectedTab(int tab)
@@ -159,6 +163,9 @@ private:
     int hostBypassWritePosition = 0;
     int lastHostBypassLatency = 0;
     std::atomic<bool> topologyMutationInProgress { false };
+    std::uint32_t diagnosticInstanceId = 0;
+    int lastDiagnosticBlockSize = 0;
+    int lastDiagnosticChannelCount = 0;
     int selectedTab = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MegaDSPAudioProcessor)
 };

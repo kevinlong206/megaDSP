@@ -466,7 +466,7 @@ void DynamicEqualizerModuleView::paint(
         "DETECTOR  " + detectorName,
         externalAvailable
             ? external ? "SIDECHAIN  EXTERNAL" : "SIDECHAIN  INTERNAL"
-            : external ? "EXTERNAL UNAVAILABLE  ·  INPUT"
+            : external ? "EXTERNAL UNAVAILABLE  |  INPUT"
                        : "SIDECHAIN  UNAVAILABLE",
         listen ? "LISTEN  ON" : "LISTEN  OFF"
     };

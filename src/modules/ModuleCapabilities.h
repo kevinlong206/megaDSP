@@ -114,7 +114,7 @@ private:
     std::atomic<std::uint32_t> publication { 0 };
 };
 
-constexpr size_t continuousTelemetryValueCapacity = 8;
+constexpr size_t continuousTelemetryValueCapacity = 16;
 constexpr size_t continuousTelemetryHistoryCapacity = 64;
 constexpr size_t continuousTelemetryHistoryValueCapacity = 4;
 
@@ -271,6 +271,13 @@ struct BeatPermutationVisualEvent
     float stereoBias = 0.0f;
     int pattern = 0;
     bool reverse = false;
+    int currentStep = 0;
+    int stepCount = 0;
+    int windowSlices = 0;
+    std::array<int, 8> leftSourceSlices {};
+    std::array<int, 8> rightSourceSlices {};
+    std::array<bool, 8> leftReverse {};
+    std::array<bool, 8> rightReverse {};
 };
 
 constexpr int beatPermutationVisualEventCount = 16;

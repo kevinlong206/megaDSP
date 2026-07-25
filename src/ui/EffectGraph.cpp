@@ -26,7 +26,7 @@ public:
         const auto control = graph.focusedControlLabel();
         return control.isEmpty()
             ? graph.getTitle()
-            : graph.getTitle() + " — " + control;
+            : graph.getTitle() + " - " + control;
     }
 
     juce::String getDescription() const override
@@ -206,6 +206,18 @@ void EffectGraph::paint(juce::Graphics& graphics)
     drawGrid(graphics, area);
     if (moduleView != nullptr)
         moduleView->paint(graphics, area);
+    if (processor.isSlotBypassed(slot))
+    {
+        auto label = area.withSizeKeepingCentre(
+            juce::jmin(260.0f, area.getWidth()), 34.0f);
+        graphics.setColour(juce::Colour(0xe6202731));
+        graphics.fillRoundedRectangle(label, 7.0f);
+        graphics.setColour(juce::Colours::white);
+        graphics.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+        graphics.drawText(
+            "BYPASSED - DSP SUSPENDED", label.toNearestInt(),
+            juce::Justification::centred);
+    }
     const auto keyboardReadout =
         hasKeyboardFocus(false) ? focusedControlReadout()
                                 : juce::String {};
@@ -418,6 +430,27 @@ void EffectGraph::focusKeyboardControl(int control)
 void EffectGraph::timerCallback()
 {
     auto& data = processor.getVisualizationData().slotData(slot);
+    if (processor.isSlotBypassed(slot))
+    {
+        if (!bypassVisualsSuspended)
+        {
+            data.clear();
+            inputSamples.fill(0.0f);
+            outputSamples.fill(0.0f);
+            stereoLeftSamples.fill(0.0f);
+            stereoRightSamples.fill(0.0f);
+            gainHistory.fill(0.0f);
+            inputLevels.fill(0.0f);
+            outputLevels.fill(0.0f);
+            gainReductionLevels.fill(0.0f);
+            inputSpectrum.fill(0.0f);
+            outputSpectrum.fill(0.0f);
+            bypassVisualsSuspended = true;
+            repaint();
+        }
+        return;
+    }
+    bypassVisualsSuspended = false;
     data.input.copyLatest(inputSamples);
     data.output.copyLatest(outputSamples);
     data.outputLeft.copyLatest(stereoLeftSamples);

@@ -1,6 +1,6 @@
 # Effects reference
 
-Detailed control and interaction notes for each of megaDSP's thirty-nine modules. For installation and a quick overview see the [README](../README.md).
+Detailed control and interaction notes for each of megaDSP's forty modules. For installation and a quick overview see the [README](../README.md).
 
 Runtime-specific graphs show **DSP telemetry waiting** until the selected slot
 has processed an audio block. After capture begins, an empty event field means
@@ -32,6 +32,27 @@ The **Threshold** control is a live input-level meter: signal fills the track be
 ## Saturator
 
 Displays a transfer curve with overlaid input and output waveforms. **Drive** is automatically level-compensated by comparing latency-aligned dry and nonlinear signal energy: harder drive adds density and harmonics without a large loudness jump. Compensation only attenuates excess wet gain; **Output** remains an independent final trim.
+
+---
+
+## Guitar Cabinet
+
+A fully procedural guitar speaker, enclosure, microphone, and compact room
+model intended to follow an amp or preamp. It does not load or approximate a
+cabinet impulse response: the response changes dynamically with cone excursion,
+power compression, breakup, cabinet modes, microphone placement, and input
+level.
+
+Choose one of four generic **Speaker** families, four **Cabinet** constructions,
+and **Dynamic**, **Ribbon**, or **Condenser** microphone voicings. Drag the
+microphone across the cabinet graphic to move from **Center** toward **Edge**;
+drag it vertically to set **Mic Distance** from 1 to 100 cm. The lower tracks
+control **Speaker Drive**, **Cone Breakup**, **Cabinet Resonance**, **Damping**,
+**Room**, mono-compatible **Room Width**, and final **Output**.
+
+The animated cone, compression color, breakup ring, and room field come from
+capture-gated DSP telemetry. Model changes crossfade without clearing the
+active speaker state, and all choices share one fixed reported latency.
 
 ---
 
@@ -113,9 +134,9 @@ Negative Range performs conventional downward de-essing; positive Range provides
 
 Continuously records six seconds of recent mono or stereo input and launches up to 16 click-free windowed grains without stealing active voices. Uses a resettable xorshift PRNG; never allocates or locks on the audio thread.
 
-**Size Minimum** and **Size Maximum** each span 50 ms–2 seconds (logarithmic); either handle can cross the other safely. Defaults are 80 ms min, 280 ms max. **Grain Rate** spans 0.5–30 launches per second. **Capture Range** reaches only through initialised history. **Reverse Chance** is the only control that changes playback direction. **Stereo Spread** uses constant-power placement with a mono-safe fold. Rhythmic **Delay** chooses tempo-quantised subdivisions from host BPM (fallback 120 BPM) without occupying grain voices while waiting. **Brightness** applies a stable per-grain low-pass cutoff. **Regeneration** returns wet energy to capture history with a guard against runaway. **Mix** is constant-power with exact dry output at 0%.
+**Size Minimum** and **Size Maximum** each span 50 ms–2 seconds (logarithmic); either handle can cross the other safely. Defaults are 80 ms min, 280 ms max. **Grain Rate** spans 0.5–30 launches per second. **Capture Range** reaches only through initialised history. **Reverse Chance** is the only control that changes playback direction. **Stereo Spread** uses constant-power placement with a mono-safe fold. Rhythmic **Delay** chooses tempo-quantised subdivisions from host BPM (fallback 120 BPM) without occupying grain voices while waiting. **Brightness** applies a stable per-grain low-pass cutoff. **Regeneration** returns wet energy to capture history with a guard against runaway. Independent smoothed **Dry** and **Wet** levels allow parallel-style blending, including dry-only, wet-only, or silence.
 
-The graph combines Size Minimum and Maximum into one highlighted **MIN/MAX** window. Capture Range, Stereo Spread, and Rhythmic Delay Chance are edited directly on the live timeline; Voices, Grain Rate, Reverse Chance, Brightness, Regeneration, Mix, and Output use compact tracks.
+The graph combines Size Minimum and Maximum into one highlighted **MIN/MAX** window. Capture Range, Stereo Spread, and Rhythmic Delay Chance are edited directly on the live timeline; Voices, Grain Rate, Reverse Chance, Brightness, Regeneration, Dry, and Wet use compact tracks.
 
 ---
 
@@ -136,9 +157,22 @@ The animated graph shows every voice trajectory and phase relationship, direct R
 
 ## Beat Permuter
 
-Captures recent tempo-locked slices and rearranges them into repeat, reverse,
-scatter, and stutter patterns. The visual sequence editor keeps the rhythmic
-result legible while probability and variation controls preserve musical timing.
+Captures recent tempo-locked slices and rearranges them without stopping the
+transport. Choose a **Slice** value, a **Pattern**, and the **Chance** that a
+permutation starts at each slice boundary. **History** controls how many recent
+slices are available; **Length** controls how many output steps the event lasts.
+
+- **Repeat** loops one captured slice.
+- **Reverse** walks backward through the captured slices and plays them backward.
+- **Rotate** cycles through the captured slices.
+- **Shuffle** chooses a new captured slice for each step.
+
+The sequence display shows each actual DSP-selected output step and its source
+slice, with `1` meaning the newest slice in the captured history. When Stereo
+selects different left and right sources, both numbers are shown. Slice Length,
+Pitch, Variation, Stereo, Feedback, Mix, and Output provide secondary shaping.
+Each event uses one fixed captured window, so its source does not drift forward
+while the event is playing.
 
 ---
 
@@ -244,15 +278,89 @@ spread. The dry path is aligned to the fixed overlapping-window shifter latency.
 
 ---
 
-## Frequency Lab
+## Harmonic Resonator
 
-Translates the spectrum by a signed hertz amount rather than resampling it by a
-musical ratio. Coarse Shift, Fine, LFO motion, and channel Stereo Offset are
-shown as source-to-destination lines over the spectrogram. A linear-phase
-Hilbert path provides fixed latency; filtered signed Feedback remains bounded.
-The spectrogram remains truthful through the rack's generic measured input and
-output histories, while the marker and channel lines use the current
-DSP-smoothed translated hertz and LFO state.
+Turns incoming audio into a tuned bank of eight modal resonators. Root and
+Harmony select Major, Minor, suspended, seventh, fifth, or octave-drone
+voicings; Register moves the complete field from low fundamentals to airy
+overtones. Decay controls the ring time, Tone balances low and high chord
+voices, and gentle cent-domain Motion keeps sustained fields alive.
+
+Root, Harmony, and Register changes glide between prepared resonator
+frequencies rather than discontinuously replacing active state. Stereo Spread
+pans alternating voices while preserving mono fold-down, Low Cut and High Cut
+shape only the excitation, and the resonator field is bounded before Mix and
+Output. The graph displays the actual DSP-smoothed voice frequencies and
+measured wet activity.
+
+---
+
+## Chord Loom
+
+Automatically captures a newly strummed guitar note or chord and sustains its
+timbre until another strum arrives. Three fixed capture layers allow a new
+chord to be gathered while the previous layer is still sounding; once enough
+source material is available, **Transition** smoothly fades the old chord away
+and brings in the new one.
+
+The held sound is rebuilt from six overlapping, deterministic grains per layer.
+Their positions, lengths, and subtle detuning vary so the result behaves like a
+pad rather than an audible repeating loop. **Texture** moves from long smooth
+grains toward more animated weaving, **Motion** adds bounded pitch drift,
+**Octave Bloom** introduces an optional upper layer, and **Stereo Spread**
+distributes grains without compromising mono fold-down. **Sensitivity** lowers
+the displayed input threshold and the required attack contrast together. Live
+Level and Attack meters show the signal against both detector thresholds, and
+flash when a new capture is triggered. **Capture** sets the gathered source
+duration, Low Cut and High Cut affect only the sustained layer, and **Dry** and
+**Sustain** are independent levels.
+
+All capture buffers, layers, grains, and telemetry storage are allocated during
+prepare. The audio thread never allocates, steals a sounding grain, or reads
+outside the written capture region.
+
+---
+
+## Volume Swell
+
+Automatically recreates the texture of rolling up a guitar volume knob or
+pedal after each chord. A fixed 30 ms lookahead detects the new attack before
+it reaches the output, fades the previous chord smoothly toward **Floor**, and
+then raises the new chord over **Swell Time**. Retriggering during an unfinished
+swell starts from the current gain without a discontinuity.
+
+**Curve** moves continuously from a fast initial rise through linear to a slow,
+bowed-in start. **Sensitivity** adjusts both the input-level and attack-contrast
+thresholds shown by the live meters. **Mix** blends the latency-aligned dry and
+swollen signals, while **Output** supplies final trim. The lookahead is fixed and
+reported in every setting; processing after prepare is allocation-free.
+
+---
+
+## Spectral Nebula
+
+Continuously absorbs guitar, vocal, or other live spectra into an evolving
+cloud rather than repeating a captured loop. **Smear** controls how gradually
+the cloud absorbs and replaces notes, while **Decay** controls how long the last
+sound blooms after the input stops. New notes smoothly retire unsupported old
+partials instead of accumulating into a dissonant cluster. **Drift** applies
+slow bounded cent-domain motion, and **Shimmer** derives a restrained,
+phase-coherent octave only from stable tonal peaks.
+
+**Focus** moves from airy noisy detail through a balanced harmonic cloud to
+prominent tonal partials. Peak-locked spectral lobes preserve the relationships
+within each note instead of turning adjacent FFT bins into detuned oscillators.
+**Freeze** stops cloud-state updates without stopping phase motion,
+so frozen material remains alive rather than becoming a static FFT frame.
+**Width** scales only the side domain and therefore preserves mono fold-down.
+Low Cut and High Cut shape only the synthesized cloud; **Dry** and **Cloud** are
+independent latency-aligned levels.
+
+Spectral Nebula uses the shared prepared fixed-latency STFT foundation. Its
+per-bin magnitude, pitch-tracked phase advance, and scratch storage is allocated
+during prepare. Phase-coherent resynthesis preserves notes between FFT bins
+without imposing a repeating frame-rate pulse. Audio processing is lock-free,
+allocation-free, bounded, and deterministic after reset.
 
 ---
 
@@ -289,9 +397,14 @@ Deck, and Studer-Style Deck. Input and Drive set tape level and density; Bias,
 Tape Speed, Head Bump, Wow, Flutter, Wear, and energy-gated Noise shape the
 machine before the latency-aligned Mix and Output stages.
 
-The nonlinear print path runs at 4x oversampling. A cubic transport delay,
-machine/speed voicing, hysteresis-inspired memory, deterministic hiss, and
-bounded wear modulation provide movement and age without runtime allocation.
+The default Ampex-Style 15 ips setup emphasizes level-compensated saturation,
+subtle compression, transient softening, gentle high-frequency rounding, and a
+restrained head resonance. Wow, Flutter, Wear, and Noise default to zero so
+transport defects and hiss are added deliberately rather than baked into the
+core tape tone. The nonlinear print path runs at 4x oversampling. A cubic
+transport delay, machine/speed voicing, hysteresis-inspired memory,
+deterministic hiss, and bounded wear modulation provide optional movement and
+age without runtime allocation.
 The reel graphic follows captured DSP transport phase and reports actual
 wow/flutter offset, dropout gain, and signal envelope rather than advancing on
 the editor timer.

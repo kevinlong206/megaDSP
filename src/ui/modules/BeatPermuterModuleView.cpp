@@ -19,10 +19,10 @@ public:
     {
         component.setTitle("Beat Permuter sequence");
         component.setHelpText(
-            "Choose Grid and Pattern with named pills. The eight-cell display "
-            "shows the capture window and emitted order. Drag Window or Repeats "
-            "in the display, use the lower tracks for remaining controls, and "
-            "double-click any control to restore its default.");
+            "Choose a Slice value and Pattern, then set Chance, History, and "
+            "Length. The display shows the actual source slice chosen for each "
+            "output step. Source 1 is the newest captured slice. Double-click "
+            "any control to restore its default.");
     }
     void paint(juce::Graphics&, juce::Rectangle<float>) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -80,6 +80,17 @@ private:
             tracks.getY() + height * static_cast<float>(position / 4),
             width, height).reduced(6.0f, 5.0f);
     }
+    static juce::Rectangle<float> sequenceControlBounds(
+        juce::Rectangle<float> area, int control)
+    {
+        auto row = sequenceBounds(area).removeFromTop(30.0f).reduced(7.0f, 3.0f);
+        const auto width = row.getWidth() * 0.5f;
+        if (control == 3)
+            return row.removeFromLeft(width).reduced(3.0f, 0.0f);
+        if (control == 4)
+            return row.removeFromRight(width).reduced(3.0f, 0.0f);
+        return {};
+    }
     void choose(int control, int index, int count);
     BeatPermutationVisualEvents visualEvents {};
 };
@@ -112,9 +123,9 @@ void BeatPermuterModuleView::mouseDown(const juce::MouseEvent& event)
             return;
         }
 
-    if (sequenceBounds(area).contains(event.position))
-        dragPrimary = event.position.y < sequenceBounds(area).getCentreY()
-                          ? 3 : 4;
+    for (const auto control : { 3, 4 })
+        if (sequenceControlBounds(area, control).contains(event.position))
+            dragPrimary = control;
     for (const auto control : { 1, 5, 6, 7, 8, 9, 10, 11 })
         if (dragPrimary < 0
             && trackBounds(area, control).contains(event.position))
@@ -131,7 +142,7 @@ void BeatPermuterModuleView::mouseDrag(const juce::MouseEvent& event)
         return;
     const auto area = getLocalBounds().toFloat().reduced(12.0f);
     const auto bounds = dragPrimary == 3 || dragPrimary == 4
-                            ? sequenceBounds(area)
+                            ? sequenceControlBounds(area, dragPrimary)
                             : trackBounds(area, dragPrimary);
     setValue(dragPrimary, juce::jlimit(
         0.0f, 1.0f, (event.position.x - bounds.getX()) / bounds.getWidth()));
@@ -155,13 +166,12 @@ void BeatPermuterModuleView::mouseDoubleClick(
             setValue(2, defaults[2]);
             return;
         }
-    if (sequenceBounds(area).contains(event.position))
-    {
-        const auto control =
-            event.position.y < sequenceBounds(area).getCentreY() ? 3 : 4;
-        setValue(control, defaults[static_cast<size_t>(control)]);
-        return;
-    }
+    for (const auto control : { 3, 4 })
+        if (sequenceControlBounds(area, control).contains(event.position))
+        {
+            setValue(control, defaults[static_cast<size_t>(control)]);
+            return;
+        }
     for (const auto control : { 1, 5, 6, 7, 8, 9, 10, 11 })
         if (trackBounds(area, control).contains(event.position))
         {
@@ -177,7 +187,13 @@ void BeatPermuterModuleView::paint(
         "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32"
     };
     static constexpr std::array<const char*, 4> patterns {
-        "REPEAT", "REVERSE", "ROTATE", "SCATTER"
+        "REPEAT", "REVERSE", "ROTATE", "SHUFFLE"
+    };
+    static constexpr std::array<const char*, 4> patternHelp {
+        "Loop one captured slice",
+        "Walk backward and play in reverse",
+        "Cycle through captured slices",
+        "Choose a source for every step"
     };
     const auto selectedGrid = discreteIndex(value(0), 6);
     const auto selectedPattern = discreteIndex(value(2), 4);
@@ -212,29 +228,61 @@ void BeatPermuterModuleView::paint(
     const auto sequence = sequenceBounds(area);
     graphics.setColour(juce::Colour(0xe6121821));
     graphics.fillRoundedRectangle(sequence, 8.0f);
-    const auto cells = juce::jlimit(
-        1, 8, juce::roundToInt(1.0f + value(3) * 7.0f));
-    const auto repeats = juce::jlimit(
+    const auto eventSteps = juce::jlimit(
         1, 8, juce::roundToInt(1.0f + value(4) * 7.0f));
-    const auto cellWidth = (sequence.getWidth() - 16.0f) / 8.0f;
     const BeatPermutationVisualEvent* currentEvent = nullptr;
     for (const auto& event : visualEvents)
         if (event.sequence != 0 && event.progress < 1.0f
             && (currentEvent == nullptr
                 || event.sequence > currentEvent->sequence))
             currentEvent = &event;
+
+    for (const auto control : { 3, 4 })
+    {
+        const auto bounds = sequenceControlBounds(area, control);
+        graphics.setColour(juce::Colour(0xff222c38));
+        graphics.fillRoundedRectangle(bounds, 5.0f);
+        graphics.setColour(
+            (control == 3 ? outputColour : accent).withAlpha(0.62f));
+        graphics.fillRoundedRectangle(
+            bounds.withWidth(bounds.getWidth() * value(control)), 5.0f);
+        graphics.setColour(juce::Colours::white);
+        graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        graphics.drawText(
+            juce::String(controlMetadata(type, control).label) + "  "
+                + formatControlValue(type, control, value(control)),
+            bounds.reduced(6.0f, 0.0f).toNearestInt(),
+            juce::Justification::centred);
+    }
+
+    auto explanation = sequence.reduced(10.0f, 0.0f);
+    explanation.removeFromTop(34.0f);
+    auto explanationRow = explanation.removeFromTop(20.0f);
+    graphics.setColour(juce::Colour(0xffa8b3c0));
+    graphics.setFont(juce::FontOptions(10.0f));
+    graphics.drawText(
+        patternHelp[static_cast<size_t>(selectedPattern)],
+        explanationRow.toNearestInt(), juce::Justification::centredLeft);
+    graphics.drawText(
+        "SOURCE 1 = NEWEST",
+        explanationRow.toNearestInt(), juce::Justification::centredRight);
+
+    auto cellsArea = explanation.reduced(0.0f, 5.0f);
+    const auto cellWidth = cellsArea.getWidth() / 8.0f;
+    const auto displayedSteps = currentEvent != nullptr
+        ? juce::jlimit(1, 8, currentEvent->stepCount)
+        : eventSteps;
     const auto playhead = currentEvent != nullptr
-        ? juce::jlimit(0, 7, static_cast<int>(
-              currentEvent->progress * static_cast<float>(repeats)))
+        ? juce::jlimit(0, displayedSteps - 1, currentEvent->currentStep)
         : -1;
     for (int cell = 0; cell < 8; ++cell)
     {
-        const auto x = sequence.getX() + 8.0f
+        const auto x = cellsArea.getX()
                        + cellWidth * static_cast<float>(cell);
         auto bounds = juce::Rectangle<float>(
-            x + 2.0f, sequence.getY() + 28.0f, cellWidth - 4.0f,
-            sequence.getHeight() - 49.0f);
-        const auto active = cell < cells;
+            x + 2.0f, cellsArea.getY(), cellWidth - 4.0f,
+            cellsArea.getHeight());
+        const auto active = cell < displayedSteps;
         graphics.setColour(
             cell == playhead ? accent.withAlpha(0.75f)
                              : active ? outputColour.withAlpha(0.24f)
@@ -242,33 +290,37 @@ void BeatPermuterModuleView::paint(
         graphics.fillRoundedRectangle(bounds, 5.0f);
         graphics.setColour(juce::Colours::white.withAlpha(
             active ? 0.85f : 0.28f));
-        auto source = selectedPattern == 1 ? cells - 1 - cell % cells
-            : selectedPattern == 2 ? (cell + repeats) % cells
-            : selectedPattern == 3 ? (cell * 5 + repeats) % cells
-                                   : cell % cells;
-        if (currentEvent != nullptr && cell == playhead)
-            source = juce::jlimit(
-                0, cells - 1,
-                juce::roundToInt(
-                    currentEvent->sourcePosition
-                    * static_cast<float>(juce::jmax(0, cells - 1))));
         graphics.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-        graphics.drawText(juce::String(source + 1), bounds.toNearestInt(),
+        auto sourceText = juce::String("?");
+        auto reversed = false;
+        if (currentEvent != nullptr && active)
+        {
+            const auto left =
+                currentEvent->leftSourceSlices[static_cast<size_t>(cell)];
+            const auto right =
+                currentEvent->rightSourceSlices[static_cast<size_t>(cell)];
+            sourceText = left == right
+                ? juce::String(left)
+                : juce::String(left) + "|" + juce::String(right);
+            reversed =
+                currentEvent->leftReverse[static_cast<size_t>(cell)]
+                || currentEvent->rightReverse[static_cast<size_t>(cell)];
+        }
+        graphics.drawText(sourceText, bounds.toNearestInt(),
                           juce::Justification::centred);
+        graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
+        graphics.drawText(
+            active ? "STEP " + juce::String(cell + 1) : juce::String(),
+            bounds.removeFromTop(15.0f).toNearestInt(),
+            juce::Justification::centred);
+        if (reversed)
+            graphics.drawText("REV", bounds.removeFromBottom(14.0f).toNearestInt(),
+                             juce::Justification::centred);
         const auto gateHeight = bounds.getHeight() * (0.2f + value(5) * 0.8f);
         graphics.setColour(accent.withAlpha(0.55f));
         graphics.fillRect(bounds.withY(bounds.getBottom() - gateHeight)
-                                  .withHeight(2.0f));
+                                 .withHeight(2.0f));
     }
-    graphics.setColour(juce::Colour(0xffa8b3c0));
-    graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
-    auto sequenceHeader = sequence;
-    graphics.drawText(
-        "CAPTURE WINDOW  " + juce::String(cells)
-            + "     EVENT REPEATS  " + juce::String(repeats),
-        sequenceHeader.removeFromTop(24.0f)
-            .reduced(8.0f, 0.0f).toNearestInt(),
-        juce::Justification::centredLeft);
 
     for (const auto control : { 1, 5, 6, 7, 8, 9, 10, 11 })
     {

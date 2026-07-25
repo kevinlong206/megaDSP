@@ -21,7 +21,7 @@ public:
         ControlValues controls;
         controls.fill(0.5f);
         ProcessEnvironment environment;
-        std::array<std::unique_ptr<DspModule>, 39> modules {
+        std::array<std::unique_ptr<DspModule>, 40> modules {
             std::make_unique<EqualizerModule>(),
             std::make_unique<CompressorModule>(),
             std::make_unique<SaturatorModule>(),
@@ -60,7 +60,8 @@ public:
             std::make_unique<FormantForgeModule>(),
             std::make_unique<HarmonicMirageModule>(),
             std::make_unique<ChaosFieldModule>(),
-            std::make_unique<TimeMosaicModule>()
+            std::make_unique<TimeMosaicModule>(),
+            std::make_unique<GuitarCabinetModule>()
         };
 
         for (auto& module : modules)
@@ -204,6 +205,90 @@ public:
             expect(minimumLateBlockRms > 0.001f);
         }
         {
+            beginTest("Beat Permuter locks an event to one captured window");
+            auto beatLockControls =
+                moduleDefaults(ModuleType::beatPermuter);
+            beatLockControls[0] = discreteValue(5, 6);
+            beatLockControls[1] = 1.0f;
+            beatLockControls[2] = discreteValue(0, 4);
+            beatLockControls[3] = 0.0f;
+            beatLockControls[4] = 3.0f / 7.0f;
+            beatLockControls[5] = 1.0f;
+            beatLockControls[6] = 0.5f;
+            beatLockControls[7] = 0.0f;
+            beatLockControls[8] = 0.0f;
+            beatLockControls[9] = 0.0f;
+            beatLockControls[10] = 1.0f;
+            beatLockControls[11] = 0.6f;
+
+            constexpr int sliceSamples = 3000;
+            juce::AudioBuffer<float> rendered(2, sliceSamples * 6);
+            for (int slice = 0; slice < 6; ++slice)
+                for (int channel = 0; channel < rendered.getNumChannels();
+                     ++channel)
+                    for (int sample = 0; sample < sliceSamples; ++sample)
+                        rendered.setSample(
+                            channel, slice * sliceSamples + sample,
+                            0.1f * static_cast<float>(slice + 1));
+
+            BeatPermuterModule module;
+            module.prepare(spec);
+            module.process(rendered, beatLockControls, environment);
+
+            for (int step = 0; step < 4; ++step)
+                expectWithinAbsoluteError(
+                    rendered.getSample(
+                        0, (2 + step) * sliceSamples + sliceSamples / 2),
+                    0.2f, 0.001f,
+                    "Repeat changed source while the event was active");
+
+            const auto events = module.visualEvents();
+            const auto event = std::find_if(
+                events.begin(), events.end(),
+                [](const auto& candidate)
+                {
+                    return candidate.sequence != 0
+                           && candidate.stepCount == 4;
+                });
+            expect(event != events.end());
+            if (event != events.end())
+                for (int step = 0; step < event->stepCount; ++step)
+                    expectEquals(
+                        event->leftSourceSlices[static_cast<size_t>(step)], 1);
+        }
+        {
+            beginTest("Beat Permuter crossfades internal read-head wraps");
+            auto pitchedControls =
+                moduleDefaults(ModuleType::beatPermuter);
+            pitchedControls[0] = discreteValue(5, 6);
+            pitchedControls[1] = 1.0f;
+            pitchedControls[2] = discreteValue(0, 4);
+            pitchedControls[3] = 0.0f;
+            pitchedControls[4] = 1.0f;
+            pitchedControls[5] = 1.0f;
+            pitchedControls[6] = 1.0f;
+            pitchedControls[7] = 0.0f;
+            pitchedControls[8] = 0.0f;
+            pitchedControls[9] = 0.0f;
+            pitchedControls[10] = 1.0f;
+            pitchedControls[11] = 0.6f;
+
+            BeatPermuterModule module;
+            module.prepare(spec);
+            auto rendered = makeSine(2, 24000, 317.0f, 0.35f);
+            module.process(rendered, pitchedControls, environment);
+
+            auto maximumDelta = 0.0f;
+            for (int sample = 6001; sample < rendered.getNumSamples(); ++sample)
+                maximumDelta = juce::jmax(
+                    maximumDelta,
+                    std::abs(rendered.getSample(0, sample)
+                             - rendered.getSample(0, sample - 1)));
+            expect(maximumDelta < 0.08f,
+                   "Pitched slice wrap delta "
+                       + juce::String(maximumDelta, 6));
+        }
+        {
             auto prismControls = moduleDefaults(ModuleType::spectralPrism);
             prismControls[0] = 0.85f;
             prismControls[2] = 0.70f;
@@ -317,22 +402,30 @@ public:
                     expect(std::isfinite(automated.getSample(channel, sample)));
         }
 
-        beginTest("Random Granulizer dry mix is exact apart from Output");
+        beginTest("Random Granulizer Dry and Wet levels are independent");
         auto grainControls = moduleDefaults(ModuleType::randomGranulizer);
-        grainControls[10] = 0.0f;
-        grainControls[11] = 0.6f;
+        grainControls[10] = 1.0f;
+        grainControls[11] = 0.0f;
         auto grainDry = makeSine(2, 48000, 731.0f, 0.37f);
         const auto grainDryReference = grainDry;
         RandomGranulizerModule granulizer;
         granulizer.prepare(spec);
         granulizer.process(grainDry, grainControls, environment);
         expect(differenceRms(grainDry, grainDryReference, 0) < 0.000001f);
+        granulizer.reset();
+        grainControls[10] = 0.0f;
+        grainControls[11] = 0.0f;
+        auto grainSilence = grainDryReference;
+        granulizer.process(grainSilence, grainControls, environment);
+        expect(grainSilence.getMagnitude(
+                   0, grainSilence.getNumSamples()) < 0.000001f);
 
         beginTest("Random Granulizer emits audible bounded grains");
         granulizer.reset();
         grainControls = moduleDefaults(ModuleType::randomGranulizer);
         grainControls[7] = 0.0f;
-        grainControls[10] = 1.0f;
+        grainControls[10] = 0.0f;
+        grainControls[11] = 1.0f;
         auto audibleGrains = makeSine(2, 96000, 523.25f, 0.35f);
         granulizer.process(audibleGrains, grainControls, environment);
         expect(sineRms(audibleGrains, 0, 24000) > 0.002f);
@@ -347,7 +440,8 @@ public:
             effect.prepare(spec);
             durationControls[2] = 1.0f;
             durationControls[7] = 0.0f;
-            durationControls[10] = 1.0f;
+            durationControls[10] = 0.0f;
+            durationControls[11] = 1.0f;
             auto rendered = makeSine(2, 288000, 487.0f, 0.25f);
             effect.process(rendered, durationControls, environment);
             std::vector<float> durations;
@@ -423,7 +517,8 @@ public:
             effect.prepare(spec);
             renderControls[2] = 1.0f;
             renderControls[7] = 0.0f;
-            renderControls[10] = 1.0f;
+            renderControls[10] = 0.0f;
+            renderControls[11] = 1.0f;
             auto rendered = makeSine(2, 72000, 997.0f, 0.3f);
             for (int sample = 0; sample < rendered.getNumSamples(); ++sample)
                 rendered.setSample(
@@ -492,7 +587,7 @@ public:
             grainControls.fill((offset / 128) % 2 == 0 ? 0.0f : 1.0f);
             grainControls[9] = 1.0f;
             grainControls[10] = 1.0f;
-            grainControls[11] = 0.6f;
+            grainControls[11] = 1.0f;
             granulizer.process(block, grainControls, { nullptr, 37.0 });
         }
         expect(grainAutomated.getMagnitude(
@@ -2316,9 +2411,48 @@ public:
                           <= 1.0f);
         }
 
+        beginTest("Analog Tape defaults are clean, compensated, and saturating");
+        {
+            const auto controls = moduleDefaults(ModuleType::analogTape);
+            expectEquals(controls[6], 0.0f);
+            expectEquals(controls[7], 0.0f);
+            expectEquals(controls[8], 0.0f);
+            expectEquals(controls[9], 0.0f);
+
+            AnalogTapeModule lowLevelModule;
+            lowLevelModule.prepare({ rate, 48000, 2 });
+            auto lowLevel = makeSine(2, 48000, 997.0f, 0.05f, rate);
+            const auto lowInputRms = rms(lowLevel, 24000, 48000);
+            lowLevelModule.process(lowLevel, controls, captureTelemetry);
+            const auto lowGain = rms(lowLevel, 24000, 48000) / lowInputRms;
+            expect(lowGain > 0.85f && lowGain < 1.10f,
+                   "Default low-level gain: " + juce::String(lowGain, 4));
+
+            ContinuousTelemetrySnapshot state;
+            expect(lowLevelModule.readContinuousTelemetry(state));
+            expectWithinAbsoluteError(
+                state.values[AnalogTapeModule::modulationMilliseconds],
+                0.0f, 0.000001f);
+            expectWithinAbsoluteError(
+                state.values[AnalogTapeModule::currentDropoutGain],
+                1.0f, 0.000001f);
+
+            AnalogTapeModule highLevelModule;
+            highLevelModule.prepare({ rate, 48000, 2 });
+            auto highLevel = makeSine(2, 48000, 997.0f, 0.8f, rate);
+            const auto highInputRms = rms(highLevel, 24000, 48000);
+            highLevelModule.process(highLevel, controls, {});
+            const auto highGain =
+                rms(highLevel, 24000, 48000) / highInputRms;
+            expect(highGain < lowGain * 0.92f,
+                   "High-level tape gain should soften transients: "
+                       + juce::String(highGain, 4));
+        }
+
         beginTest("Analog Tape aligns dry audio and distinguishes machines");
         {
             auto dryControls = moduleDefaults(ModuleType::analogTape);
+            dryControls[1] = 1.0f;
             dryControls[10] = 0.0f;
             AnalogTapeModule dryModule;
             dryModule.prepare({ rate, 4096, 2 });
@@ -2432,28 +2566,33 @@ public:
         expect(pitchFeedback.getMagnitude(
                    0, pitchFeedback.getNumSamples()) < 3.0f);
 
-        beginTest("Frequency Lab translates a sinusoid by the requested hertz");
-        ControlValues frequencyControls {};
-        frequencyControls[0] = 0.55f;
-        frequencyControls[1] = 0.5f;
-        frequencyControls[2] = 0.5f;
-        frequencyControls[3] = 0.0f;
-        frequencyControls[4] = 0.0f;
-        frequencyControls[5] = 0.5f;
-        frequencyControls[6] = 0.0f;
-        frequencyControls[7] = 1.0f;
-        frequencyControls[8] = 1.0f;
-        frequencyControls[9] = 0.6f;
+        beginTest("Harmonic Resonator reports tuned chord voices and rings");
+        auto resonatorControls = moduleDefaults(ModuleType::frequencyLab);
+        resonatorControls[0] = discreteValue(9, 12);
+        resonatorControls[1] = discreteValue(7, 8);
+        resonatorControls[2] = discreteValue(1, 4);
+        resonatorControls[6] = 0.0f;
+        resonatorControls[10] = 1.0f;
         FrequencyLabModule frequencyLab;
         frequencyLab.prepare(stereoSpec);
-        auto translated = makeSine(2, 48000, 1000.0f, 0.2f, rate);
-        frequencyLab.process(translated, frequencyControls, {});
-        const auto translatedFrequency =
-            estimateFrequency(translated, 0, 10000, 47000, rate);
-        expect(translatedFrequency > 1440.0f
-                   && translatedFrequency < 1560.0f,
-               "Measured translated frequency: "
-                   + juce::String(translatedFrequency, 2));
+        juce::AudioBuffer<float> resonated(2, 48000);
+        resonated.clear();
+        resonated.setSample(0, 0, 0.5f);
+        resonated.setSample(1, 0, 0.5f);
+        frequencyLab.process(resonated, resonatorControls, captureTelemetry);
+        ContinuousTelemetrySnapshot resonatorState;
+        expect(frequencyLab.readContinuousTelemetry(resonatorState));
+        expectEquals(
+            static_cast<int>(resonatorState.valueCount),
+            static_cast<int>(FrequencyLabModule::telemetryValueCount));
+        expectWithinAbsoluteError(
+            resonatorState.values[FrequencyLabModule::frequency0],
+            220.0f, 0.05f);
+        expectWithinAbsoluteError(
+            resonatorState.values[FrequencyLabModule::frequency1],
+            440.0f, 0.10f);
+        expect(rms(resonated, 1000, 12000) > 0.00001f);
+        expectFinite(resonated, "Harmonic Resonator");
 
         beginTest("Spatial Orbit mono and wander are safe and deterministic");
         auto orbitControls = stressControls(spatialOrbit);
@@ -2546,7 +2685,7 @@ private:
         constexpr std::array<const char*, moduleCount> names {
             "Gate Expander", "Transient Designer", "Multiband Compressor",
             "Studio Phaser", "Studio Flanger", "Diffusion Delay",
-            "Pitch Bloom", "Frequency Lab", "Spatial Orbit", "Signal Decay"
+            "Pitch Bloom", "Harmonic Resonator", "Spatial Orbit", "Signal Decay"
         };
         return names[static_cast<size_t>(index)];
     }
@@ -2594,7 +2733,7 @@ private:
         else if (index == pitchBloom)
             controls[10] = 0.6f;
         else if (index == frequencyLab)
-            controls[9] = 0.6f;
+            controls[11] = 0.6f;
         else if (index == spatialOrbit)
             controls[11] = 0.6f;
         else if (index == signalDecay)
@@ -2619,7 +2758,7 @@ private:
         else if (index == pitchBloom)
             controls[10] = 0.6f;
         else if (index == frequencyLab)
-            controls[9] = 0.6f;
+            controls[11] = 0.6f;
         else if (index == spatialOrbit)
             controls[11] = 0.6f;
         else if (index == signalDecay)

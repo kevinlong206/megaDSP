@@ -101,9 +101,8 @@ private:
     std::array<PendingGrain, 64> pending;
     std::array<AtomicVisualEvent, grainVisualEventCount> visual;
     std::array<float, 2> feedbackState {};
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmoothed;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>
-        outputSmoothed;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> drySmoothed;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> wetSmoothed;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>
         feedbackSmoothed;
     double sampleRate = 44100.0;

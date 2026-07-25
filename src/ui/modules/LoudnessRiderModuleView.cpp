@@ -253,7 +253,7 @@ void LoudnessRiderModuleView::paint(
                       1)
                   + " dB"
                   + (telemetry.values[LoudnessRiderModule::gatedState] >= 0.5f
-                         ? "  ·  GATED" : "")
+                         ? "  |  GATED" : "")
             : "DSP TELEMETRY WAITING",
         graph.toNearestInt(), juce::Justification::topRight);
 
