@@ -1255,9 +1255,9 @@ public:
         });
 
         beginTest("Host parameter contract remains fixed");
-        expectEquals(megadsp::moduleTypeCount, 44);
+        expectEquals(megadsp::moduleTypeCount, 45);
         expectEquals(megadsp::stateSchemaVersion, 9);
-        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 44);
+        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 45);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
         expectEquals(static_cast<int>(megadsp::ModuleType::compressor), 2);
@@ -1335,7 +1335,9 @@ public:
                          megadsp::ModuleType::volumeSwell), 42);
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::spectralNebula), 43);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 44);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::neuralAmpModeler), 44);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 45);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1368,7 +1370,7 @@ public:
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 44);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 45);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1421,6 +1423,8 @@ public:
                                      == megadsp::ModuleType::
                                             multibandCompressor
                           ? megadsp::ModuleCapability::continuousTelemetry
+                          : type == megadsp::ModuleType::neuralAmpModeler
+                          ? megadsp::ModuleCapability::neuralAmpModel
                           : megadsp::ModuleCapability::none;
             expect(definition->capabilities == expectedCapabilities);
             const auto& descriptor = megadsp::descriptorFor(type);

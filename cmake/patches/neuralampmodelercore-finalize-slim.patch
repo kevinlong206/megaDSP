@@ -1,0 +1,95 @@
+diff --git a/NAM/slimmable.h b/NAM/slimmable.h
+index 6d5b55e..6108fbd 100644
+--- a/NAM/slimmable.h
++++ b/NAM/slimmable.h
+@@ -22,6 +22,12 @@ public:
+   /// Not real-time safe
+   virtual void SetSlimmableSize(const double val) = 0;
+ 
++  /// \brief Commit any prepared size change before entering real-time processing
++  ///
++  /// Call only while processing is stopped. The default covers models that
++  /// activate their selected size synchronously in SetSlimmableSize().
++  virtual void FinalizeSlimmableSizeForRealtime() {}
++
+   /// \brief Get normalized size-control values that divide the selectable slimmed models
+   /// \return Sorted internal breakpoints in (0.0, 1.0); 0.0 and 1.0 are implied bounds
+   // TODO: Make this abstract in the next breaking release.
+diff --git a/NAM/wavenet/slimmable.h b/NAM/wavenet/slimmable.h
+index 3ce0453..5f80eb2 100644
+--- a/NAM/wavenet/slimmable.h
++++ b/NAM/wavenet/slimmable.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include <atomic>
+ #include <memory>
+ #include <vector>
+ 
+@@ -60,6 +61,7 @@ public:
+   void Reset(const double sampleRate, const int maxBufferSize) override;
+   void SetPrewarmOnReset(const bool prewarmOnReset) override;
+   void SetSlimmableSize(const double val) override;
++  void FinalizeSlimmableSizeForRealtime() override;
+   std::vector<double> GetSlimmableSizeBreakpoints() const override;
+ 
+ protected:
+@@ -90,6 +92,7 @@ private:
+ #endif
+ 
+   std::vector<int> _current_channels;
++  std::atomic<bool> _check_pending{true};
+   int _current_buffer_size = 0;
+   double _current_sample_rate = 0.0;
+ 
+@@ -98,6 +101,7 @@ private:
+   void _rebuild_model(const std::vector<int>& target_channels);
+   void _stage_rebuild_model(const std::vector<int>& target_channels);
+ 
++  void _activate_pending_model();
+   void _pending_clear_release();
+   std::shared_ptr<StagedSlimModel> _pending_load_acquire() const;
+   void _pending_store_release(std::shared_ptr<StagedSlimModel> p);
+diff --git a/NAM/wavenet/slimmable.cpp b/NAM/wavenet/slimmable.cpp
+index d492324..97535a0 100644
+--- a/NAM/wavenet/slimmable.cpp
++++ b/NAM/wavenet/slimmable.cpp
+@@ -486,13 +486,20 @@ void SlimmableWavenet::_stage_rebuild_model(const std::vector<int>& target_chann
+   _pending_store_release(std::move(pack));
+ }
+ 
+-void SlimmableWavenet::process(NAM_SAMPLE** input, NAM_SAMPLE** output, const int num_frames)
++void SlimmableWavenet::_activate_pending_model()
+ {
+   if (auto pack = _pending_exchange_take_acq_rel())
+   {
+     _active_model = std::move(pack->model);
+     _current_channels = std::move(pack->channels);
+   }
++}
++
++void SlimmableWavenet::process(NAM_SAMPLE** input, NAM_SAMPLE** output, const int num_frames)
++{
++  if (_check_pending.load(std::memory_order_acquire))
++    _activate_pending_model();
++
+   if (_active_model)
+     _active_model->process(input, output, num_frames);
+ }
+@@ -526,9 +533,16 @@ void SlimmableWavenet::SetPrewarmOnReset(const bool prewarmOnReset)
+ 
+ void SlimmableWavenet::SetSlimmableSize(const double val)
+ {
++  _check_pending.store(true, std::memory_order_release);
+   _stage_rebuild_model(_get_channels_for_slimmable_size(val));
+ }
+ 
++void SlimmableWavenet::FinalizeSlimmableSizeForRealtime()
++{
++  _activate_pending_model();
++  _check_pending.store(false, std::memory_order_release);
++}
++
+ std::vector<double> SlimmableWavenet::GetSlimmableSizeBreakpoints() const
+ {
+   return get_ratio_breakpoints(_per_array_allowed_channels);

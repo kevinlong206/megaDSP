@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(megaDSP VERSION 0.27.0 LANGUAGES C CXX)
+project(megaDSP VERSION 0.28.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,6 +25,53 @@ FetchContent_Declare(
     GIT_TAG 16e9d4ca7b1e86c76e04584b2c08e85a764bcda8
     GIT_SUBMODULES_RECURSE TRUE)
 FetchContent_MakeAvailable(clap_juce_extensions)
+
+FetchContent_Declare(
+    NeuralAmpModelerCore
+    GIT_REPOSITORY https://github.com/sdatkinson/NeuralAmpModelerCore.git
+    GIT_TAG 3cde95c354d5ba6da01316cad90b05cfc4855053
+    GIT_SUBMODULES Dependencies/eigen Dependencies/AudioDSPTools
+    SOURCE_SUBDIR _megadsp_populate_only
+    PATCH_COMMAND
+        "${CMAKE_COMMAND}"
+        "-DNAM_SOURCE_DIR=<SOURCE_DIR>"
+        "-DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/neuralampmodelercore-finalize-slim.patch"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyNamPatch.cmake")
+FetchContent_MakeAvailable(NeuralAmpModelerCore)
+
+# Explicit stable source list (no glob) for NAM core
+set(NAM_CORE_SOURCES
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/activations.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/conv1d.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/container.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/convnet.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/dsp.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/get_dsp.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/linear.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/lstm.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/ring_buffer.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/util.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/wavenet/model.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/wavenet/a2_fast.cpp"
+    "${neuralampmodelercore_SOURCE_DIR}/NAM/wavenet/slimmable.cpp")
+
+# OBJECT library ensures static-init registration objects survive linking
+add_library(nam_core OBJECT ${NAM_CORE_SOURCES})
+target_include_directories(nam_core PUBLIC
+    "${neuralampmodelercore_SOURCE_DIR}"
+    "${neuralampmodelercore_SOURCE_DIR}/Dependencies/nlohmann")
+target_include_directories(nam_core SYSTEM PUBLIC
+    "${neuralampmodelercore_SOURCE_DIR}/Dependencies/eigen"
+    "${neuralampmodelercore_SOURCE_DIR}/Dependencies/AudioDSPTools/dsp")
+target_compile_definitions(nam_core PUBLIC
+    NAM_SAMPLE_FLOAT
+    DSP_SAMPLE_FLOAT
+    NAM_ENABLE_A2_FAST
+    DEFAULT_BLOCK_SIZE=512)
+set_target_properties(nam_core PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)
 
 set(MEGADSP_FORMATS VST3 Standalone)
 if(APPLE)
@@ -93,7 +140,8 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/VintageChorus.cpp
     src/modules/WavefoldGarden.cpp
     src/modules/HarmonicMirage.cpp
-    src/modules/ChaosField.cpp)
+    src/modules/ChaosField.cpp
+    src/modules/NeuralAmpModeler.cpp)
 
 set(MEGADSP_MODULE_HEADERS
     src/DspModules.h
@@ -145,7 +193,8 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/VintageChorus.h
     src/modules/WavefoldGarden.h
     src/modules/HarmonicMirage.h
-    src/modules/ChaosField.h)
+    src/modules/ChaosField.h
+    src/modules/NeuralAmpModeler.h)
 
 set(MEGADSP_UI_SOURCES
     src/ui/EffectGraph.cpp
@@ -202,7 +251,8 @@ set(MEGADSP_UI_SOURCES
     src/ui/modules/TimeMosaicModuleView.cpp
     src/ui/modules/VintageChorusModuleView.cpp
     src/ui/modules/WavefoldGardenModuleView.cpp
-    src/ui/modules/HarmonicMirageModuleView.cpp)
+    src/ui/modules/HarmonicMirageModuleView.cpp
+    src/ui/modules/NeuralAmpModelerModuleView.cpp)
 
 target_sources(megaDSP PRIVATE
     ${MEGADSP_MODULE_SOURCES}
@@ -237,6 +287,7 @@ target_link_libraries(megaDSP
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
+        nam_core
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -264,6 +315,7 @@ juce_add_console_app(megaDSPTests PRODUCT_NAME "megaDSP Tests")
 target_sources(megaDSPTests PRIVATE
     tests/TestMain.cpp
     tests/DspModuleTests.cpp
+    tests/NeuralAmpModelerTests.cpp
     tests/SpectralAdaptiveModulesTests.cpp
     tests/SpectralHistoryPairTests.cpp
     tests/DynamicsTelemetryTests.cpp
@@ -302,6 +354,7 @@ target_compile_definitions(megaDSPTests PRIVATE
 target_link_libraries(megaDSPTests PRIVATE
     juce::juce_audio_utils
     juce::juce_dsp
+    nam_core
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
 if(MSVC)

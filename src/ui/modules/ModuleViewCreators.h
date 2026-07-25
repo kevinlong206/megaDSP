@@ -50,4 +50,5 @@ std::unique_ptr<ModuleView> createGuitarCabinetView(EffectGraph&);
 std::unique_ptr<ModuleView> createChordLoomView(EffectGraph&);
 std::unique_ptr<ModuleView> createVolumeSwellView(EffectGraph&);
 std::unique_ptr<ModuleView> createSpectralNebulaView(EffectGraph&);
+std::unique_ptr<ModuleView> createNeuralAmpModelerView(EffectGraph&);
 } // namespace megadsp::ui

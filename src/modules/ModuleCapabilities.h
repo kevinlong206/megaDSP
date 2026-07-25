@@ -19,7 +19,8 @@ enum class ModuleCapability : std::uint32_t
     grainVisualization = 1u << 1,
     beatPermutationVisualization = 1u << 2,
     continuousTelemetry = 1u << 3,
-    eventTelemetry = 1u << 4
+    eventTelemetry = 1u << 4,
+    neuralAmpModel = 1u << 5
 };
 
 constexpr ModuleCapability operator|(
@@ -42,7 +43,8 @@ constexpr ModuleCapability allModuleCapabilities =
     | ModuleCapability::grainVisualization
     | ModuleCapability::beatPermutationVisualization
     | ModuleCapability::continuousTelemetry
-    | ModuleCapability::eventTelemetry;
+    | ModuleCapability::eventTelemetry
+    | ModuleCapability::neuralAmpModel;
 
 template <typename Snapshot>
 class FixedAtomicSnapshot

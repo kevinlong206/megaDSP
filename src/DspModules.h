@@ -44,3 +44,4 @@
 #include "modules/ChordLoom.h"
 #include "modules/VolumeSwell.h"
 #include "modules/SpectralNebula.h"
+#include "modules/NeuralAmpModeler.h"

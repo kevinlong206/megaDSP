@@ -7,7 +7,7 @@ or CLAP plugin with a growing collection of high-quality, intuitive effects.
 Use a module on its own or combine up to eight in a serial chain to shape,
 transform, and finish your audio without juggling separate plugins.
 
-Today, megaDSP includes forty purpose-built processors with interactive
+Today, megaDSP includes forty-four purpose-built processors with interactive
 graphs, realtime analysis, and controls that match the musical quantities they
 edit. The long-term vision is a community-built library spanning dozens—and
 eventually perhaps hundreds—of useful effects in one consistent rack.
@@ -141,6 +141,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Analog Tape** | Four cassette/reel machines with level-compensated oversampled saturation, transient softening, bias, head bump, and optional wow/flutter, wear, and hiss |
 | **Harmonic Mirage** | Tracked partial resynthesis for harmonic, subharmonic, hollow, and metallic color |
 | **Guitar Cabinet** | Fully procedural speaker, enclosure, microphone, and room modeling with dynamic cone breakup, power compression, and direct mic placement |
+| **Neural Amp Modeler** | Loads `.nam` neural amp models including A2 Standard/Nano with noise gate, Low/High Cut, independent Dry/Wet, and truthful CPU-mode reporting |
 
 ### Time-Based
 

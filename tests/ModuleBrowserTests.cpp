@@ -51,7 +51,7 @@ public:
         beginTest("Category matching supports multiple tokens");
         const auto colorModules = flatten(
             megadsp::ui::filterAndGroupModules("SATURATION & color"));
-        expectEquals(static_cast<int>(colorModules.size()), 5);
+        expectEquals(static_cast<int>(colorModules.size()), 6);
         expect(std::find(colorModules.begin(), colorModules.end(),
                          megadsp::ModuleType::saturator)
                != colorModules.end());

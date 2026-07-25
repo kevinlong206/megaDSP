@@ -1017,6 +1017,29 @@ constexpr Metadata spectralNebulaMetadata {{
     { "Output", ControlKind::level, true, "Output",
       "Adjusts level after the dry and cloud paths." }
 }};
+constexpr Metadata neuralAmpModelerMetadata {{
+    { "Input Trim", ControlKind::level, true, "Input",
+      "Adjusts input level before the neural model." },
+    { "Gate", ControlKind::toggle, false, "Gate",
+      "Enables a noise gate before the neural model." },
+    { "Gate Threshold", ControlKind::level, false, "Gate",
+      "Sets the level below which the gate closes." },
+    { "Gate Release", ControlKind::rotary, false, "Gate",
+      "Sets how quickly the gate re-opens after closing." },
+    { "Low Cut", ControlKind::horizontal, false, "Filters",
+      "Removes low-frequency energy from the modeled signal." },
+    { "High Cut", ControlKind::horizontal, false, "Filters",
+      "Removes high-frequency energy from the modeled signal." },
+    { "CPU Mode", ControlKind::choice, false, "Engine",
+      "Selects Slimmed or Full CPU for slimmable models; fixed for A2 and others." },
+    { "Dry", ControlKind::level, false, "Levels",
+      "Sets the level of the original unprocessed signal." },
+    { "Wet", ControlKind::level, true, "Levels",
+      "Sets the level of the neural-modeled signal." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts final output level after dry/wet blend." },
+    unused, unused
+}};
 constexpr Names emptyNames { "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-" };
 constexpr Names eqNames {
     "Low Frequency", "Low Gain", "Low Q",
@@ -1198,6 +1221,10 @@ constexpr Names volumeSwellNames {
 constexpr Names spectralNebulaNames {
     "Smear", "Decay", "Drift", "Shimmer", "Focus", "Freeze", "Width",
     "Low Cut", "High Cut", "Dry", "Cloud", "Output"
+};
+constexpr Names neuralAmpModelerNames {
+    "Input Trim", "Gate", "Gate Threshold", "Gate Release", "Low Cut",
+    "High Cut", "CPU Mode", "Dry", "Wet", "Output", "-", "-"
 };
 const std::array<std::array<float, 16>, 3> premiumEarlyMilliseconds {{
     { 11.3f, 18.7f, 27.1f, 37.9f, 51.7f, 69.1f, 79.3f, 88.7f,
@@ -1488,6 +1515,8 @@ ControlOptions optionsFor(ModuleType type, int control)
                    "4x12 Closed" }, 4 };
     if (type == ModuleType::guitarCabinet && control == 2)
         return { { "Dynamic", "Ribbon", "Condenser" }, 3 };
+    if (type == ModuleType::neuralAmpModeler && control == 6)
+        return { { "Slimmed", "Full CPU" }, 2 };
     return {};
 }
 
@@ -1934,6 +1963,21 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 exponentialNormalized(1000.0f, 20000.0f, 10000.0f),
                 1.0f, 0.48f,
                 linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::neuralAmpModeler:
+            values = {
+                linearNormalized(-24.0f, 24.0f, 0.0f),
+                0.0f,
+                linearNormalized(-90.0f, -20.0f, -60.0f),
+                exponentialNormalized(10.0f, 500.0f, 120.0f),
+                exponentialNormalized(20.0f, 250.0f, 30.0f),
+                exponentialNormalized(4000.0f, 20000.0f, 18000.0f),
+                discreteValue(1, 2),
+                0.0f,
+                1.0f,
+                linearNormalized(-24.0f, 24.0f, 0.0f),
+                0.0f, 0.0f
             };
             break;
         case ModuleType::empty: break;
@@ -2551,6 +2595,20 @@ juce::String formatControlValue(ModuleType type, int control, float value)
                 return formatFrequency(exponential(1000.0f, 20000.0f, value));
             if (control == 11)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::neuralAmpModeler:
+            if (control == 0 || control == 9)
+                return juce::String(linear(-24.0f, 24.0f, value), 1) + " dB";
+            if (control == 2)
+                return juce::String(linear(-90.0f, -20.0f, value), 1) + " dB";
+            if (control == 3)
+                return juce::String(exponential(10.0f, 500.0f, value), 0) + " ms";
+            if (control == 4)
+                return formatFrequency(exponential(20.0f, 250.0f, value));
+            if (control == 5)
+                return formatFrequency(exponential(4000.0f, 20000.0f, value));
+            if (control == 7 || control == 8)
+                return juce::String(value * 100.0f, 0) + "%";
             break;
         case ModuleType::empty: break;
     }
@@ -3188,6 +3246,23 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 11)
                 return linearNormalized(-18.0f, 12.0f, value);
             break;
+        case ModuleType::neuralAmpModeler:
+            if (control == 0 || control == 9)
+                return linearNormalized(-24.0f, 24.0f, value);
+            if (control == 2)
+                return linearNormalized(-90.0f, -20.0f, value);
+            if (control == 3)
+                return exponentialNormalized(
+                    10.0f, 500.0f, parsedMilliseconds(text, value));
+            if (control == 4)
+                return exponentialNormalized(
+                    20.0f, 250.0f, parsedFrequency(text, value));
+            if (control == 5)
+                return exponentialNormalized(
+                    4000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 7 || control == 8)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            break;
         case ModuleType::empty: break;
     }
     return juce::jlimit(0.0f, 1.0f, value / 100.0f);
@@ -3274,6 +3349,10 @@ bool isControlContextuallyVisible(
                 return values[2] < 0.5f;
             if (control == 3)
                 return values[2] >= 0.5f;
+            break;
+        case ModuleType::neuralAmpModeler:
+            if (control == 2 || control == 3)
+                return values[1] >= 0.5f;
             break;
         case ModuleType::empty:
         case ModuleType::equalizer:
@@ -3701,7 +3780,16 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "spectral cloud smear freeze shimmer ambient vocal guitar texture",
             spectralNebulaNames, spectralNebulaMetadata,
             &makeModule<SpectralNebulaModule>,
-            ModuleCapability::continuousTelemetry)
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::neuralAmpModeler,
+            ModulePresentation::neuralAmpModeler, "Neural Amp Modeler",
+            ModuleCategory::saturationAndColor,
+            "Load .nam neural amp models including A2 Standard and A2 Nano for authentic amp tones.",
+            "nam neural amp modeler guitar tone cabinet a2 machine learning",
+            neuralAmpModelerNames, neuralAmpModelerMetadata,
+            &makeModule<NeuralAmpModelerModule>,
+            ModuleCapability::neuralAmpModel)
     }};
     return definitions;
 }

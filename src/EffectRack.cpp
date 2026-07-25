@@ -1,4 +1,5 @@
 #include "EffectRack.h"
+#include "modules/NeuralAmpModeler.h"
 
 namespace megadsp
 {
@@ -78,6 +79,9 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
     slot.synchronizedImpulsePath.clear();
     slot.observedImpulsePath.clear();
     slot.impulseRestorePending = false;
+    slot.synchronizedNamPath.clear();
+    slot.observedNamPath.clear();
+    slot.namRestorePending = false;
     slot.dryBuffer.setSize(0, 0);
     for (auto& channel : slot.latencyBuffer)
         std::vector<float>().swap(channel);
@@ -130,26 +134,53 @@ void EffectRack::synchronizeModuleDataState(int slot)
         rackSlot.synchronizedImpulsePath.clear();
         rackSlot.observedImpulsePath.clear();
         rackSlot.impulseRestorePending = false;
+        rackSlot.synchronizedNamPath.clear();
+        rackSlot.observedNamPath.clear();
+        rackSlot.namRestorePending = false;
         return;
     }
+
+    // IR capability
     auto* impulseResponse = module->impulseResponseCapability();
     if (impulseResponse == nullptr)
     {
         rackSlot.synchronizedImpulsePath.clear();
         rackSlot.observedImpulsePath.clear();
         rackSlot.impulseRestorePending = false;
-        return;
+    }
+    else
+    {
+        const auto requestedPath = parameters.state.getProperty(
+            "impulseResponse" + juce::String(slot + 1)).toString();
+        if (requestedPath != rackSlot.observedImpulsePath)
+        {
+            impulseResponse->clearImpulseResponse();
+            rackSlot.synchronizedImpulsePath.clear();
+            rackSlot.observedImpulsePath = requestedPath;
+            rackSlot.impulseRestorePending = requestedPath.isNotEmpty();
+        }
     }
 
-    const auto requestedPath = parameters.state.getProperty(
-        "impulseResponse" + juce::String(slot + 1)).toString();
-    if (requestedPath == rackSlot.observedImpulsePath)
-        return;
-
-    impulseResponse->clearImpulseResponse();
-    rackSlot.synchronizedImpulsePath.clear();
-    rackSlot.observedImpulsePath = requestedPath;
-    rackSlot.impulseRestorePending = requestedPath.isNotEmpty();
+    // NAM capability
+    auto* namCap = module->namModelCapability();
+    if (namCap == nullptr)
+    {
+        rackSlot.synchronizedNamPath.clear();
+        rackSlot.observedNamPath.clear();
+        rackSlot.namRestorePending = false;
+    }
+    else
+    {
+        const auto requestedPath = parameters.state.getProperty(
+            "neuralModel" + juce::String(slot + 1)).toString();
+        if (requestedPath != rackSlot.observedNamPath)
+        {
+            namCap->clearNamModel();
+            rackSlot.synchronizedNamPath.clear();
+            rackSlot.observedNamPath = requestedPath;
+            rackSlot.namRestorePending = requestedPath.isNotEmpty();
+        }
+    }
 }
 
 void EffectRack::prepare(double sampleRate, int newMaximumBlockSize, int channelCount)
@@ -211,6 +242,7 @@ void EffectRack::rebuildModules()
     for (int index = 0; index < slotCount; ++index)
         synchronizeModuleDataState(index);
     reloadImpulseResponses();
+    reloadNamModels();
 }
 
 void EffectRack::reset()
@@ -533,23 +565,42 @@ void EffectRack::moveSlot(int source, int destination)
         else
             parameters.state.setProperty(irProperty(index), path, nullptr);
     };
+    auto namProperty = [](int index)
+    {
+        return juce::Identifier("neuralModel" + juce::String(index + 1));
+    };
+    auto readNam = [this, &namProperty](int index)
+    {
+        return parameters.state.getProperty(namProperty(index)).toString();
+    };
+    auto writeNam = [this, &namProperty](int index, const juce::String& path)
+    {
+        if (path.isEmpty())
+            parameters.state.removeProperty(namProperty(index), nullptr);
+        else
+            parameters.state.setProperty(namProperty(index), path, nullptr);
+    };
 
     const auto moving = read(source);
     const auto movingIr = readIr(source);
+    const auto movingNam = readNam(source);
     if (source < destination)
         for (int index = source; index < destination; ++index)
         {
             write(index, read(index + 1));
             writeIr(index, readIr(index + 1));
+            writeNam(index, readNam(index + 1));
         }
     else
         for (int index = source; index > destination; --index)
         {
             write(index, read(index - 1));
             writeIr(index, readIr(index - 1));
+            writeNam(index, readNam(index - 1));
         }
     write(destination, moving);
     writeIr(destination, movingIr);
+    writeNam(destination, movingNam);
 }
 
 void EffectRack::clearSlot(int slot)
@@ -557,6 +608,7 @@ void EffectRack::clearSlot(int slot)
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return;
     clearImpulseResponse(slot);
+    clearNamModel(slot);
 
     auto set = [](juce::RangedAudioParameter* parameter, float plainValue)
     {
@@ -572,6 +624,8 @@ void EffectRack::clearSlot(int slot)
         set(parameters.getParameter(controlParameterId(slot, control)), 0.5f);
     parameters.state.removeProperty(
         "impulseResponse" + juce::String(slot + 1), nullptr);
+    parameters.state.removeProperty(
+        "neuralModel" + juce::String(slot + 1), nullptr);
 }
 
 void EffectRack::clearModuleDataState()
@@ -580,14 +634,23 @@ void EffectRack::clearModuleDataState()
     {
         auto& rackSlot = slots[static_cast<size_t>(slot)];
         if (rackSlot.activeModule != nullptr)
+        {
             if (auto* impulseResponse =
                     rackSlot.activeModule->impulseResponseCapability())
                 impulseResponse->clearImpulseResponse();
+            if (auto* namCap = rackSlot.activeModule->namModelCapability())
+                namCap->clearNamModel();
+        }
         rackSlot.synchronizedImpulsePath.clear();
         rackSlot.observedImpulsePath.clear();
         rackSlot.impulseRestorePending = false;
+        rackSlot.synchronizedNamPath.clear();
+        rackSlot.observedNamPath.clear();
+        rackSlot.namRestorePending = false;
         parameters.state.removeProperty(
             "impulseResponse" + juce::String(slot + 1), nullptr);
+        parameters.state.removeProperty(
+            "neuralModel" + juce::String(slot + 1), nullptr);
     }
 }
 
@@ -885,5 +948,146 @@ bool EffectRack::readEventTelemetry(
         module != nullptr ? module->eventTelemetryCapability() : nullptr;
     return capability != nullptr
            && capability->readEventTelemetry(snapshot);
+}
+
+juce::Result EffectRack::loadNamModel(int slot, const juce::File& file)
+{
+    PreparedNamModelLoad load;
+    auto result = prepareNamModel(slot, file, load);
+    if (result.failed()) return result;
+    if (!commitNamModel(load))
+    {
+        cancelNamModel(load);
+        return juce::Result::fail("NAM model commit superseded.");
+    }
+    return juce::Result::ok();
+}
+
+juce::Result EffectRack::prepareNamModel(
+    int slot, const juce::File& file, PreparedNamModelLoad& load)
+{
+    load = {};
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return juce::Result::fail("Invalid NAM slot.");
+    auto& rackSlot = slots[static_cast<size_t>(slot)];
+    auto* module = selectedModule(rackSlot);
+    if (module == nullptr)
+        return juce::Result::fail("No synchronized module in slot.");
+    auto* namCap = module->namModelCapability();
+    if (namCap == nullptr)
+        return juce::Result::fail("Slot does not support NAM models.");
+    load.slot = slot;
+    load.type = rackSlot.activeType;
+    load.module = module;
+    load.path = file.getFullPathName();
+    auto result = namCap->prepareNamModel(file, load.prepared);
+    if (result.failed()) load = {};
+    return result;
+}
+
+bool EffectRack::commitNamModel(PreparedNamModelLoad& load)
+{
+    if (!juce::isPositiveAndBelow(load.slot, slotCount)
+        || load.prepared == nullptr)
+        return false;
+    auto& rackSlot = slots[static_cast<size_t>(load.slot)];
+    auto* module = selectedModule(rackSlot);
+    if (module == nullptr || module != load.module
+        || rackSlot.activeType != load.type)
+        return false;
+    auto* namCap = module->namModelCapability();
+    if (namCap == nullptr
+        || !namCap->commitPreparedNamModel(load.prepared))
+        return false;
+    const auto latencyCapacity = static_cast<size_t>(
+        juce::jmax(0, module->latencySamples()));
+    for (auto& channel : rackSlot.latencyBuffer)
+        channel.assign(latencyCapacity, 0.0f);
+    rackSlot.latencyWritePosition = 0;
+    rackSlot.previousLatency = module->latencySamples();
+    rackSlot.synchronizedNamPath = load.path;
+    rackSlot.observedNamPath = load.path;
+    rackSlot.namRestorePending = false;
+    parameters.state.setProperty(
+        "neuralModel" + juce::String(load.slot + 1),
+        load.path, nullptr);
+    return true;
+}
+
+void EffectRack::cancelNamModel(PreparedNamModelLoad& load) noexcept
+{
+    if (juce::isPositiveAndBelow(load.slot, slotCount))
+    {
+        auto& rackSlot = slots[static_cast<size_t>(load.slot)];
+        auto* module = selectedModule(rackSlot);
+        if (module != nullptr && module == load.module
+            && rackSlot.activeType == load.type)
+            if (auto* namCap = module->namModelCapability())
+                namCap->cancelPreparedNamModel(load.prepared);
+    }
+    load = {};
+}
+
+juce::Result EffectRack::clearNamModel(int slot)
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return juce::Result::fail("Invalid NAM slot.");
+    auto& rackSlot = slots[static_cast<size_t>(slot)];
+    auto* module = selectedModule(rackSlot);
+    if (module != nullptr)
+        if (auto* namCap = module->namModelCapability())
+            namCap->clearNamModel();
+    rackSlot.synchronizedNamPath.clear();
+    rackSlot.observedNamPath.clear();
+    rackSlot.namRestorePending = false;
+    parameters.state.removeProperty(
+        "neuralModel" + juce::String(slot + 1), nullptr);
+    return juce::Result::ok();
+}
+
+juce::String EffectRack::namModelPath(int slot) const
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount)) return {};
+    return parameters.state.getProperty(
+        "neuralModel" + juce::String(slot + 1)).toString();
+}
+
+juce::String EffectRack::pendingNamModelPath(int slot) const
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount)) return {};
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    const auto* module = selectedModule(rackSlot);
+    if (module == nullptr || module->namModelCapability() == nullptr)
+        return {};
+    const auto path = parameters.state.getProperty(
+        "neuralModel" + juce::String(slot + 1)).toString();
+    return rackSlot.namRestorePending && path.isNotEmpty()
+               ? path : juce::String();
+}
+
+void EffectRack::discardPendingNamModel(
+    int slot, const juce::String& path)
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount)) return;
+    auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (rackSlot.namRestorePending && rackSlot.observedNamPath == path)
+        rackSlot.namRestorePending = false;
+}
+
+void EffectRack::reloadNamModels()
+{
+    for (int slot = 0; slot < slotCount; ++slot)
+    {
+        const auto path = pendingNamModelPath(slot);
+        if (path.isEmpty()) continue;
+        PreparedNamModelLoad load;
+        if (prepareNamModel(slot, juce::File(path), load).failed())
+        {
+            discardPendingNamModel(slot, path);
+            continue;
+        }
+        if (!commitNamModel(load))
+            cancelNamModel(load);
+    }
 }
 } // namespace megadsp

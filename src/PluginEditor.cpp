@@ -832,7 +832,10 @@ public:
           type(processor.getRack().moduleType(slot)),
           supportsImpulseResponse(
               processor.getRack().activeModuleHasCapability(
-                  slot, megadsp::ModuleCapability::impulseResponse))
+                  slot, megadsp::ModuleCapability::impulseResponse)),
+          supportsNamModel(
+              processor.getRack().activeModuleHasCapability(
+                  slot, megadsp::ModuleCapability::neuralAmpModel))
     {
         name.setText(megadsp::descriptorFor(type).name, juce::dontSendNotification);
         name.setFont(juce::FontOptions(22.0f, juce::Font::bold));
@@ -889,6 +892,49 @@ public:
                 graph->repaint();
             };
             addAndMakeVisible(clearImpulse);
+        }
+
+        if (supportsNamModel)
+        {
+            loadNam.setButtonText("Load NAM...");
+            loadNam.setTooltip("Load a .nam neural amp model.");
+            loadNam.onClick = [this]
+            {
+                namChooser = std::make_unique<juce::FileChooser>(
+                    "Load NAM model",
+                    juce::File::getSpecialLocation(
+                        juce::File::userMusicDirectory),
+                    "*.nam");
+                const auto flags =
+                    juce::FileBrowserComponent::openMode
+                    | juce::FileBrowserComponent::canSelectFiles;
+                juce::Component::SafePointer<ModulePanel> safeThis(this);
+                namChooser->launchAsync(
+                    flags, [safeThis](const juce::FileChooser& chooser)
+                    {
+                        if (safeThis == nullptr) return;
+                        const auto file = chooser.getResult();
+                        if (file == juce::File {}) return;
+                        const auto result =
+                            safeThis->processor.loadNamModel(
+                                safeThis->slot, file);
+                        if (result.failed())
+                            juce::AlertWindow::showMessageBoxAsync(
+                                juce::MessageBoxIconType::WarningIcon,
+                                "Could not load NAM model",
+                                result.getErrorMessage());
+                        safeThis->graph->repaint();
+                    });
+            };
+            addAndMakeVisible(loadNam);
+            clearNam.setButtonText("Clear NAM");
+            clearNam.setTooltip("Unload the current neural amp model.");
+            clearNam.onClick = [this]
+            {
+                processor.clearNamModel(slot);
+                graph->repaint();
+            };
+            addAndMakeVisible(clearNam);
         }
 
         graph = std::make_unique<megadsp::ui::EffectGraph>(
@@ -1025,6 +1071,13 @@ public:
                 heading.removeFromRight(72).reduced(2));
             loadImpulse.setBounds(
                 heading.removeFromRight(88).reduced(2));
+        }
+        if (supportsNamModel)
+        {
+            clearNam.setBounds(
+                heading.removeFromRight(80).reduced(2));
+            loadNam.setBounds(
+                heading.removeFromRight(100).reduced(2));
         }
         bounds.removeFromTop(6);
         if (graph->usesFullPanel())
@@ -1234,11 +1287,15 @@ private:
     int slot;
     megadsp::ModuleType type;
     bool supportsImpulseResponse = false;
+    bool supportsNamModel = false;
     juce::Label name;
     juce::TextButton reset;
     juce::TextButton loadImpulse;
     juce::TextButton clearImpulse;
     std::unique_ptr<juce::FileChooser> impulseChooser;
+    juce::TextButton loadNam;
+    juce::TextButton clearNam;
+    std::unique_ptr<juce::FileChooser> namChooser;
     std::unique_ptr<megadsp::ui::EffectGraph> graph;
     struct GroupFrame
     {

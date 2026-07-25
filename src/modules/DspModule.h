@@ -14,6 +14,8 @@ namespace megadsp
 {
 using ControlValues = std::array<float, controlsPerSlot>;
 
+class NamModelCapability;
+
 struct ProcessEnvironment
 {
     const juce::AudioBuffer<float>* sidechain = nullptr;
@@ -83,6 +85,14 @@ public:
     {
         return nullptr;
     }
+    virtual NamModelCapability* namModelCapability() noexcept
+    {
+        return nullptr;
+    }
+    virtual const NamModelCapability* namModelCapability() const noexcept
+    {
+        return nullptr;
+    }
     ModuleCapability capabilities() const noexcept
     {
         auto result = ModuleCapability::none;
@@ -97,6 +107,8 @@ public:
             result = result | ModuleCapability::continuousTelemetry;
         if (eventTelemetryCapability() != nullptr)
             result = result | ModuleCapability::eventTelemetry;
+        if (namModelCapability() != nullptr)
+            result = result | ModuleCapability::neuralAmpModel;
         return result;
     }
 };

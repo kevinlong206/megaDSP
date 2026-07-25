@@ -21,6 +21,15 @@ public:
         PreparedImpulseResponsePtr prepared;
     };
 
+    struct PreparedNamModelLoad
+    {
+        int slot = -1;
+        ModuleType type = ModuleType::empty;
+        DspModule* module = nullptr;
+        juce::String path;
+        PreparedNamModelPtr prepared;
+    };
+
     explicit EffectRack(juce::AudioProcessorValueTreeState& state);
 
     void prepare(double sampleRate, int maximumBlockSize, int channelCount);
@@ -63,6 +72,16 @@ public:
     juce::String impulseResponseName(int slot) const;
     juce::String impulseResponsePath(int slot) const;
     ImpulseResponsePreview impulseResponsePreview(int slot) const;
+    juce::Result loadNamModel(int slot, const juce::File&);
+    juce::Result prepareNamModel(
+        int slot, const juce::File&, PreparedNamModelLoad&);
+    bool commitNamModel(PreparedNamModelLoad&);
+    void cancelNamModel(PreparedNamModelLoad&) noexcept;
+    juce::Result clearNamModel(int slot);
+    juce::String namModelPath(int slot) const;
+    juce::String pendingNamModelPath(int slot) const;
+    void discardPendingNamModel(int slot, const juce::String& path);
+    void reloadNamModels();
     GrainVisualEvents grainVisualEvents(int slot) const;
     BeatPermutationVisualEvents beatPermutationVisualEvents(int slot) const;
     bool readContinuousTelemetry(
@@ -85,6 +104,9 @@ private:
         juce::String synchronizedImpulsePath;
         juce::String observedImpulsePath;
         bool impulseRestorePending = false;
+        juce::String synchronizedNamPath;
+        juce::String observedNamPath;
+        bool namRestorePending = false;
         juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> wet;
         bool dspSuspended = false;
         int reactivationSamplesRemaining = 0;

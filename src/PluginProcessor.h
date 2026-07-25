@@ -79,6 +79,22 @@ public:
     {
         return rack.impulseResponsePath(slot);
     }
+    juce::Result loadNamModel(int slot, const juce::File& file);
+    juce::Result clearNamModel(int slot)
+    {
+        if (!beginTopologyMutation())
+            return juce::Result::fail("Topology mutation in progress.");
+        auto result = rack.clearNamModel(slot);
+        refreshLatency();
+        suspendProcessing(false);
+        topologyMutationInProgress.store(false, std::memory_order_release);
+        updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+        return result;
+    }
+    juce::String namModelPath(int slot) const
+    {
+        return rack.namModelPath(slot);
+    }
     megadsp::ImpulseResponsePreview impulseResponsePreview(int slot) const
     {
         return rack.impulseResponsePreview(slot);
@@ -149,6 +165,7 @@ private:
         bool compact, bool resetRack, bool publishAlways);
     bool beginTopologyMutation();
     void restorePendingImpulseResponses();
+    void restorePendingNamModels();
     void updateHostBypassLatency(int latency) noexcept;
 
     megadsp::EffectRack rack;

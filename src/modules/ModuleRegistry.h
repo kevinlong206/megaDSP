@@ -13,7 +13,7 @@ namespace megadsp
 constexpr int slotCount = 8;
 constexpr int controlsPerSlot = 12;
 constexpr int stateSchemaVersion = 9;
-constexpr int moduleTypeCount = 44;
+constexpr int moduleTypeCount = 45;
 
 enum class ModuleType
 {
@@ -60,7 +60,8 @@ enum class ModuleType
     guitarCabinet = 40,
     chordLoom = 41,
     volumeSwell = 42,
-    spectralNebula = 43
+    spectralNebula = 43,
+    neuralAmpModeler = 44
 };
 
 enum class ModuleCategory
@@ -122,10 +123,11 @@ enum class ModulePresentation
     chordLoom,
     volumeSwell,
     spectralNebula,
+    neuralAmpModeler,
     count
 };
 
-static_assert(static_cast<int>(ModuleType::spectralNebula) + 1 == moduleTypeCount);
+static_assert(static_cast<int>(ModuleType::neuralAmpModeler) + 1 == moduleTypeCount);
 static_assert(static_cast<int>(ModulePresentation::count) == moduleTypeCount);
 
 enum class ControlKind

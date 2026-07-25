@@ -265,6 +265,8 @@ void MegaDSPAudioProcessor::finishTopologyMutation(
             + " generation=" + juce::String(generation)
             + " modules=[" + moduleNames.joinIntoString(", ") + "]");
     restorePendingImpulseResponses();
+    restorePendingNamModels();
+    refreshLatency();
     topologyMutationInProgress.store(false, std::memory_order_release);
     if (topologyDirty.load(std::memory_order_acquire))
         triggerAsyncUpdate();
@@ -292,6 +294,32 @@ void MegaDSPAudioProcessor::restorePendingImpulseResponses()
         suspendProcessing(false);
         if (!committed)
             rack.cancelImpulseResponse(load);
+    }
+}
+
+void MegaDSPAudioProcessor::restorePendingNamModels()
+{
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        const auto path = rack.pendingNamModelPath(slot);
+        if (path.isEmpty())
+            continue;
+
+        megadsp::EffectRack::PreparedNamModelLoad load;
+        const auto result = rack.prepareNamModel(
+            slot, juce::File(path), load);
+        if (result.failed())
+        {
+            rack.discardPendingNamModel(slot, path);
+            continue;
+        }
+
+        suspendProcessing(true);
+        const auto committed = rack.commitNamModel(load);
+        refreshLatency();
+        suspendProcessing(false);
+        if (!committed)
+            rack.cancelNamModel(load);
     }
 }
 
@@ -520,6 +548,48 @@ void MegaDSPAudioProcessor::clearImpulseResponse(int slot)
             ChangeDetails{}.withNonParameterStateChanged(true));
 }
 
+juce::Result MegaDSPAudioProcessor::loadNamModel(
+    int slot, const juce::File& file)
+{
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "A topology update is already in progress.");
+
+    const auto finishDataMutation = [this]
+    {
+        topologyMutationInProgress.store(
+            false, std::memory_order_release);
+        if (topologyDirty.load(std::memory_order_acquire))
+            triggerAsyncUpdate();
+    };
+
+    megadsp::EffectRack::PreparedNamModelLoad load;
+    auto result = rack.prepareNamModel(slot, file, load);
+    if (result.failed())
+    {
+        finishDataMutation();
+        return result;
+    }
+
+    suspendProcessing(true);
+    const auto committed = rack.commitNamModel(load);
+    refreshLatency();
+    suspendProcessing(false);
+    if (!committed)
+    {
+        rack.cancelNamModel(load);
+        finishDataMutation();
+        return juce::Result::fail("NAM model commit superseded.");
+    }
+
+    finishDataMutation();
+    updateHostDisplay(
+        ChangeDetails{}.withNonParameterStateChanged(true));
+    return juce::Result::ok();
+}
+
 void MegaDSPAudioProcessor::topologyChanged()
 {
     if (!beginTopologyMutation())
@@ -672,7 +742,17 @@ juce::Result MegaDSPAudioProcessor::loadPreset(const juce::File& file)
 
 void MegaDSPAudioProcessor::refreshLatency()
 {
-    pendingLatency.store(rack.latencySamples());
+    const auto latency = rack.latencySamples();
+    pendingLatency.store(latency);
+    if (auto* messages = juce::MessageManager::getInstanceWithoutCreating();
+        messages != nullptr && messages->isThisTheMessageThread())
+    {
+        latencyDirty.store(false, std::memory_order_release);
+        setLatencySamples(latency);
+        updateHostDisplay(juce::AudioProcessorListener::ChangeDetails()
+                              .withLatencyChanged(true));
+        return;
+    }
     latencyDirty.store(true, std::memory_order_release);
 }
 

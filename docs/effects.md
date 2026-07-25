@@ -502,3 +502,55 @@ from evolving ages. History, tile width/time, Age, Motion, Coherence, Pitch
 Drift, Freeze, and Stereo Spread create deterministic rearrangements while
 preserving phase within tiles. The map displays actual tile assignments and
 reassignment events.
+
+---
+
+## Neural Amp Modeler
+
+Loads `.nam` neural amp model files for authentic guitar amp and effect
+tones powered by machine learning. Supports all standard NAM architectures
+(Linear, LSTM, WaveNet, ConvNet, Container) plus the A2 Standard (8-channel)
+and A2 Nano (3-channel) fast-path models.
+
+### Controls
+
+| # | Control | Range | Default | Description |
+|---|---------|-------|---------|-------------|
+| 0 | Input Trim | -24..+24 dB | 0 dB | Level before the neural model |
+| 1 | Gate | Off / On | Off | Noise gate on the wet path |
+| 2 | Gate Threshold | -90..-20 dB | -60 dB | Below this level the gate closes (visible when Gate is On) |
+| 3 | Gate Release | 10..500 ms | 120 ms | How quickly the gate re-opens (visible when Gate is On) |
+| 4 | Low Cut | 20..250 Hz | 30 Hz | High-pass on modeled signal |
+| 5 | High Cut | 4..20 kHz | 18 kHz | Low-pass on modeled signal |
+| 6 | CPU Mode | Slimmed / Full CPU | Full CPU | For slimmable models only; A2 shows "A2 Fast (fixed)", others show "Full CPU (fixed)" |
+| 7 | Dry | 0..100% | 0% | Unprocessed input level |
+| 8 | Wet | 0..100% | 100% | Neural-modeled signal level |
+| 9 | Output | -24..+24 dB | 0 dB | Final output after dry/wet blend |
+
+### CPU Mode Truthfulness
+
+- **A2 Standard / A2 Nano**: Always shows "A2 Fast (fixed)" — A2 models use
+  a hardware-optimized fixed-width fast path and cannot be slimmed.
+- **Slimmable WaveNet / Container**: Shows and edits "Slimmed / Full CPU" via
+  the CPU Mode control. Switching is click-safe (crossfaded) and performed
+  off the audio thread.
+- **All other architectures**: Shows "Full CPU (fixed)" — these have no
+  slimming capability.
+
+### Unloaded Behavior
+
+With no model loaded, the module produces `Dry × input × Output`. With the
+default Dry of 0%, this means silence — no synthetic model signal is generated.
+The UI shows "No model loaded" and prompts the user to drop a `.nam` file.
+
+### Model File Licensing
+
+`.nam` model files are user-provided and not included with megaDSP. Models
+trained by the community may have various licenses. The NAM processing engine
+(NeuralAmpModelerCore) is MIT-licensed. See THIRD_PARTY_NOTICES.md for details.
+
+### Sample Rate Handling
+
+NAM models declare an expected sample rate. When the host rate matches, the
+model runs directly. Sample-rate mismatch handling is planned for a future
+update with Lanczos resampling via the upstream AudioDSPTools infrastructure.
