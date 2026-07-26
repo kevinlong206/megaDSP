@@ -105,6 +105,7 @@ private:
     juce::String focusedControlValueText() const;
     juce::String focusedControlReadout() const;
     void notifyFocusedControlChanged(bool titleChanged);
+    void setInteractiveRefresh(bool);
 
     MegaDSPAudioProcessor& processor;
     int slot;
@@ -128,5 +129,6 @@ private:
     juce::String dragReadout;
     std::unique_ptr<ModuleView> moduleView;
     bool bypassVisualsSuspended = false;
+    bool interactiveRefresh = false;
 };
 } // namespace megadsp::ui

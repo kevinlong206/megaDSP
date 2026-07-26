@@ -18,6 +18,7 @@ class FormantForgeModuleView final : public ModuleView
 public:
     using ModuleView::ModuleView;
     bool usesFullPanel() const override { return true; }
+    bool usesSpectrum() const override { return true; }
     void configureAccessibility(juce::Component& component) const override
     {
         component.setTitle("Formant Forge vowel field");

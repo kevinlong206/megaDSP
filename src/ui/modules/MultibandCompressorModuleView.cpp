@@ -17,6 +17,7 @@ public:
     using ModuleView::ModuleView;
     void configureAccessibility(juce::Component&) const override;
     bool usesFullPanel() const override { return true; }
+    bool usesSpectrum() const override { return true; }
     void paint(juce::Graphics&, juce::Rectangle<float>) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;

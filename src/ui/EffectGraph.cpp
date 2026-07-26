@@ -190,7 +190,7 @@ EffectGraph::EffectGraph(MegaDSPAudioProcessor& processorToUse, int slotToUse,
             refreshFocusedControl(false);
         }
     }
-    startTimerHz(30);
+    startTimerHz(15);
 }
 
 EffectGraph::~EffectGraph()
@@ -253,6 +253,7 @@ void EffectGraph::mouseDown(const juce::MouseEvent& event)
     if (moduleView != nullptr)
     {
         moduleView->mouseDown(event);
+        setInteractiveRefresh(true);
         if (dragPrimary >= 0)
         {
             const auto controls = moduleView->keyboardControls();
@@ -270,12 +271,16 @@ void EffectGraph::mouseDown(const juce::MouseEvent& event)
 void EffectGraph::mouseDrag(const juce::MouseEvent& event)
 {
     if (moduleView != nullptr)
+    {
+        setInteractiveRefresh(true);
         moduleView->mouseDrag(event);
+    }
 }
 
 void EffectGraph::mouseUp(const juce::MouseEvent&)
 {
     endGestures();
+    setInteractiveRefresh(false);
     dragReadout.clear();
     repaint();
 }
@@ -429,6 +434,9 @@ void EffectGraph::focusKeyboardControl(int control)
 
 void EffectGraph::timerCallback()
 {
+    if (!isShowing())
+        return;
+
     auto& data = processor.getVisualizationData().slotData(slot);
     if (processor.isSlotBypassed(slot))
     {
@@ -462,9 +470,20 @@ void EffectGraph::timerCallback()
     if (moduleView != nullptr)
         moduleView->timerCallback();
     refreshFocusedControl(true);
-    calculateSpectrum(inputSamples, inputSpectrum);
-    calculateSpectrum(outputSamples, outputSpectrum);
+    if (moduleView != nullptr && moduleView->usesSpectrum())
+    {
+        calculateSpectrum(inputSamples, inputSpectrum);
+        calculateSpectrum(outputSamples, outputSpectrum);
+    }
     repaint();
+}
+
+void EffectGraph::setInteractiveRefresh(bool interactive)
+{
+    if (interactiveRefresh == interactive)
+        return;
+    interactiveRefresh = interactive;
+    startTimerHz(interactive ? 30 : 15);
 }
 
 std::unique_ptr<juce::AccessibilityHandler>

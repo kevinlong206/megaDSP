@@ -79,6 +79,8 @@ private:
         std::array<float, lineCount> modulationSin {};
         std::array<float, lineCount> modulationDeltaCos {};
         std::array<float, lineCount> modulationDeltaSin {};
+        std::array<std::array<float, lineCount>, 3> baseDelaySamples {};
+        std::array<float, lineCount> injectionDelaySamples {};
         TankParameters parameters;
         double sampleRate = 44100.0;
         int mode = 0;
@@ -104,9 +106,13 @@ private:
     int inputWritePosition = 0;
     std::array<Tank, 2> tanks;
     std::array<std::array<std::array<float, 2>, 16>, 2> earlyFilterState {};
+    std::array<std::array<float, 16>, 3> earlyFilterCoefficients {};
+    std::array<std::array<float, 16>, 3> earlyDelaySamples {};
+    std::array<std::array<float, 2>, 16> earlyPanGains {};
     std::array<float, 2> inputLowState {};
     std::array<float, 2> inputHighState {};
     float widthLowState = 0.0f;
+    float widthCoefficient = 0.0f;
     double sampleRate = 44100.0;
     int activeTank = 0;
     int pendingMode = 0;

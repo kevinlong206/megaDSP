@@ -27,20 +27,17 @@ float AlgorithmicReverbModule::FractionalDelay::read(float delaySamples) const
     const auto size = static_cast<int>(buffer.size());
     auto position = static_cast<float>(writePosition)
                     - juce::jlimit(1.0f, static_cast<float>(size - 2), delaySamples);
-    while (position < 0.0f)
+    if (position < 0.0f)
         position += static_cast<float>(size);
-    const auto centre = static_cast<int>(std::floor(position));
+    const auto centre = static_cast<int>(position);
     const auto fraction = position - static_cast<float>(centre);
-    const auto sampleAt = [this, size](int index)
-    {
-        while (index < 0)
-            index += size;
-        return buffer[static_cast<size_t>(index % size)];
-    };
-    const auto y0 = sampleAt(centre - 1);
-    const auto y1 = sampleAt(centre);
-    const auto y2 = sampleAt(centre + 1);
-    const auto y3 = sampleAt(centre + 2);
+    const auto previous = centre > 0 ? centre - 1 : size - 1;
+    const auto next = centre + 1 < size ? centre + 1 : 0;
+    const auto afterNext = centre + 2 < size ? centre + 2 : centre + 2 - size;
+    const auto y0 = buffer[static_cast<size_t>(previous)];
+    const auto y1 = buffer[static_cast<size_t>(centre)];
+    const auto y2 = buffer[static_cast<size_t>(next)];
+    const auto y3 = buffer[static_cast<size_t>(afterNext)];
     const auto a0 = -0.5f * y0 + 1.5f * y1 - 1.5f * y2 + 0.5f * y3;
     const auto a1 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
     const auto a2 = -0.5f * y0 + 0.5f * y2;
@@ -159,6 +156,24 @@ void AlgorithmicReverbModule::Tank::prepare(double newSampleRate)
     for (auto& history : injectionHistory)
         history.prepare(injectionCapacity);
     reset();
+    for (int modeIndex = 0; modeIndex < 3; ++modeIndex)
+        for (int line = 0; line < lineCount; ++line)
+            baseDelaySamples[static_cast<size_t>(modeIndex)]
+                            [static_cast<size_t>(line)] =
+                premiumLineMilliseconds[static_cast<size_t>(modeIndex)]
+                                       [static_cast<size_t>(line)]
+                * 0.001f * static_cast<float>(sampleRate);
+    for (int line = 0; line < lineCount; ++line)
+    {
+        injectionDelaySamples[static_cast<size_t>(line)] =
+            injectionMilliseconds[static_cast<size_t>(line)]
+            * 0.001f * static_cast<float>(sampleRate);
+        const auto rate = 0.047f + 0.011f * static_cast<float>(line);
+        const auto delta = juce::MathConstants<float>::twoPi * rate
+                           / static_cast<float>(sampleRate);
+        modulationDeltaCos[static_cast<size_t>(line)] = std::cos(delta);
+        modulationDeltaSin[static_cast<size_t>(line)] = std::sin(delta);
+    }
 }
 
 void AlgorithmicReverbModule::Tank::reset()
@@ -186,8 +201,6 @@ void AlgorithmicReverbModule::Tank::reset()
                            / static_cast<float>(lineCount);
         modulationCos[static_cast<size_t>(line)] = std::cos(phase);
         modulationSin[static_cast<size_t>(line)] = std::sin(phase);
-        modulationDeltaCos[static_cast<size_t>(line)] = 1.0f;
-        modulationDeltaSin[static_cast<size_t>(line)] = 0.0f;
     }
     currentSize = oldSize = targetSize = 1.0f;
     sizeFade = 1.0f;
@@ -203,8 +216,25 @@ void AlgorithmicReverbModule::Tank::setMode(int newMode)
 void AlgorithmicReverbModule::Tank::setTargets(
     const TankParameters& newParameters)
 {
+    const auto requestedSize =
+        juce::jlimit(0.25f, 2.0f, newParameters.size);
+    const auto hasPendingSize =
+        sizeFade >= 1.0f
+        && std::abs(requestedSize - currentSize) > 0.002f;
+    const auto decayChanged =
+        !decayInitialized
+        || std::abs(parameters.decaySeconds - newParameters.decaySeconds)
+               > 1.0e-7f
+        || std::abs(parameters.size - newParameters.size) > 1.0e-7f
+        || std::abs(parameters.damping - newParameters.damping) > 1.0e-7f
+        || hasPendingSize;
+    const auto movementChanged =
+        !decayInitialized
+        || std::abs(parameters.movement - newParameters.movement) > 1.0e-7f;
     parameters = newParameters;
-    const auto requestedSize = juce::jlimit(0.25f, 2.0f, parameters.size);
+    if (!decayChanged && !movementChanged)
+        return;
+
     if (sizeFade >= 1.0f && std::abs(requestedSize - currentSize) > 0.002f)
     {
         oldSize = currentSize;
@@ -212,73 +242,71 @@ void AlgorithmicReverbModule::Tank::setTargets(
         sizeFade = 0.0f;
     }
 
-    const auto lowCrossover = mode == 2 ? 330.0f : 260.0f;
-    const auto highCrossover = mode == 0 ? 3600.0f
-                                         : mode == 1 ? 4300.0f : 5200.0f;
-    targetLowCoefficient = std::exp(
-        -juce::MathConstants<float>::twoPi * lowCrossover
-        / static_cast<float>(sampleRate));
-    targetHighCoefficient = std::exp(
-        -juce::MathConstants<float>::twoPi * highCrossover
-        / static_cast<float>(sampleRate));
-    coefficientSmoothing = 1.0f - std::exp(
-        -1.0f / static_cast<float>(sampleRate * 0.06));
+    if (decayChanged)
+    {
+        const auto lowCrossover = mode == 2 ? 330.0f : 260.0f;
+        const auto highCrossover = mode == 0 ? 3600.0f
+                                             : mode == 1 ? 4300.0f : 5200.0f;
+        targetLowCoefficient = std::exp(
+            -juce::MathConstants<float>::twoPi * lowCrossover
+            / static_cast<float>(sampleRate));
+        targetHighCoefficient = std::exp(
+            -juce::MathConstants<float>::twoPi * highCrossover
+            / static_cast<float>(sampleRate));
+        coefficientSmoothing = 1.0f - std::exp(
+            -1.0f / static_cast<float>(sampleRate * 0.06));
 
-    const auto decayRatios = reverbDecayRatios(mode, parameters.damping);
-    const auto lowRatio = decayRatios[0];
-    const auto highRatio = decayRatios[1];
-    for (int line = 0; line < lineCount; ++line)
-    {
-        const auto delaySeconds =
-            premiumLineMilliseconds[static_cast<size_t>(mode)]
-                                   [static_cast<size_t>(line)]
-            * 0.001f * targetSize;
-        const auto midT60 = juce::jmax(0.2f, parameters.decaySeconds);
-        const auto lowT60 = juce::jmax(0.15f, midT60 * lowRatio);
-        const auto highT60 = juce::jmax(0.10f, midT60 * highRatio);
-        targetLowGains[static_cast<size_t>(line)] =
-            std::pow(0.001f, delaySeconds / lowT60);
-        targetMidGains[static_cast<size_t>(line)] =
-            std::pow(0.001f, delaySeconds / midT60);
-        targetHighGains[static_cast<size_t>(line)] =
-            std::pow(0.001f, delaySeconds / highT60);
-    }
-    if (!decayInitialized)
-    {
-        lowGains = targetLowGains;
-        midGains = targetMidGains;
-        highGains = targetHighGains;
-        lowCoefficient = targetLowCoefficient;
-        highCoefficient = targetHighCoefficient;
-        decayInitialized = true;
+        const auto decayRatios = reverbDecayRatios(mode, parameters.damping);
+        const auto lowRatio = decayRatios[0];
+        const auto highRatio = decayRatios[1];
+        for (int line = 0; line < lineCount; ++line)
+        {
+            const auto delaySeconds =
+                premiumLineMilliseconds[static_cast<size_t>(mode)]
+                                       [static_cast<size_t>(line)]
+                * 0.001f * targetSize;
+            const auto midT60 = juce::jmax(0.2f, parameters.decaySeconds);
+            const auto lowT60 = juce::jmax(0.15f, midT60 * lowRatio);
+            const auto highT60 = juce::jmax(0.10f, midT60 * highRatio);
+            targetLowGains[static_cast<size_t>(line)] =
+                std::pow(0.001f, delaySeconds / lowT60);
+            targetMidGains[static_cast<size_t>(line)] =
+                std::pow(0.001f, delaySeconds / midT60);
+            targetHighGains[static_cast<size_t>(line)] =
+                std::pow(0.001f, delaySeconds / highT60);
+        }
+        if (!decayInitialized)
+        {
+            lowGains = targetLowGains;
+            midGains = targetMidGains;
+            highGains = targetHighGains;
+            lowCoefficient = targetLowCoefficient;
+            highCoefficient = targetHighCoefficient;
+            decayInitialized = true;
+        }
     }
 
-    for (int pair = 0; pair < lineCount / 2; ++pair)
+    if (movementChanged)
     {
-        const auto rate = parameters.movement
-                          * (0.004f + 0.0013f * static_cast<float>(pair))
-                          * (mode == 2 ? 1.8f : mode == 1 ? 1.2f : 1.0f);
-        const auto delta = juce::MathConstants<float>::twoPi * rate
-                           / static_cast<float>(sampleRate);
-        rotationDeltaCos[static_cast<size_t>(pair)] = std::cos(delta);
-        rotationDeltaSin[static_cast<size_t>(pair)] = std::sin(delta);
-    }
-    for (int line = 0; line < lineCount; ++line)
-    {
-        const auto rate = 0.047f + 0.011f * static_cast<float>(line);
-        const auto delta = juce::MathConstants<float>::twoPi * rate
-                           / static_cast<float>(sampleRate);
-        modulationDeltaCos[static_cast<size_t>(line)] = std::cos(delta);
-        modulationDeltaSin[static_cast<size_t>(line)] = std::sin(delta);
+        for (int pair = 0; pair < lineCount / 2; ++pair)
+        {
+            const auto rate = parameters.movement
+                              * (0.004f + 0.0013f * static_cast<float>(pair))
+                              * (mode == 2 ? 1.8f : mode == 1 ? 1.2f : 1.0f);
+            const auto delta = juce::MathConstants<float>::twoPi * rate
+                               / static_cast<float>(sampleRate);
+            rotationDeltaCos[static_cast<size_t>(pair)] = std::cos(delta);
+            rotationDeltaSin[static_cast<size_t>(pair)] = std::sin(delta);
+        }
     }
 }
 
 float AlgorithmicReverbModule::Tank::lineDelaySamples(
     int line, float size, float modulation) const
 {
-    return premiumLineMilliseconds[static_cast<size_t>(mode)]
-                                  [static_cast<size_t>(line)]
-           * 0.001f * size * static_cast<float>(sampleRate)
+    return baseDelaySamples[static_cast<size_t>(mode)]
+                           [static_cast<size_t>(line)]
+           * size
            + modulation;
 }
 
@@ -308,6 +336,8 @@ std::array<float, 2> AlgorithmicReverbModule::Tank::process(
     const auto modulationMaximumMs =
         (mode == 2 ? 0.42f : mode == 1 ? 0.16f : 0.12f)
         * movement;
+    const auto modulationScale =
+        modulationMaximumMs * 0.001f * static_cast<float>(sampleRate);
     for (int line = 0; line < lineCount; ++line)
     {
         auto& cosine = modulationCos[static_cast<size_t>(line)];
@@ -320,7 +350,7 @@ std::array<float, 2> AlgorithmicReverbModule::Tank::process(
         cosine = nextCosine;
         const auto modulation =
             ((line % 3) == 0 ? sine : 0.35f * sine)
-            * modulationMaximumMs * 0.001f * static_cast<float>(sampleRate);
+            * modulationScale;
         const auto newDelay = lineDelaySamples(line, targetSize, modulation);
         if (sizeFade < 1.0f)
         {
@@ -385,16 +415,16 @@ std::array<float, 2> AlgorithmicReverbModule::Tank::process(
                       rotationSin[static_cast<size_t>(pair)]);
     }
 
+    const auto diffuseInjectionWeight = lerp(0.22f, 1.0f, density);
     for (int line = 0; line < lineCount; ++line)
     {
         const auto channel = line & 1;
         const auto sparseInput =
             injectionHistory[static_cast<size_t>(channel)].read(
-                injectionMilliseconds[static_cast<size_t>(line)]
-                * 0.001f * static_cast<float>(sampleRate));
+                injectionDelaySamples[static_cast<size_t>(line)]);
         const auto densityWeight = line < 4
                                        ? 1.0f
-                                       : lerp(0.22f, 1.0f, density);
+                                       : diffuseInjectionWeight;
         const auto injectionGain = std::sqrt(juce::jmax(
             0.0001f, 1.0f - midGains[static_cast<size_t>(line)]
                                   * midGains[static_cast<size_t>(line)]));
@@ -416,11 +446,12 @@ std::array<float, 2> AlgorithmicReverbModule::Tank::process(
     }
 
     std::array<float, 2> output {};
+    const auto outputTapWeight = 0.18f + 0.22f * density;
     for (int line = 0; line < lineCount; ++line)
     {
         const auto value = tankOutput[static_cast<size_t>(line)]
                            + outputTap[static_cast<size_t>(line)]
-                                 * (0.18f + 0.22f * density);
+                                 * outputTapWeight;
         output[0] += value * outputSignsLeft[static_cast<size_t>(line)];
         output[1] += value * outputSignsRight[static_cast<size_t>(line)];
     }
@@ -437,11 +468,11 @@ float AlgorithmicReverbModule::readInputHistory(int channel,
         return 0.0f;
     const auto size = static_cast<int>(history.size());
     auto position = static_cast<float>(inputWritePosition) - delaySamples;
-    while (position < 0.0f)
+    if (position < 0.0f)
         position += static_cast<float>(size);
-    const auto first = static_cast<int>(position) % size;
-    const auto second = (first + 1) % size;
-    const auto fraction = position - std::floor(position);
+    const auto first = static_cast<int>(position);
+    const auto second = first + 1 < size ? first + 1 : 0;
+    const auto fraction = position - static_cast<float>(first);
     return history[static_cast<size_t>(first)]
            + (history[static_cast<size_t>(second)]
               - history[static_cast<size_t>(first)]) * fraction;
@@ -451,40 +482,33 @@ std::array<float, 2> AlgorithmicReverbModule::earlyField(
     int tankIndex, int mode, float preDelaySamples, float size, float density)
 {
     std::array<float, 2> output {};
+    const auto diffuseGain = lerp(0.15f, 1.0f, density);
     for (int tap = 0; tap < 16; ++tap)
     {
         const auto delay = preDelaySamples
-                           + reverbEarlyMilliseconds()[static_cast<size_t>(mode)]
-                                                        [static_cast<size_t>(tap)]
-                                 * 0.001f * size
-                                 * static_cast<float>(sampleRate);
+                           + earlyDelaySamples[static_cast<size_t>(mode)]
+                                              [static_cast<size_t>(tap)]
+                                 * size;
         const auto sourceChannel = tap & 1;
         const auto otherChannel = 1 - sourceChannel;
         const auto source =
             readInputHistory(sourceChannel, juce::jmax(1.0f, delay)) * 0.78f
             + readInputHistory(otherChannel, juce::jmax(1.0f, delay * 1.013f))
                   * 0.22f;
-        const auto cutoff = (mode == 2 ? 15000.0f : 12500.0f)
-                            * std::pow(0.965f, static_cast<float>(tap));
-        const auto coefficient = std::exp(
-            -juce::MathConstants<float>::twoPi * cutoff
-            / static_cast<float>(sampleRate));
-        const auto scattered = tap < 6 ? 1.0f : lerp(0.15f, 1.0f, density);
+        const auto coefficient =
+            earlyFilterCoefficients[static_cast<size_t>(mode)]
+                                   [static_cast<size_t>(tap)];
+        const auto scattered = tap < 6 ? 1.0f : diffuseGain;
         const auto gain = earlyGains[static_cast<size_t>(tap)] * scattered;
-        const auto pan = earlyPan[static_cast<size_t>(tap)];
-        const auto angle = (pan + 1.0f)
-                           * juce::MathConstants<float>::halfPi * 0.5f;
-        const std::array<float, 2> panGain {
-            std::cos(angle), std::sin(angle)
-        };
+        const auto& panGain = earlyPanGains[static_cast<size_t>(tap)];
         for (int channel = 0; channel < 2; ++channel)
         {
             auto& state =
                 earlyFilterState[static_cast<size_t>(tankIndex)]
                                 [static_cast<size_t>(tap)]
                                 [static_cast<size_t>(channel)];
-            const auto target = source * gain
-                                * panGain[static_cast<size_t>(channel)];
+            const auto target =
+                source * gain * panGain[static_cast<size_t>(channel)];
             state = coefficient * state + (1.0f - coefficient) * target;
             output[static_cast<size_t>(channel)] += state;
         }
@@ -503,6 +527,33 @@ std::array<float, 2> AlgorithmicReverbModule::earlyField(
 void AlgorithmicReverbModule::prepare(const juce::dsp::ProcessSpec& spec)
 {
     sampleRate = spec.sampleRate;
+    for (int mode = 0; mode < 3; ++mode)
+        for (int tap = 0; tap < 16; ++tap)
+        {
+            earlyDelaySamples[static_cast<size_t>(mode)]
+                             [static_cast<size_t>(tap)] =
+                reverbEarlyMilliseconds()[static_cast<size_t>(mode)]
+                                          [static_cast<size_t>(tap)]
+                * 0.001f * static_cast<float>(sampleRate);
+            const auto cutoff = (mode == 2 ? 15000.0f : 12500.0f)
+                                * std::pow(0.965f, static_cast<float>(tap));
+            earlyFilterCoefficients[static_cast<size_t>(mode)]
+                                   [static_cast<size_t>(tap)] =
+                std::exp(-juce::MathConstants<float>::twoPi * cutoff
+                         / static_cast<float>(sampleRate));
+        }
+    for (int tap = 0; tap < 16; ++tap)
+    {
+        const auto angle =
+            (earlyPan[static_cast<size_t>(tap)] + 1.0f)
+            * juce::MathConstants<float>::halfPi * 0.5f;
+        earlyPanGains[static_cast<size_t>(tap)] = {
+            std::cos(angle), std::sin(angle)
+        };
+    }
+    widthCoefficient = std::exp(
+        -juce::MathConstants<float>::twoPi * 280.0f
+        / static_cast<float>(sampleRate));
     const auto historyCapacity = juce::roundToInt(sampleRate * 0.72);
     for (auto& history : inputHistory)
         history.assign(static_cast<size_t>(historyCapacity), 0.0f);
@@ -746,9 +797,6 @@ void AlgorithmicReverbModule::process(juce::AudioBuffer<float>& buffer,
         const auto wetRight = directEarly[1] * 0.32f + tankWet[1];
         const auto mid = (wetLeft + wetRight) * 0.5f;
         const auto rawSide = (wetLeft - wetRight) * 0.5f;
-        const auto widthCoefficient = std::exp(
-            -juce::MathConstants<float>::twoPi * 280.0f
-            / static_cast<float>(sampleRate));
         widthLowState = widthCoefficient * widthLowState
                         + (1.0f - widthCoefficient) * rawSide;
         const auto side = (widthLowState * 0.68f
