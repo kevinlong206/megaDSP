@@ -7,6 +7,25 @@ or CLAP plugin with a growing collection of high-quality, intuitive effects.
 Use a module on its own or combine up to eight in a serial chain to shape,
 transform, and finish your audio without juggling separate plugins.
 
+Eight complete **Snapshots** let one instance hold multiple racks. Click a
+snapshot to recall it; clicking an unused snapshot activates a fresh blank rack
+without copying the current one. Shift-click saves the current rack to an empty
+snapshot or overwrites a populated one. Drag a populated snapshot onto another
+slot to copy it without changing the source. MIDI
+Program Change 0-7 recalls Snapshots 1-8 at the event sample. The selected
+snapshot updates live as you edit, and up to two outgoing effect tails spill
+into the new rack. Recall uses a zero-slope 20 ms transition. Snapshot spills
+are capped at eight seconds and fade over their final 500 ms; sustained
+generators such as Chord Loom and frozen spectral fields use a shorter
+1.5-second spill so they do not linger indefinitely.
+
+Enable **LIVE SAFE** for high-stakes monitoring or performance. megaDSP then
+runs every populated snapshot continuously on silence, converting the brief CPU
+spike at recall into predictable steady CPU usage. The active and transitioning
+racks alone receive live input. Host latency updates wait until audio callbacks
+stop, avoiding PDC rebuilds during monitoring without adding plugin latency;
+timing may be temporarily offset after recalling a rack with different latency.
+
 Creative spectral effects keep the live dry signal immediate: **Spectral
 Prism**, **Pitch Bloom**, **Spectral Delay Canvas**, **Harmonic Mirage**,
 **Time Mosaic**, and **Spectral Nebula** do not add delay compensation in the
@@ -97,6 +116,18 @@ megaDSP.clap → ~/.clap
 5. **Double-click** a tab (or press **Space / Return / B**) to bypass it — the tab is greyed and labeled **BYPASSED**. After its short click-safe fade, the module DSP and live visualization are suspended; only latency-preserving dry routing remains.
 6. Click the **×** icon on a tab to remove it.
 7. Use the header **Output Trim** and peak meter to manage the final output level. The meter shows peak hold, near-clip colour zones, and a resettable **CLIP** indicator.
+8. Use **Snapshots 1-8** above the module tabs to keep alternate complete racks. Click recalls without copying the current rack; an unused slot opens as a fresh blank rack. Shift-click saves to an empty slot or overwrites a populated one. Drag one populated snapshot onto another slot to copy it. Program Change 0-7 recalls populated snapshots over MIDI.
+
+Snapshot recall never waits for modules or external files to load: populated
+snapshots remain prepared while inactive. Each snapshot keeps its native DSP
+latency, so recalling racks with different latency can move timing while the
+amplitude transition remains click-safe. Missing IR or NAM files are shown as
+snapshot errors without preventing the rest of the rack from loading.
+
+For live use, enable **LIVE SAFE** before the performance and confirm the
+project's steady CPU load with all intended snapshots populated. This mode feeds
+silence through inactive snapshots to keep their processing paths hot, while
+normal mode leaves them idle to conserve CPU.
 
 ![Module browser with categorized search results and keyboard navigation](docs/images/module-browser.png)
 
@@ -130,6 +161,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Multiband Compressor** | Three reconstructing bands with direct editing and actual per-band reduction/state telemetry |
 | **Loudness Rider** | Long-term gated LUFS riding with bounded gain, lookahead, and crest preservation |
 | **Adaptive Clipper** | Transient-aware oversampled clipping with true-peak ceiling control and auto trim |
+| **Stage Vocal** | Zero-latency live vocal strip with rumble filtering, bounded expansion, frequency-selective de-essing, linked compression, Presence, Air, and Output trim |
 
 ### EQ & Filtering
 
@@ -157,8 +189,8 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 |---|---|
 | **Delay** | Editable tap timeline plus a 2D Rate/Depth Movement field; Sync toggles between free Time and synced Division |
 | **Diffusion Delay** | Tempo-aware echoes with DSP-synchronized primary/cloud activity, energy, progress, and stereo placement |
-| **Algorithmic Reverb** | 16-line feedback network with Hall, Chamber, and Plate modes; interactive early-reflection field, Decay, Room Scale (Compact → Vast), and independent Dry/Wet |
-| **Convolution Reverb** | WAV/AIFF/FLAC IR loading and drag-and-drop, waveform preview, draggable wet Low/High Cut, and independent Dry/Wet rails |
+| **Algorithmic Reverb** | 16-line Hall, Chamber, and Plate network with input high-pass/low-pass filtering, smooth wet ducking, Decay, Room Scale, and independent Dry/Wet |
+| **Convolution Reverb** | WAV/AIFF/FLAC IR loading, waveform preview, draggable wet high-pass/low-pass filtering, smooth ducking, and independent Dry/Wet rails |
 | **Resonant Matrix** | Tuned resonators routed through evolving signed feedback patterns for pitched, metallic spaces |
 | **Pitch Bloom** | Musical interval shifting with actual repeat-event arcs for interval, progress, energy, pan, and spread |
 | **Spectral Delay Canvas** | Frequency-dependent low, mid, and high spectral delay with diffusion, feedback, and freeze |

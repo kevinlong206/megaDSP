@@ -44,6 +44,11 @@ public:
         return DryPathTiming::aligned;
     }
     virtual double tailSeconds(const ControlValues&) const { return 0.0; }
+    virtual double snapshotSpillSeconds(
+        const ControlValues& controls) const
+    {
+        return juce::jlimit(0.0, 8.0, tailSeconds(controls));
+    }
     virtual float meterValue() const { return 0.0f; }
     virtual float detectorValue() const { return -100.0f; }
     virtual ImpulseResponseCapability* impulseResponseCapability() noexcept

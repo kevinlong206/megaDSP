@@ -9,6 +9,7 @@
 namespace megadsp
 {
 using detail::convolutionMessageQueue;
+using detail::coefficient;
 using detail::exponential;
 using detail::lerp;
 
@@ -32,6 +33,7 @@ struct ConvolutionReverbModule::PreparedLoad final
     juce::String name;
     ImpulseResponsePreview preview {};
     double lengthSeconds = 0.0;
+    bool isMono = false;
 };
 
 ConvolutionReverbModule::ConvolutionReverbModule()
@@ -54,9 +56,11 @@ void ConvolutionReverbModule::prepare(const juce::dsp::ProcessSpec& spec)
                       static_cast<int>(spec.maximumBlockSize), false, true, true);
     wetSmoothed.reset(sampleRate, 0.02);
     drySmoothed.reset(sampleRate, 0.02);
+    duckAmountSmoothed.reset(sampleRate, 0.03);
     outputSmoothed.reset(sampleRate, 0.02);
     wetSmoothed.setCurrentAndTargetValue(0.10f);
     drySmoothed.setCurrentAndTargetValue(1.0f);
+    duckAmountSmoothed.setCurrentAndTargetValue(0.0f);
     outputSmoothed.setCurrentAndTargetValue(1.0f);
     reset();
 }
@@ -67,6 +71,8 @@ void ConvolutionReverbModule::reset()
     lowCut.reset();
     highCut.reset();
     wetBuffer.clear();
+    duckEnvelope = 0.0f;
+    duckGainDb = 0.0f;
 }
 
 void ConvolutionReverbModule::process(
@@ -85,6 +91,18 @@ void ConvolutionReverbModule::process(
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
             wetBuffer.copyFrom(channel, 0, buffer, channel, 0,
                                buffer.getNumSamples());
+        if (buffer.getNumChannels() == 2
+            && committedImpulseIsMono.load(std::memory_order_relaxed))
+        {
+            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            {
+                const auto mono = 0.5f
+                    * (wetBuffer.getSample(0, sample)
+                       + wetBuffer.getSample(1, sample));
+                wetBuffer.setSample(0, sample, mono);
+                wetBuffer.setSample(1, sample, mono);
+            }
+        }
 
         juce::dsp::AudioBlock<float> preparedWetBlock(wetBuffer);
         auto wetBlock = preparedWetBlock.getSubBlock(
@@ -103,19 +121,49 @@ void ConvolutionReverbModule::process(
 
     wetSmoothed.setTargetValue(juce::jlimit(0.0f, 1.0f, controls[2]));
     drySmoothed.setTargetValue(juce::jlimit(0.0f, 1.0f, controls[4]));
+    duckAmountSmoothed.setTargetValue(
+        lerp(0.0f, 18.0f, controls[5]));
     outputSmoothed.setTargetValue(juce::Decibels::decibelsToGain(
         lerp(-18.0f, 18.0f, controls[3])));
+    const auto detectorAttack = coefficient(sampleRate, 5.0f);
+    const auto detectorRelease = coefficient(sampleRate, 180.0f);
+    const auto gainAttack = coefficient(sampleRate, 8.0f);
+    const auto gainRelease = coefficient(sampleRate, 350.0f);
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
         const auto wetGain = wetSmoothed.getNextValue();
         const auto dryGain = drySmoothed.getNextValue();
+        const auto duckAmountDb = duckAmountSmoothed.getNextValue();
         const auto output = outputSmoothed.getNextValue();
+        auto linkedInput = std::abs(buffer.getSample(0, sample));
+        if (buffer.getNumChannels() > 1)
+            linkedInput = juce::jmax(
+                linkedInput, std::abs(buffer.getSample(1, sample)));
+        const auto detectorCoefficient =
+            linkedInput > duckEnvelope ? detectorAttack : detectorRelease;
+        duckEnvelope = detectorCoefficient * duckEnvelope
+                       + (1.0f - detectorCoefficient) * linkedInput;
+        auto activity = juce::jlimit(
+            0.0f, 1.0f,
+            (juce::Decibels::gainToDecibels(
+                 duckEnvelope, -100.0f)
+             + 48.0f)
+                / 36.0f);
+        activity = activity * activity * (3.0f - 2.0f * activity);
+        const auto targetDuckGainDb = -duckAmountDb * activity;
+        const auto duckCoefficient =
+            targetDuckGainDb < duckGainDb ? gainAttack : gainRelease;
+        duckGainDb = duckCoefficient * duckGainDb
+                     + (1.0f - duckCoefficient) * targetDuckGainDb;
+        const auto duckGain =
+            juce::Decibels::decibelsToGain(duckGainDb);
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
             buffer.setSample(
                 channel, sample,
                 (buffer.getSample(channel, sample) * dryGain
                  + (wetAvailable
-                        ? wetBuffer.getSample(channel, sample) * wetGain
+                        ? wetBuffer.getSample(channel, sample)
+                              * wetGain * duckGain
                         : 0.0f))
                     * output);
     }
@@ -232,6 +280,7 @@ juce::Result ConvolutionReverbModule::prepareImpulseResponse(
     prepared->preview = newPreview;
     prepared->lengthSeconds =
         static_cast<double>(sampleCount) / reader->sampleRate;
+    prepared->isMono = channelCount == 1;
     destination = std::move(prepared);
     return juce::Result::ok();
 }
@@ -257,6 +306,8 @@ bool ConvolutionReverbModule::commitPreparedImpulseResponse(
     }
     impulseLengthSeconds.store(
         prepared->lengthSeconds, std::memory_order_relaxed);
+    committedImpulseIsMono.store(
+        prepared->isMono, std::memory_order_relaxed);
     committedGeneration.store(
         prepared->generation, std::memory_order_relaxed);
     committedImpulseAvailable.store(true, std::memory_order_release);
@@ -282,6 +333,7 @@ void ConvolutionReverbModule::clearImpulseResponse()
 {
     const auto generation = beginImpulseResponseRequest();
     committedImpulseAvailable.store(false, std::memory_order_release);
+    committedImpulseIsMono.store(false, std::memory_order_relaxed);
     committedGeneration.store(generation, std::memory_order_release);
     impulseLengthSeconds.store(0.0, std::memory_order_relaxed);
     {

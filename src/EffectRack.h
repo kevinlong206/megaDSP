@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DspModules.h"
+#include "SnapshotState.h"
 #include "VisualizationData.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -30,11 +31,12 @@ public:
         PreparedNamModelPtr prepared;
     };
 
+    explicit EffectRack(RackState& state);
     explicit EffectRack(juce::AudioProcessorValueTreeState& state);
 
     void prepare(double sampleRate, int maximumBlockSize, int channelCount);
     bool synchronizeModules(bool restoreImpulseResponses = true);
-    void rebuildModules();
+    void rebuildModules(bool restoreModuleData = true);
     void reset();
     void process(juce::AudioBuffer<float>& main,
                  const juce::AudioBuffer<float>* sidechain,
@@ -48,6 +50,7 @@ public:
     bool slotDspSuspended(int slot) const;
     int latencySamples() const;
     double tailSeconds() const;
+    double snapshotSpillSeconds() const;
     float inputMeterDb() { return inputMeter.exchange(-100.0f); }
     float outputMeterDb() { return outputMeter.exchange(-100.0f); }
     VisualizationData& visualizationData() { return visualization; }
@@ -114,7 +117,8 @@ private:
         ControlValues values() const;
     };
 
-    juce::AudioProcessorValueTreeState& parameters;
+    RackState* state = nullptr;
+    juce::AudioProcessorValueTreeState* legacyParameters = nullptr;
     std::array<Slot, slotCount> slots;
     std::atomic<float>* inputGain = nullptr;
     std::atomic<float>* outputGain = nullptr;
@@ -135,5 +139,9 @@ private:
     const DspModule* selectedModule(const Slot&) const;
     void rebuildSlot(Slot&, ModuleType);
     void synchronizeModuleDataState(int slot);
+    juce::String impulsePath(int slot) const;
+    void setImpulsePath(int slot, const juce::String&);
+    juce::String namPath(int slot) const;
+    void setNamPath(int slot, const juce::String&);
 };
 } // namespace megadsp

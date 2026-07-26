@@ -30,20 +30,88 @@ ControlValues EffectRack::Slot::values() const
     return result;
 }
 
-EffectRack::EffectRack(juce::AudioProcessorValueTreeState& state)
-    : parameters(state)
+EffectRack::EffectRack(RackState& stateToUse)
+    : state(&stateToUse)
 {
     for (int slot = 0; slot < slotCount; ++slot)
     {
         auto& current = slots[static_cast<size_t>(slot)];
-        current.type = parameters.getRawParameterValue(slotParameterId(slot, "type"));
-        current.bypass = parameters.getRawParameterValue(slotParameterId(slot, "bypass"));
+        auto& source = state->slots[static_cast<size_t>(slot)];
+        current.type = &source.type;
+        current.bypass = &source.bypass;
         for (int control = 0; control < controlsPerSlot; ++control)
             current.controls[static_cast<size_t>(control)] =
-                parameters.getRawParameterValue(controlParameterId(slot, control));
+                &source.controls[static_cast<size_t>(control)];
     }
-    inputGain = parameters.getRawParameterValue("global.input");
-    outputGain = parameters.getRawParameterValue("global.output");
+    inputGain = &state->inputGainDb;
+    outputGain = &state->outputGainDb;
+}
+
+EffectRack::EffectRack(
+    juce::AudioProcessorValueTreeState& stateToUse)
+    : legacyParameters(&stateToUse)
+{
+    for (int slot = 0; slot < slotCount; ++slot)
+    {
+        auto& current = slots[static_cast<size_t>(slot)];
+        current.type = stateToUse.getRawParameterValue(
+            slotParameterId(slot, "type"));
+        current.bypass = stateToUse.getRawParameterValue(
+            slotParameterId(slot, "bypass"));
+        for (int control = 0; control < controlsPerSlot; ++control)
+            current.controls[static_cast<size_t>(control)] =
+                stateToUse.getRawParameterValue(
+                    controlParameterId(slot, control));
+    }
+    inputGain = stateToUse.getRawParameterValue("global.input");
+    outputGain = stateToUse.getRawParameterValue("global.output");
+}
+
+juce::String EffectRack::impulsePath(int slot) const
+{
+    if (legacyParameters != nullptr)
+        return legacyParameters->state.getProperty(
+            "impulseResponse" + juce::String(slot + 1)).toString();
+    return state->slots[static_cast<size_t>(slot)].impulseResponsePath;
+}
+
+void EffectRack::setImpulsePath(
+    int slot, const juce::String& path)
+{
+    if (legacyParameters != nullptr)
+    {
+        const auto property =
+            juce::Identifier("impulseResponse" + juce::String(slot + 1));
+        if (path.isEmpty())
+            legacyParameters->state.removeProperty(property, nullptr);
+        else
+            legacyParameters->state.setProperty(property, path, nullptr);
+        return;
+    }
+    state->slots[static_cast<size_t>(slot)].impulseResponsePath = path;
+}
+
+juce::String EffectRack::namPath(int slot) const
+{
+    if (legacyParameters != nullptr)
+        return legacyParameters->state.getProperty(
+            "neuralModel" + juce::String(slot + 1)).toString();
+    return state->slots[static_cast<size_t>(slot)].namModelPath;
+}
+
+void EffectRack::setNamPath(int slot, const juce::String& path)
+{
+    if (legacyParameters != nullptr)
+    {
+        const auto property =
+            juce::Identifier("neuralModel" + juce::String(slot + 1));
+        if (path.isEmpty())
+            legacyParameters->state.removeProperty(property, nullptr);
+        else
+            legacyParameters->state.setProperty(property, path, nullptr);
+        return;
+    }
+    state->slots[static_cast<size_t>(slot)].namModelPath = path;
 }
 
 ModuleType EffectRack::requestedType(const Slot& slot) const
@@ -156,8 +224,7 @@ void EffectRack::synchronizeModuleDataState(int slot)
     }
     else
     {
-        const auto requestedPath = parameters.state.getProperty(
-            "impulseResponse" + juce::String(slot + 1)).toString();
+        const auto requestedPath = impulsePath(slot);
         if (requestedPath != rackSlot.observedImpulsePath)
         {
             impulseResponse->clearImpulseResponse();
@@ -177,8 +244,7 @@ void EffectRack::synchronizeModuleDataState(int slot)
     }
     else
     {
-        const auto requestedPath = parameters.state.getProperty(
-            "neuralModel" + juce::String(slot + 1)).toString();
+        const auto requestedPath = namPath(slot);
         if (requestedPath != rackSlot.observedNamPath)
         {
             namCap->clearNamModel();
@@ -240,15 +306,18 @@ bool EffectRack::synchronizeModules(bool restoreImpulseResponses)
     return changed;
 }
 
-void EffectRack::rebuildModules()
+void EffectRack::rebuildModules(bool restoreModuleData)
 {
     for (auto& slot : slots)
         rebuildSlot(slot, requestedType(slot));
 
     for (int index = 0; index < slotCount; ++index)
         synchronizeModuleDataState(index);
-    reloadImpulseResponses();
-    reloadNamModels();
+    if (restoreModuleData)
+    {
+        reloadImpulseResponses();
+        reloadNamModels();
+    }
 }
 
 void EffectRack::reset()
@@ -517,6 +586,18 @@ double EffectRack::tailSeconds() const
     return tail;
 }
 
+double EffectRack::snapshotSpillSeconds() const
+{
+    double tail = 0.0;
+    for (const auto& slot : slots)
+    {
+        if (slot.bypass->load() < 0.5f)
+            if (const auto* module = selectedModule(slot))
+                tail += module->snapshotSpillSeconds(slot.values());
+    }
+    return juce::jlimit(0.0, 8.0, tail);
+}
+
 void EffectRack::moveSlot(int source, int destination)
 {
     if (!juce::isPositiveAndBelow(source, slotCount)
@@ -533,27 +614,23 @@ void EffectRack::moveSlot(int source, int destination)
 
     auto read = [this](int index)
     {
-        ParameterState state;
+        ParameterState parameterState;
         auto& slot = slots[static_cast<size_t>(index)];
-        state.type = slot.type->load();
-        state.bypass = slot.bypass->load();
-        state.controls = slot.values();
-        return state;
+        parameterState.type = slot.type->load();
+        parameterState.bypass = slot.bypass->load();
+        parameterState.controls = slot.values();
+        return parameterState;
     };
 
-    auto write = [this](int index, const ParameterState& state)
+    auto write = [this](int index, const ParameterState& newState)
     {
-        auto set = [](juce::RangedAudioParameter* parameter, float plainValue)
-        {
-            parameter->beginChangeGesture();
-            parameter->setValueNotifyingHost(parameter->convertTo0to1(plainValue));
-            parameter->endChangeGesture();
-        };
-        set(parameters.getParameter(slotParameterId(index, "type")), state.type);
-        set(parameters.getParameter(slotParameterId(index, "bypass")), state.bypass);
+        auto& targetSlot = slots[static_cast<size_t>(index)];
+        targetSlot.type->store(newState.type, std::memory_order_relaxed);
+        targetSlot.bypass->store(newState.bypass, std::memory_order_relaxed);
         for (int control = 0; control < controlsPerSlot; ++control)
-            set(parameters.getParameter(controlParameterId(index, control)),
-                state.controls[static_cast<size_t>(control)]);
+            targetSlot.controls[static_cast<size_t>(control)]->store(
+                newState.controls[static_cast<size_t>(control)],
+                std::memory_order_relaxed);
     };
 
     auto irProperty = [](int index)
@@ -563,14 +640,13 @@ void EffectRack::moveSlot(int source, int destination)
     };
     auto readIr = [this, &irProperty](int index)
     {
-        return parameters.state.getProperty(irProperty(index)).toString();
+        juce::ignoreUnused(irProperty);
+        return impulsePath(index);
     };
     auto writeIr = [this, &irProperty](int index, const juce::String& path)
     {
-        if (path.isEmpty())
-            parameters.state.removeProperty(irProperty(index), nullptr);
-        else
-            parameters.state.setProperty(irProperty(index), path, nullptr);
+        juce::ignoreUnused(irProperty);
+        setImpulsePath(index, path);
     };
     auto namProperty = [](int index)
     {
@@ -578,14 +654,13 @@ void EffectRack::moveSlot(int source, int destination)
     };
     auto readNam = [this, &namProperty](int index)
     {
-        return parameters.state.getProperty(namProperty(index)).toString();
+        juce::ignoreUnused(namProperty);
+        return namPath(index);
     };
     auto writeNam = [this, &namProperty](int index, const juce::String& path)
     {
-        if (path.isEmpty())
-            parameters.state.removeProperty(namProperty(index), nullptr);
-        else
-            parameters.state.setProperty(namProperty(index), path, nullptr);
+        juce::ignoreUnused(namProperty);
+        setNamPath(index, path);
     };
 
     const auto moving = read(source);
@@ -617,22 +692,14 @@ void EffectRack::clearSlot(int slot)
     clearImpulseResponse(slot);
     clearNamModel(slot);
 
-    auto set = [](juce::RangedAudioParameter* parameter, float plainValue)
-    {
-        if (parameter == nullptr)
-            return;
-        parameter->beginChangeGesture();
-        parameter->setValueNotifyingHost(parameter->convertTo0to1(plainValue));
-        parameter->endChangeGesture();
-    };
-    set(parameters.getParameter(slotParameterId(slot, "type")), 0.0f);
-    set(parameters.getParameter(slotParameterId(slot, "bypass")), 0.0f);
+    auto& destination = slots[static_cast<size_t>(slot)];
+    destination.type->store(0.0f, std::memory_order_relaxed);
+    destination.bypass->store(0.0f, std::memory_order_relaxed);
     for (int control = 0; control < controlsPerSlot; ++control)
-        set(parameters.getParameter(controlParameterId(slot, control)), 0.5f);
-    parameters.state.removeProperty(
-        "impulseResponse" + juce::String(slot + 1), nullptr);
-    parameters.state.removeProperty(
-        "neuralModel" + juce::String(slot + 1), nullptr);
+        destination.controls[static_cast<size_t>(control)]->store(
+            0.5f, std::memory_order_relaxed);
+    setImpulsePath(slot, {});
+    setNamPath(slot, {});
 }
 
 void EffectRack::clearModuleDataState()
@@ -654,10 +721,8 @@ void EffectRack::clearModuleDataState()
         rackSlot.synchronizedNamPath.clear();
         rackSlot.observedNamPath.clear();
         rackSlot.namRestorePending = false;
-        parameters.state.removeProperty(
-            "impulseResponse" + juce::String(slot + 1), nullptr);
-        parameters.state.removeProperty(
-            "neuralModel" + juce::String(slot + 1), nullptr);
+        setImpulsePath(slot, {});
+        setNamPath(slot, {});
     }
 }
 
@@ -759,9 +824,7 @@ bool EffectRack::commitImpulseResponse(
     rackSlot.synchronizedImpulsePath = load.path;
     rackSlot.observedImpulsePath = load.path;
     rackSlot.impulseRestorePending = false;
-    parameters.state.setProperty(
-        "impulseResponse" + juce::String(load.slot + 1),
-        load.path, nullptr);
+    setImpulsePath(load.slot, load.path);
     return true;
 }
 
@@ -815,8 +878,7 @@ juce::Result EffectRack::clearImpulseResponse(int slot)
     rackSlot.synchronizedImpulsePath.clear();
     rackSlot.observedImpulsePath.clear();
     rackSlot.impulseRestorePending = false;
-    parameters.state.removeProperty(
-        "impulseResponse" + juce::String(slot + 1), nullptr);
+    setImpulsePath(slot, {});
     return juce::Result::ok();
 }
 
@@ -840,8 +902,7 @@ juce::String EffectRack::pendingImpulseResponsePath(int slot) const
     if (module == nullptr
         || module->impulseResponseCapability() == nullptr)
         return {};
-    const auto path = parameters.state.getProperty(
-        "impulseResponse" + juce::String(slot + 1)).toString();
+    const auto path = impulsePath(slot);
     return rackSlot.impulseRestorePending && path.isNotEmpty()
                && path == rackSlot.observedImpulsePath
                ? path : juce::String{};
@@ -878,8 +939,7 @@ juce::String EffectRack::impulseResponsePath(int slot) const
     if (module == nullptr
         || module->impulseResponseCapability() == nullptr)
         return {};
-    return parameters.state.getProperty(
-        "impulseResponse" + juce::String(slot + 1)).toString();
+    return impulsePath(slot);
 }
 
 ImpulseResponsePreview EffectRack::impulseResponsePreview(int slot) const
@@ -1015,9 +1075,7 @@ bool EffectRack::commitNamModel(PreparedNamModelLoad& load)
     rackSlot.synchronizedNamPath = load.path;
     rackSlot.observedNamPath = load.path;
     rackSlot.namRestorePending = false;
-    parameters.state.setProperty(
-        "neuralModel" + juce::String(load.slot + 1),
-        load.path, nullptr);
+    setNamPath(load.slot, load.path);
     return true;
 }
 
@@ -1047,16 +1105,14 @@ juce::Result EffectRack::clearNamModel(int slot)
     rackSlot.synchronizedNamPath.clear();
     rackSlot.observedNamPath.clear();
     rackSlot.namRestorePending = false;
-    parameters.state.removeProperty(
-        "neuralModel" + juce::String(slot + 1), nullptr);
+    setNamPath(slot, {});
     return juce::Result::ok();
 }
 
 juce::String EffectRack::namModelPath(int slot) const
 {
     if (!juce::isPositiveAndBelow(slot, slotCount)) return {};
-    return parameters.state.getProperty(
-        "neuralModel" + juce::String(slot + 1)).toString();
+    return namPath(slot);
 }
 
 juce::String EffectRack::pendingNamModelPath(int slot) const
@@ -1066,8 +1122,7 @@ juce::String EffectRack::pendingNamModelPath(int slot) const
     const auto* module = selectedModule(rackSlot);
     if (module == nullptr || module->namModelCapability() == nullptr)
         return {};
-    const auto path = parameters.state.getProperty(
-        "neuralModel" + juce::String(slot + 1)).toString();
+    const auto path = namPath(slot);
     return rackSlot.namRestorePending && path.isNotEmpty()
                ? path : juce::String();
 }

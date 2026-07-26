@@ -18,6 +18,7 @@ public:
     void process(juce::AudioBuffer<float>&, const ControlValues&,
                  const ProcessEnvironment&) override;
     double tailSeconds(const ControlValues&) const override;
+    double snapshotSpillSeconds(const ControlValues&) const override;
 
     bool readContinuousTelemetry(
         ContinuousTelemetrySnapshot&) const noexcept override;

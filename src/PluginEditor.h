@@ -42,6 +42,7 @@ private:
     void showThemePalette();
     void showDiagnosticsMenu();
     void refreshIdentityPresentation();
+    void refreshSnapshots();
     void showResult(const juce::Result&);
 #if defined(MEGADSP_CAPTURE_SCREENSHOTS)
     void advanceScreenshotCapture();
@@ -63,6 +64,11 @@ private:
     juce::Label inputLabel;
     juce::Label outputLabel;
     std::unique_ptr<HeaderMeter> headerMeter;
+    juce::Label snapshotsLabel;
+    juce::ToggleButton liveSafeButton { "LIVE SAFE" };
+    juce::Component snapshotsHost;
+    std::array<std::unique_ptr<juce::TextButton>,
+               megadsp::snapshotCount> snapshotButtons;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> inputAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputAttachment;
     juce::Component tabHost;
@@ -73,6 +79,7 @@ private:
     int selectedSlot = 0;
     int knownActiveSlots = -1;
     std::uint64_t knownTopologyGeneration = 0;
+    std::uint64_t knownSnapshotGeneration = 0;
     int knownThemeIndex = -1;
     bool refreshingTabs = false;
     enum class PendingTabMutation

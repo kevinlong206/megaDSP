@@ -161,6 +161,95 @@ private:
     std::function<float()> meterSource;
 };
 
+class SnapshotButton final : public juce::TextButton,
+                             public juce::DragAndDropTarget
+{
+public:
+    SnapshotButton(
+        int indexToUse, juce::DragAndDropContainer& containerToUse,
+        std::function<bool()> canDragToUse,
+        std::function<void(int, int)> copyToUse)
+        : juce::TextButton(juce::String(indexToUse + 1)),
+          index(indexToUse), container(containerToUse),
+          canDrag(std::move(canDragToUse)),
+          copy(std::move(copyToUse))
+    {
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        dragStart = event.position;
+        juce::TextButton::mouseDown(event);
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        juce::TextButton::mouseDrag(event);
+        if (canDrag() && event.position.getDistanceFrom(dragStart) > 5.0f
+            && !container.isDragAndDropActive())
+            container.startDragging(
+                "snapshot:" + juce::String(index), this);
+    }
+
+    bool isInterestedInDragSource(
+        const SourceDetails& details) override
+    {
+        const auto source = snapshotIndex(details.description);
+        return source >= 0 && source != index;
+    }
+
+    void itemDragEnter(const SourceDetails&) override
+    {
+        dragOver = true;
+        repaint();
+    }
+
+    void itemDragExit(const SourceDetails&) override
+    {
+        dragOver = false;
+        repaint();
+    }
+
+    void itemDropped(const SourceDetails& details) override
+    {
+        dragOver = false;
+        repaint();
+        const auto source = snapshotIndex(details.description);
+        if (source >= 0 && source != index)
+            copy(source, index);
+    }
+
+    void paintButton(
+        juce::Graphics& graphics, bool highlighted,
+        bool pressed) override
+    {
+        juce::TextButton::paintButton(graphics, highlighted, pressed);
+        if (dragOver)
+        {
+            graphics.setColour(accent);
+            graphics.drawRoundedRectangle(
+                getLocalBounds().toFloat().reduced(1.5f), 4.0f, 2.0f);
+        }
+    }
+
+private:
+    static int snapshotIndex(const juce::var& description)
+    {
+        const auto text = description.toString();
+        return text.startsWith("snapshot:")
+                   ? text.fromFirstOccurrenceOf(
+                             "snapshot:", false, false).getIntValue()
+                   : -1;
+    }
+
+    int index = 0;
+    juce::DragAndDropContainer& container;
+    std::function<bool()> canDrag;
+    std::function<void(int, int)> copy;
+    juce::Point<float> dragStart;
+    bool dragOver = false;
+};
+
 class SemanticToggleButton final : public juce::ToggleButton
 {
 public:
@@ -1434,6 +1523,63 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     headerMeter->setTooltip("Input and final output sample peaks. Click to clear CLIP.");
     addAndMakeVisible(*headerMeter);
 
+    snapshotsLabel.setText("SNAPSHOTS", juce::dontSendNotification);
+    snapshotsLabel.setFont(
+        juce::FontOptions(10.5f, juce::Font::bold));
+    snapshotsLabel.setColour(
+        juce::Label::textColourId, juce::Colour(0xffa8b3c0));
+    snapshotsLabel.setJustificationType(
+        juce::Justification::centredLeft);
+    addAndMakeVisible(snapshotsHost);
+    snapshotsHost.addAndMakeVisible(snapshotsLabel);
+    liveSafeButton.setTooltip(
+        "Continuously process populated snapshots on silence so recall "
+        "does not create a CPU spike. Uses more steady CPU and defers "
+        "latency updates until audio monitoring stops.");
+    liveSafeButton.setTitle("Live Safe snapshot recall");
+    liveSafeButton.setDescription(
+        "Uses predictable steady CPU for safer live snapshot changes.");
+    liveSafeButton.onClick = [this]
+    {
+        audioProcessor.setLiveSafeSnapshotsEnabled(
+            liveSafeButton.getToggleState());
+        refreshSnapshots();
+    };
+    snapshotsHost.addAndMakeVisible(liveSafeButton);
+    for (int index = 0; index < megadsp::snapshotCount; ++index)
+    {
+        auto button = std::make_unique<SnapshotButton>(
+            index, *this,
+            [this, index]
+            {
+                return audioProcessor.isSnapshotPopulated(index)
+                       && audioProcessor.isSnapshotReady(index);
+            },
+            [this](int source, int destination)
+            {
+                audioProcessor.copySnapshot(source, destination);
+                refreshSnapshots();
+            });
+        button->setClickingTogglesState(false);
+        button->onClick = [this, index]
+        {
+            const auto populated =
+                audioProcessor.isSnapshotPopulated(index);
+            const auto shift =
+                juce::ModifierKeys::getCurrentModifiersRealtime()
+                    .isShiftDown();
+            if (shift)
+                audioProcessor.storeSnapshot(index, populated);
+            else
+                audioProcessor.recallSnapshot(index);
+            refreshSnapshots();
+        };
+        snapshotsHost.addAndMakeVisible(*button);
+        snapshotButtons[static_cast<size_t>(index)] =
+            std::move(button);
+    }
+    refreshSnapshots();
+
     addAndMakeVisible(tabHost);
     addButton.setTooltip("Browse and add a module.");
     addButton.onClick = [this] { showModuleBrowser(); };
@@ -1518,6 +1664,19 @@ void MegaDSPAudioProcessorEditor::resized()
     outputGain.setBounds(outputArea);
     headerMeter->setBounds(headerBottom.reduced(8, 0));
 
+    snapshotsHost.setBounds(
+        bounds.removeFromTop(42).reduced(10, 3));
+    auto snapshotBounds = snapshotsHost.getLocalBounds();
+    snapshotsLabel.setBounds(snapshotBounds.removeFromLeft(82));
+    liveSafeButton.setBounds(
+        snapshotBounds.removeFromRight(94).reduced(2));
+    const auto snapshotWidth =
+        juce::jmax(1, snapshotBounds.getWidth()
+                       / megadsp::snapshotCount);
+    for (auto& button : snapshotButtons)
+        button->setBounds(
+            snapshotBounds.removeFromLeft(snapshotWidth).reduced(2));
+
     tabHost.setBounds(bounds.removeFromTop(52).reduced(10, 5));
     auto tabBounds = tabHost.getLocalBounds();
     const auto active = static_cast<int>(tabs.size());
@@ -1541,6 +1700,9 @@ void MegaDSPAudioProcessorEditor::timerCallback()
     for (auto& tab : tabs)
         tab->syncBypassState();
     refreshIdentityPresentation();
+    if (knownSnapshotGeneration
+        != audioProcessor.getSnapshotGeneration())
+        refreshSnapshots();
     if (knownActiveSlots != audioProcessor.getRack().activeSlotCount()
         || knownTopologyGeneration
                != audioProcessor.getTopologyGeneration())
@@ -1548,6 +1710,61 @@ void MegaDSPAudioProcessorEditor::timerCallback()
 #if defined(MEGADSP_CAPTURE_SCREENSHOTS)
     advanceScreenshotCapture();
 #endif
+}
+
+void MegaDSPAudioProcessorEditor::refreshSnapshots()
+{
+    knownSnapshotGeneration = audioProcessor.getSnapshotGeneration();
+    liveSafeButton.setToggleState(
+        audioProcessor.isLiveSafeSnapshotsEnabled(),
+        juce::dontSendNotification);
+    const auto selected = audioProcessor.getSelectedSnapshot();
+    for (int index = 0; index < megadsp::snapshotCount; ++index)
+    {
+        auto& button = *snapshotButtons[static_cast<size_t>(index)];
+        const auto populated =
+            audioProcessor.isSnapshotPopulated(index);
+        const auto ready = audioProcessor.isSnapshotReady(index);
+        const auto error = audioProcessor.snapshotError(index);
+        const auto active = index == selected;
+        juce::String stateText;
+        if (!populated)
+            stateText = "Empty";
+        else if (!ready)
+            stateText = "Preparing";
+        else if (error.isNotEmpty())
+            stateText = "Error";
+        else if (active)
+            stateText = "Active";
+        else
+            stateText = "Stored";
+
+        button.setButtonText(
+            error.isNotEmpty() ? "!" + juce::String(index + 1)
+                               : juce::String(index + 1));
+        button.setToggleState(active, juce::dontSendNotification);
+        button.setColour(
+            juce::TextButton::buttonColourId,
+            populated ? juce::Colour(0xff2b3644)
+                      : juce::Colour(0xff171e27));
+        button.setColour(
+            juce::TextButton::buttonOnColourId, accent);
+        button.setTitle(
+            "Snapshot " + juce::String(index + 1));
+        button.setDescription(
+            stateText + ". MIDI Program Change "
+            + juce::String(index)
+            + ". Click to recall; Shift-click to save.");
+        button.setTooltip(
+            "Snapshot " + juce::String(index + 1) + ": "
+            + stateText + ". Program Change " + juce::String(index)
+            + ". "
+            + (error.isNotEmpty()
+                   ? error
+                   : populated
+                       ? "Click to recall; Shift-click to overwrite. Drag to copy."
+                       : "Click for a blank rack; Shift-click to save here."));
+    }
 }
 
 void MegaDSPAudioProcessorEditor::selectSlot(int slot)

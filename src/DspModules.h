@@ -48,3 +48,4 @@
 #include "modules/AutoWah.h"
 #include "modules/ResonantSculpture.h"
 #include "modules/NeuralAmpModeler.h"
+#include "modules/StageVocal.h"

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(megaDSP VERSION 0.28.0 LANGUAGES C CXX)
+project(megaDSP VERSION 0.30.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -92,9 +92,10 @@ juce_add_plugin(megaDSP
     PRODUCT_NAME "megaDSP"
     DESCRIPTION "Modular effects processor"
     IS_SYNTH FALSE
-    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
+    AU_MAIN_TYPE kAudioUnitType_Effect
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
     VST3_CATEGORIES Fx)
@@ -149,7 +150,8 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/WavefoldGarden.cpp
     src/modules/HarmonicMirage.cpp
     src/modules/ChaosField.cpp
-    src/modules/NeuralAmpModeler.cpp)
+    src/modules/NeuralAmpModeler.cpp
+    src/modules/StageVocal.cpp)
 
 set(MEGADSP_MODULE_HEADERS
     src/DspModules.h
@@ -205,7 +207,8 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/WavefoldGarden.h
     src/modules/HarmonicMirage.h
     src/modules/ChaosField.h
-    src/modules/NeuralAmpModeler.h)
+    src/modules/NeuralAmpModeler.h
+    src/modules/StageVocal.h)
 
 set(MEGADSP_UI_SOURCES
     src/ui/EffectGraph.cpp
@@ -266,7 +269,8 @@ set(MEGADSP_UI_SOURCES
     src/ui/modules/VintageChorusModuleView.cpp
     src/ui/modules/WavefoldGardenModuleView.cpp
     src/ui/modules/HarmonicMirageModuleView.cpp
-    src/ui/modules/NeuralAmpModelerModuleView.cpp)
+    src/ui/modules/NeuralAmpModelerModuleView.cpp
+    src/ui/modules/StageVocalModuleView.cpp)
 
 target_sources(megaDSP PRIVATE
     ${MEGADSP_MODULE_SOURCES}
@@ -278,6 +282,8 @@ target_sources(megaDSP PRIVATE
     src/EffectRack.h
     src/Parameters.cpp
     src/Parameters.h
+    src/SnapshotState.cpp
+    src/SnapshotState.h
     src/PluginEditor.cpp
     src/PluginEditor.h
     src/PluginProcessor.cpp
@@ -344,6 +350,7 @@ target_sources(megaDSPTests PRIVATE
     tests/MidnightCurrentTests.cpp
     tests/AutoWahTests.cpp
     tests/ResonantSculptureTests.cpp
+    tests/StageVocalTests.cpp
     tests/ModuleBrowserTests.cpp
     tests/NextTenUtilityTests.cpp
     tests/ProcessorTests.cpp
@@ -356,6 +363,8 @@ target_sources(megaDSPTests PRIVATE
     src/EffectRack.h
     src/Parameters.cpp
     src/Parameters.h
+    src/SnapshotState.cpp
+    src/SnapshotState.h
     src/PluginEditor.cpp
     src/PluginEditor.h
     src/PluginProcessor.cpp

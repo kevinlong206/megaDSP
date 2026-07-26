@@ -51,7 +51,7 @@ public:
         beginTest("Category matching supports multiple tokens");
         const auto colorModules = flatten(
             megadsp::ui::filterAndGroupModules("SATURATION & color"));
-        expectEquals(static_cast<int>(colorModules.size()), 6);
+        expectEquals(static_cast<int>(colorModules.size()), 5);
         expect(std::find(colorModules.begin(), colorModules.end(),
                          megadsp::ModuleType::saturator)
                != colorModules.end());
@@ -94,6 +94,9 @@ public:
         expectOnly("pick attack quack", megadsp::ModuleType::autoWah);
         expectOnly("impossible bowed material",
                    megadsp::ModuleType::resonantSculpture);
+        expectOnly(
+            "stage microphone deesser",
+            megadsp::ModuleType::stageVocal);
 
         beginTest("Next-ten search identities are unique");
         const std::array nextTenSearches {

@@ -561,7 +561,7 @@ public:
                          index);
 
         beginTest("Musical defaults avoid generic half-value hazards");
-        expectEquals(megadsp::stateSchemaVersion, 9);
+        expectEquals(megadsp::stateSchemaVersion, 11);
         const auto reverbDefaults = megadsp::moduleDefaults(
             megadsp::ModuleType::algorithmicReverb);
         expectEquals(reverbDefaults[2], 1.0f);
@@ -572,6 +572,13 @@ public:
         expectEquals(juce::String(megadsp::controlMetadata(
                          megadsp::ModuleType::algorithmicReverb, 3).label),
                      juce::String("Wet"));
+        expectEquals(juce::String(megadsp::controlMetadata(
+                         megadsp::ModuleType::algorithmicReverb, 7).label),
+                     juce::String("Ducking"));
+        expectEquals(juce::String(megadsp::descriptorFor(
+                         megadsp::ModuleType::algorithmicReverb)
+                                      .controlNames[7]),
+                     juce::String("Ducking"));
         const auto convolutionDefaults = megadsp::moduleDefaults(
             megadsp::ModuleType::convolutionReverb);
         expectEquals(convolutionDefaults[2], 0.10f);
@@ -582,6 +589,13 @@ public:
         expectEquals(juce::String(megadsp::controlMetadata(
                          megadsp::ModuleType::convolutionReverb, 4).label),
                      juce::String("Dry"));
+        expectEquals(juce::String(megadsp::controlMetadata(
+                         megadsp::ModuleType::convolutionReverb, 5).label),
+                     juce::String("Ducking"));
+        expectEquals(juce::String(megadsp::descriptorFor(
+                         megadsp::ModuleType::convolutionReverb)
+                                      .controlNames[5]),
+                     juce::String("Ducking"));
         const auto compressorDefaults = megadsp::moduleDefaults(
             megadsp::ModuleType::compressor);
         expectEquals(compressorDefaults[5], 0.0f);
@@ -936,7 +950,7 @@ public:
             exponentialDefault(0.2f, 12.0f, 2.0f),
             linearDefault(25.0f, 200.0f, 100.0f),
             1.0f, 0.10f, megadsp::discreteValue(0, 3),
-            20.0f / 250.0f, 0.55f, 0.20f,
+            20.0f / 250.0f, 0.55f, 0.0f,
             100.0f / 150.0f, 0.50f,
             exponentialDefault(20.0f, 1000.0f, 120.0f),
             exponentialDefault(2000.0f, 20000.0f, 12000.0f)
@@ -969,7 +983,7 @@ public:
             exponentialDefault(20.0f, 1000.0f, 20.0f),
             exponentialDefault(2000.0f, 20000.0f, 20000.0f),
             0.10f, linearDefault(-18.0f, 18.0f, 0.0f),
-            1.0f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f
+            1.0f, 0.0f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f
         });
         expectDefaults(megadsp::ModuleType::dynamicEqualizer, {
             exponentialDefault(20.0f, 20000.0f, 6000.0f),
@@ -1278,11 +1292,25 @@ public:
             0.18f, 0.12f, 0.72f, 0.58f, 0.08f, 0.72f,
             linearDefault(-18.0f, 12.0f, 0.0f)
         });
+        expectDefaults(megadsp::ModuleType::stageVocal, {
+            exponentialDefault(40.0f, 220.0f, 80.0f),
+            linearDefault(-70.0f, -20.0f, -50.0f),
+            linearDefault(0.0f, 36.0f, 18.0f),
+            exponentialDefault(3000.0f, 10000.0f, 6500.0f),
+            linearDefault(0.0f, 12.0f, 4.0f),
+            linearDefault(-40.0f, 0.0f, -18.0f),
+            exponentialDefault(1.0f, 10.0f, 3.0f),
+            exponentialDefault(0.5f, 50.0f, 8.0f),
+            exponentialDefault(30.0f, 800.0f, 120.0f),
+            linearDefault(-6.0f, 6.0f, 1.0f),
+            linearDefault(-6.0f, 6.0f, 1.5f),
+            linearDefault(-18.0f, 12.0f, 0.0f)
+        });
 
         beginTest("Host parameter contract remains fixed");
-        expectEquals(megadsp::moduleTypeCount, 48);
-        expectEquals(megadsp::stateSchemaVersion, 9);
-        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 48);
+        expectEquals(megadsp::moduleTypeCount, 49);
+        expectEquals(megadsp::stateSchemaVersion, 11);
+        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 49);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
         expectEquals(static_cast<int>(megadsp::ModuleType::compressor), 2);
@@ -1368,7 +1396,9 @@ public:
                          megadsp::ModuleType::resonantSculpture), 46);
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::neuralAmpModeler), 47);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 48);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::stageVocal), 48);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 49);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1401,7 +1431,7 @@ public:
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 48);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 49);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1451,6 +1481,7 @@ public:
                               || type == megadsp::ModuleType::midnightCurrent
                               || type == megadsp::ModuleType::autoWah
                               || type == megadsp::ModuleType::resonantSculpture
+                              || type == megadsp::ModuleType::stageVocal
                               || type == megadsp::ModuleType::gateExpander
                               || type == megadsp::ModuleType::transientDesigner
                               || type
@@ -1713,6 +1744,10 @@ public:
         expectCategory(megadsp::ModuleType::guitarCabinet,
                       megadsp::ModuleCategory::saturationAndColor,
                       "Saturation & Color");
+        expectCategory(megadsp::ModuleType::neuralAmpModeler,
+                      megadsp::ModuleCategory::guitar, "Guitar");
+        expectCategory(megadsp::ModuleType::stageVocal,
+                      megadsp::ModuleCategory::dynamics, "Dynamics");
         expectCategory(megadsp::ModuleType::delay,
                       megadsp::ModuleCategory::delayAndEcho,
                       "Delay & Echo");
@@ -2076,6 +2111,47 @@ public:
                             static_cast<double>(child.getProperty("value"))),
                         resonatorDefaults[static_cast<size_t>(control)],
                         0.000001f);
+
+        beginTest("Schema ten initializes new reverb ducking controls off");
+        auto schemaTenState = contractState.copyState();
+        schemaTenState.setProperty("schemaVersion", 10, nullptr);
+        auto setSchemaTenValue = [&schemaTenState](
+                                     const juce::String& id, float newValue)
+        {
+            for (auto child : schemaTenState)
+                if (child.getProperty("id").toString() == id)
+                    child.setProperty("value", newValue, nullptr);
+        };
+        setSchemaTenValue(
+            megadsp::slotParameterId(0, "type"),
+            static_cast<float>(megadsp::ModuleType::algorithmicReverb));
+        setSchemaTenValue(megadsp::controlParameterId(0, 7), 0.73f);
+        setSchemaTenValue(
+            megadsp::slotParameterId(1, "type"),
+            static_cast<float>(megadsp::ModuleType::convolutionReverb));
+        setSchemaTenValue(megadsp::controlParameterId(1, 5), 0.61f);
+        setSchemaTenValue(
+            megadsp::slotParameterId(2, "type"),
+            static_cast<float>(megadsp::ModuleType::delay));
+        setSchemaTenValue(megadsp::controlParameterId(2, 5), 0.44f);
+        auto migratedSchemaTen =
+            megadsp::migrateStateToCurrentSchema(schemaTenState);
+        const auto schemaTenValue = [&migratedSchemaTen](
+                                        const juce::String& id)
+        {
+            for (const auto child : migratedSchemaTen)
+                if (child.getProperty("id").toString() == id)
+                    return static_cast<float>(
+                        static_cast<double>(child.getProperty("value")));
+            return -1.0f;
+        };
+        expectEquals(
+            schemaTenValue(megadsp::controlParameterId(0, 7)), 0.0f);
+        expectEquals(
+            schemaTenValue(megadsp::controlParameterId(1, 5)), 0.0f);
+        expectWithinAbsoluteError(
+            schemaTenValue(megadsp::controlParameterId(2, 5)),
+            0.44f, 0.000001f);
 
         beginTest("Compressor auto makeup restores slow average reduction");
         megadsp::CompressorModule autoCompressor;

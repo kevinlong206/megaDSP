@@ -116,6 +116,20 @@ constexpr std::array<float, 16> outputSignsRight {
     1.0f, 1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f,
     -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f, -1.0f, -1.0f
 };
+
+float follow(float current, float target,
+             float attackCoefficient, float releaseCoefficient) noexcept
+{
+    const auto coefficient =
+        target > current ? attackCoefficient : releaseCoefficient;
+    return coefficient * current + (1.0f - coefficient) * target;
+}
+
+float duckingActivity(float levelDb) noexcept
+{
+    auto activity = juce::jlimit(0.0f, 1.0f, (levelDb + 48.0f) / 36.0f);
+    return activity * activity * (3.0f - 2.0f * activity);
+}
 } // namespace
 
 void AlgorithmicReverbModule::Tank::hadamard(
@@ -497,7 +511,7 @@ void AlgorithmicReverbModule::prepare(const juce::dsp::ProcessSpec& spec)
     for (auto* smoother : { &decaySmoothed, &sizeSmoothed, &drySmoothed,
                             &wetSmoothed,
                             &widthSmoothed, &preDelaySmoothed, &diffusionSmoothed,
-                            &modulationSmoothed, &dampingSmoothed,
+                            &duckAmountSmoothed, &dampingSmoothed,
                             &lowCoefficientSmoothed,
                             &highCoefficientSmoothed })
         smoother->reset(sampleRate, 0.08);
@@ -531,8 +545,7 @@ void AlgorithmicReverbModule::reset()
     preDelaySmoothed.setCurrentAndTargetValue(
         0.125f * static_cast<float>(sampleRate));
     diffusionSmoothed.setCurrentAndTargetValue(0.485f);
-    modulationSmoothed.setCurrentAndTargetValue(
-        0.00075f * static_cast<float>(sampleRate));
+    duckAmountSmoothed.setCurrentAndTargetValue(0.0f);
     dampingSmoothed.setCurrentAndTargetValue(0.5f);
     lowCoefficientSmoothed.setCurrentAndTargetValue(std::exp(
         -juce::MathConstants<float>::twoPi * 141.0f
@@ -540,6 +553,8 @@ void AlgorithmicReverbModule::reset()
     highCoefficientSmoothed.setCurrentAndTargetValue(std::exp(
         -juce::MathConstants<float>::twoPi * 6000.0f
         / static_cast<float>(sampleRate)));
+    duckEnvelope = 0.0f;
+    duckGainDb = 0.0f;
 }
 
 void AlgorithmicReverbModule::process(juce::AudioBuffer<float>& buffer,
@@ -590,7 +605,7 @@ void AlgorithmicReverbModule::process(juce::AudioBuffer<float>& buffer,
     preDelaySmoothed.setTargetValue(
         controls[5] * 0.25f * static_cast<float>(sampleRate));
     diffusionSmoothed.setTargetValue(controls[6]);
-    modulationSmoothed.setTargetValue(controls[7]);
+    duckAmountSmoothed.setTargetValue(lerp(0.0f, 18.0f, controls[7]));
     dampingSmoothed.setTargetValue(damping);
     lowCoefficientSmoothed.setTargetValue(targetLowCoefficient);
     highCoefficientSmoothed.setTargetValue(targetHighCoefficient);
@@ -599,7 +614,7 @@ void AlgorithmicReverbModule::process(juce::AudioBuffer<float>& buffer,
         for (auto* smoother : { &decaySmoothed, &sizeSmoothed, &drySmoothed,
                                 &wetSmoothed,
                                 &widthSmoothed, &preDelaySmoothed,
-                                &diffusionSmoothed, &modulationSmoothed,
+                                &diffusionSmoothed, &duckAmountSmoothed,
                                 &dampingSmoothed,
                                 &lowCoefficientSmoothed,
                                 &highCoefficientSmoothed })
@@ -610,13 +625,17 @@ void AlgorithmicReverbModule::process(juce::AudioBuffer<float>& buffer,
     tankParameters.decaySeconds = decaySmoothed.getTargetValue();
     tankParameters.size = sizeSmoothed.getTargetValue();
     tankParameters.density = diffusionSmoothed.getTargetValue();
-    tankParameters.movement = modulationSmoothed.getTargetValue();
+    tankParameters.movement = 0.20f;
     tankParameters.damping = dampingSmoothed.getTargetValue();
     tanks[static_cast<size_t>(activeTank)].setTargets(tankParameters);
     if (modeTransition)
         tanks[static_cast<size_t>(1 - activeTank)].setTargets(tankParameters);
 
     const auto historySize = static_cast<int>(inputHistory[0].size());
+    const auto duckDetectorAttack = detail::coefficient(sampleRate, 5.0f);
+    const auto duckDetectorRelease = detail::coefficient(sampleRate, 180.0f);
+    const auto duckGainAttack = detail::coefficient(sampleRate, 8.0f);
+    const auto duckGainRelease = detail::coefficient(sampleRate, 350.0f);
 
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
@@ -627,7 +646,8 @@ void AlgorithmicReverbModule::process(juce::AudioBuffer<float>& buffer,
         const auto width = widthSmoothed.getNextValue();
         const auto preDelaySamples = preDelaySmoothed.getNextValue();
         const auto density = diffusionSmoothed.getNextValue();
-        const auto movement = modulationSmoothed.getNextValue();
+        constexpr auto movement = 0.20f;
+        const auto duckAmountDb = duckAmountSmoothed.getNextValue();
         const auto smoothedDamping = dampingSmoothed.getNextValue();
         const auto lowCoefficient = lowCoefficientSmoothed.getNextValue();
         const auto highCoefficient = highCoefficientSmoothed.getNextValue();
@@ -636,6 +656,18 @@ void AlgorithmicReverbModule::process(juce::AudioBuffer<float>& buffer,
             buffer.getNumChannels() > 1 ? buffer.getSample(1, sample)
                                         : buffer.getSample(0, sample)
         };
+        const auto linkedInput = juce::jmax(
+            std::abs(dry[0]), std::abs(dry[1]));
+        duckEnvelope = follow(
+            duckEnvelope, linkedInput,
+            duckDetectorAttack, duckDetectorRelease);
+        const auto targetDuckGainDb = -duckAmountDb * duckingActivity(
+            juce::Decibels::gainToDecibels(duckEnvelope, -100.0f));
+        duckGainDb = follow(
+            duckGainDb, targetDuckGainDb,
+            duckGainRelease, duckGainAttack);
+        const auto duckGain =
+            juce::Decibels::decibelsToGain(duckGainDb);
         std::array<float, 2> conditioned {};
         for (int channel = 0; channel < 2; ++channel)
         {
@@ -728,12 +760,13 @@ void AlgorithmicReverbModule::process(juce::AudioBuffer<float>& buffer,
         };
         if (buffer.getNumChannels() == 1)
             buffer.setSample(0, sample, dry[0] * dryGain
-                                      + mid * wetGain);
+                                      + mid * wetGain * duckGain);
         else
             for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
                 buffer.setSample(channel, sample,
                     dry[static_cast<size_t>(channel)] * dryGain
-                    + wet[static_cast<size_t>(channel)] * wetGain);
+                    + wet[static_cast<size_t>(channel)]
+                          * wetGain * duckGain);
     }
 }
 

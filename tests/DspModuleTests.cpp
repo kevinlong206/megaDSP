@@ -305,6 +305,10 @@ public:
             prismControls[10] = 1.0f;
             SpectralPrismModule module;
             module.prepare(spec);
+            auto frozenPrismControls = prismControls;
+            frozenPrismControls[4] = 1.0f;
+            expectEquals(
+                module.snapshotSpillSeconds(frozenPrismControls), 1.5);
             auto rendered = makeSine(2, 48000, 523.25f, 0.25f);
             module.process(rendered, prismControls, environment);
             expect(rendered.getMagnitude(0, rendered.getNumSamples()) > 0.001f);
@@ -969,6 +973,159 @@ public:
                "Loaded IR did not produce its delayed reflection; peak="
                    + juce::String(tailPeak, 6));
 
+        beginTest("Mono IR wet output stays centered for asymmetric input");
+        const auto monoImpulseFile =
+            juce::File::getCurrentWorkingDirectory()
+                .getNonexistentChildFile(
+                    "megadsp-test-mono-ir", ".wav");
+        {
+            std::unique_ptr<juce::OutputStream> stream =
+                monoImpulseFile.createOutputStream();
+            juce::WavAudioFormat format;
+            auto writer = format.createWriterFor(
+                stream, juce::AudioFormatWriterOptions {}
+                            .withSampleRate(48000.0)
+                            .withNumChannels(1)
+                            .withBitsPerSample(24));
+            expect(writer != nullptr);
+            juce::AudioBuffer<float> monoIr(1, 2048);
+            monoIr.clear();
+            monoIr.setSample(0, 0, 1.0f);
+            monoIr.setSample(0, 700, 0.4f);
+            expect(writer != nullptr
+                   && writer->writeFromAudioSampleBuffer(
+                       monoIr, 0, monoIr.getNumSamples()));
+        }
+        ConvolutionReverbModule centeredConvolution;
+        centeredConvolution.prepare(spec);
+        expect(centeredConvolution.loadImpulseResponse(
+                   monoImpulseFile).wasOk());
+        auto centeredControls =
+            moduleDefaults(ModuleType::convolutionReverb);
+        centeredControls[2] = 1.0f;
+        centeredControls[4] = 0.0f;
+        juce::AudioBuffer<float> centeredBlock(2, 512);
+        for (int block = 0; block < 4; ++block)
+        {
+            centeredBlock.clear();
+            centeredConvolution.process(
+                centeredBlock, centeredControls, environment);
+        }
+        centeredBlock.clear();
+        centeredBlock.setSample(0, 0, 1.0f);
+        centeredConvolution.process(
+            centeredBlock, centeredControls, environment);
+        for (int sample = 0; sample < centeredBlock.getNumSamples(); ++sample)
+            expectWithinAbsoluteError(
+                centeredBlock.getSample(0, sample),
+                centeredBlock.getSample(1, sample), 0.000001f);
+        for (int block = 0; block < 4; ++block)
+        {
+            centeredBlock.clear();
+            centeredConvolution.process(
+                centeredBlock, centeredControls, environment);
+            for (int sample = 0;
+                 sample < centeredBlock.getNumSamples(); ++sample)
+                expectWithinAbsoluteError(
+                    centeredBlock.getSample(0, sample),
+                    centeredBlock.getSample(1, sample), 0.000001f);
+        }
+
+        beginTest("Stereo IR retains its encoded channel differences");
+        convolution.reset();
+        controls = moduleDefaults(ModuleType::convolutionReverb);
+        controls[2] = 1.0f;
+        controls[4] = 0.0f;
+        for (int block = 0; block < 4; ++block)
+        {
+            convolutionBlock.clear();
+            convolution.process(convolutionBlock, controls, environment);
+        }
+        juce::AudioBuffer<float> stereoRender(2, 4096);
+        stereoRender.clear();
+        for (int block = 0; block < 8; ++block)
+        {
+            convolutionBlock.clear();
+            if (block == 0)
+            {
+                convolutionBlock.setSample(0, 0, 1.0f);
+                convolutionBlock.setSample(1, 0, 1.0f);
+            }
+            convolution.process(convolutionBlock, controls, environment);
+            for (int channel = 0; channel < 2; ++channel)
+                stereoRender.copyFrom(
+                    channel, block * 512,
+                    convolutionBlock, channel, 0, 512);
+        }
+        expect(std::abs(stereoRender.getSample(0, 1200))
+               > std::abs(stereoRender.getSample(1, 1200)) + 0.01f);
+        expect(std::abs(stereoRender.getSample(1, 1800))
+               > std::abs(stereoRender.getSample(0, 1800)) + 0.01f);
+
+        const auto renderConvolution =
+            [&spec, &environment, &impulseFile](
+                float frequency, float lowCut, float ducking)
+        {
+            ConvolutionReverbModule renderedConvolution;
+            renderedConvolution.prepare(spec);
+            const auto result =
+                renderedConvolution.loadImpulseResponse(impulseFile);
+            if (result.failed())
+                return -1.0f;
+            auto renderControls =
+                moduleDefaults(ModuleType::convolutionReverb);
+            renderControls[0] = lowCut;
+            renderControls[2] = 1.0f;
+            renderControls[4] = 0.0f;
+            renderControls[5] = ducking;
+            juce::AudioBuffer<float> block(2, 512);
+            double sumSquares = 0.0;
+            int convolutionMeasuredSamples = 0;
+            for (int blockIndex = 0; blockIndex < 160; ++blockIndex)
+            {
+                for (int sample = 0; sample < block.getNumSamples(); ++sample)
+                {
+                    const auto absoluteSample =
+                        blockIndex * block.getNumSamples() + sample;
+                    const auto input = 0.25f * std::sin(
+                        juce::MathConstants<float>::twoPi * frequency
+                        * static_cast<float>(absoluteSample) / 48000.0f);
+                    block.setSample(0, sample, input);
+                    block.setSample(1, sample, input);
+                }
+                renderedConvolution.process(
+                    block, renderControls, environment);
+                if (blockIndex >= 120)
+                {
+                    for (int sample = 0;
+                         sample < block.getNumSamples(); ++sample)
+                    {
+                        const auto value = block.getSample(0, sample);
+                        sumSquares += static_cast<double>(value) * value;
+                        ++convolutionMeasuredSamples;
+                    }
+                }
+            }
+            return static_cast<float>(
+                std::sqrt(sumSquares / convolutionMeasuredSamples));
+        };
+
+        beginTest("Convolution Low Cut is a wet high-pass filter");
+        const auto openConvolution =
+            renderConvolution(50.0f, 0.0f, 0.0f);
+        const auto filteredConvolution =
+            renderConvolution(50.0f, 1.0f, 0.0f);
+        expect(openConvolution > 0.0f);
+        expect(filteredConvolution < openConvolution * 0.20f);
+
+        beginTest("Convolution reverb ducks only its wet response");
+        const auto unduckedConvolution =
+            renderConvolution(1000.0f, 0.0f, 0.0f);
+        const auto duckedConvolution =
+            renderConvolution(1000.0f, 0.0f, 1.0f);
+        expect(unduckedConvolution > 0.0f);
+        expect(duckedConvolution < unduckedConvolution * 0.35f);
+
         beginTest("Loaded convolution scales dry and wet independently");
         convolution.reset();
         controls[2] = 1.0f;
@@ -1157,6 +1314,7 @@ public:
                    0, pendingWetOnly.getNumSamples()) < 0.000001f);
 
         replacementFile.deleteFile();
+        monoImpulseFile.deleteFile();
         impulseFile.deleteFile();
 
         beginTest("EQ low shelf boosts lows without broad output gain");
@@ -1683,6 +1841,62 @@ public:
                 dryOnlyReverb->getSample(0, sample)
                     + wetOnlyReverb->getSample(0, sample),
                 0.00001f);
+
+        const auto renderSustainedReverb =
+            [&spec, &environment](float frequency, float lowCut, float ducking)
+        {
+            AlgorithmicReverbModule reverb;
+            reverb.prepare(spec);
+            auto renderControls =
+                moduleDefaults(ModuleType::algorithmicReverb);
+            renderControls[2] = 0.0f;
+            renderControls[3] = 1.0f;
+            renderControls[7] = ducking;
+            renderControls[10] = lowCut;
+            juce::AudioBuffer<float> block(2, 512);
+            double sumSquares = 0.0;
+            int reverbMeasuredSamples = 0;
+            for (int blockIndex = 0; blockIndex < 240; ++blockIndex)
+            {
+                for (int sample = 0; sample < block.getNumSamples(); ++sample)
+                {
+                    const auto absoluteSample =
+                        blockIndex * block.getNumSamples() + sample;
+                    const auto input = 0.25f * std::sin(
+                        juce::MathConstants<float>::twoPi * frequency
+                        * static_cast<float>(absoluteSample) / 48000.0f);
+                    block.setSample(0, sample, input);
+                    block.setSample(1, sample, input);
+                }
+                reverb.process(block, renderControls, environment);
+                if (blockIndex >= 200)
+                {
+                    for (int sample = 0;
+                         sample < block.getNumSamples(); ++sample)
+                    {
+                        const auto value = block.getSample(0, sample);
+                        sumSquares += static_cast<double>(value) * value;
+                        ++reverbMeasuredSamples;
+                    }
+                }
+            }
+            return static_cast<float>(
+                std::sqrt(sumSquares / reverbMeasuredSamples));
+        };
+
+        beginTest("Algorithmic reverb Low Cut is a wet high-pass filter");
+        const auto lowCutOpen =
+            renderSustainedReverb(50.0f, 0.0f, 0.0f);
+        const auto lowCutRaised =
+            renderSustainedReverb(50.0f, 1.0f, 0.0f);
+        expect(lowCutRaised < lowCutOpen * 0.20f);
+
+        beginTest("Algorithmic reverb ducks only its wet field");
+        const auto unduckedReverb =
+            renderSustainedReverb(1000.0f, 0.0f, 0.0f);
+        const auto duckedReverb =
+            renderSustainedReverb(1000.0f, 0.0f, 1.0f);
+        expect(duckedReverb < unduckedReverb * 0.35f);
 
         beginTest("Algorithmic Dry and Wet automation remains finite");
         AlgorithmicReverbModule gainAutomatedReverb;

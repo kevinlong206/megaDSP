@@ -135,7 +135,7 @@ public:
     {
         beginTest("Stable appended enum and module count");
         expectEquals(static_cast<int>(ModuleType::neuralAmpModeler), 47);
-        expectEquals(moduleTypeCount, 48);
+        expectEquals(moduleTypeCount, 49);
 
         beginTest("Host parameter count");
         MegaDSPAudioProcessor proc;
@@ -147,6 +147,10 @@ public:
         expect(d != nullptr);
         expectEquals(juce::String(d->displayName),
                      juce::String("Neural Amp Modeler"));
+        expect(d->category == ModuleCategory::guitar);
+        expectEquals(
+            juce::String(moduleCategoryName(d->category)),
+            juce::String("Guitar"));
         expect(hasCapability(d->capabilities,
                              ModuleCapability::neuralAmpModel));
 

@@ -35,7 +35,8 @@ void AlgorithmicReverbModuleView::configureAccessibility(
         "Drag the two-dimensional Decay and Room Scale handle. Room Scale "
         "uses Compact, Natural, Large, "
         "and Vast names with the exact 25 to 200 percent scale. Dry and Wet "
-        "are independent adjacent level rails. Drag the Low Cut and High Cut "
+        "are independent adjacent level rails, with input-responsive Ducking. "
+        "Drag the Low Cut high-pass and High Cut "
         "handles on the input passband; double-click a handle to reset.");
 }
 
@@ -258,7 +259,9 @@ void AlgorithmicReverbModuleView::paint(juce::Graphics& graphics, juce::Rectangl
     graphics.drawText(
         "DRY " + megadsp::formatControlValue(type, 2, value(2))
             + "   WET "
-            + megadsp::formatControlValue(type, 3, value(3)),
+            + megadsp::formatControlValue(type, 3, value(3))
+            + "   DUCK "
+            + megadsp::formatControlValue(type, 7, value(7)),
         area.toNearestInt(), juce::Justification::topLeft);
     const auto handle = spacePoint(fullArea);
     graphics.setColour(accent.withAlpha(0.8f));

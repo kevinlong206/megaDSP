@@ -29,7 +29,8 @@ void ConvolutionReverbModuleView::configureAccessibility(
     component.setHelpText(
         "Drop a WAV, AIFF, or FLAC impulse response file here. "
         "Drag Low Cut and High Cut to define the wet passband. The adjacent "
-        "Dry and Wet rails remain independent, with a separate Output Trim. "
+        "Dry and Wet rails remain independent, with Ducking and a separate "
+        "Output Trim. "
         "Double-click either passband handle to restore its default.");
 }
 
@@ -158,7 +159,9 @@ void ConvolutionReverbModuleView::paint(
             + "   WET "
             + megadsp::formatControlValue(type, 2, value(2))
             + "   OUTPUT TRIM "
-            + megadsp::formatControlValue(type, 3, value(3)),
+            + megadsp::formatControlValue(type, 3, value(3))
+            + "   DUCK "
+            + megadsp::formatControlValue(type, 5, value(5)),
         area.toNearestInt(), juce::Justification::topRight);
 
     if (name.isEmpty())

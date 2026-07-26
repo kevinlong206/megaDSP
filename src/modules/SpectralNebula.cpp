@@ -163,6 +163,13 @@ double SpectralNebulaModule::tailSeconds(
             + static_cast<double>(FixedLatencyStft::fftSize) / sampleRate);
 }
 
+double SpectralNebulaModule::snapshotSpillSeconds(
+    const ControlValues& controls) const
+{
+    return detail::normalizedControl(controls[freezeControl], 0.0f) >= 0.5f
+        ? 1.5 : DspModule::snapshotSpillSeconds(controls);
+}
+
 void SpectralNebulaModule::processFrameCallback(
     void* context, Complex* const* spectra,
     int channels, int bins) noexcept

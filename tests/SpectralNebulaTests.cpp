@@ -57,6 +57,8 @@ public:
         frozen.process(seed, cloudControls, {});
         auto freezeControls = cloudControls;
         freezeControls[SpectralNebulaModule::freezeControl] = 1.0f;
+        expectEquals(
+            frozen.snapshotSpillSeconds(freezeControls), 1.5);
         juce::AudioBuffer<float> held(2, 96000);
         held.clear();
         frozen.process(held, freezeControls, capture);

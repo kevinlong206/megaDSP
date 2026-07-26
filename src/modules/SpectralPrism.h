@@ -26,6 +26,7 @@ public:
         return DryPathTiming::immediate;
     }
     double tailSeconds(const ControlValues&) const override;
+    double snapshotSpillSeconds(const ControlValues&) const override;
     float meterValue() const override
     {
         return outputMeter.load(std::memory_order_relaxed);

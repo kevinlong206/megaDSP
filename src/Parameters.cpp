@@ -189,6 +189,18 @@ juce::ValueTree migrateStateToCurrentSchema(juce::ValueTree state)
                     defaults[static_cast<size_t>(control)]);
         }
     }
+    if (sourceSchema < 11)
+    {
+        for (int slot = 0; slot < slotCount; ++slot)
+        {
+            const auto type = static_cast<ModuleType>(juce::roundToInt(
+                value(slotParameterId(slot, "type"), 0.0f)));
+            if (type == ModuleType::algorithmicReverb)
+                setValue(controlParameterId(slot, 7), 0.0f);
+            else if (type == ModuleType::convolutionReverb)
+                setValue(controlParameterId(slot, 5), 0.0f);
+        }
+    }
     for (int slot = 0; slot < slotCount; ++slot)
         state.removeProperty("advanced" + juce::String(slot), nullptr);
     state.setProperty("schemaVersion", stateSchemaVersion, nullptr);

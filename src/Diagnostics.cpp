@@ -178,6 +178,8 @@ juce::String eventName(std::uint32_t event)
         case DiagnosticEvent::topologyChanged: return "topology";
         case DiagnosticEvent::stateRejected: return "state-rejected";
         case DiagnosticEvent::impulseResponseFailed: return "ir-failed";
+        case DiagnosticEvent::snapshotRecallWorkload:
+            return "snapshot-recall";
     }
     return "message";
 }

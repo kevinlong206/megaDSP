@@ -209,8 +209,8 @@ constexpr Metadata reverbMetadata {{
       "Delays the reverb onset while leaving the dry signal immediate." },
     { "Diffusion", ControlKind::rotary, false, "Space",
       "Controls diffusion from sparse to dense." },
-    { "Modulation", ControlKind::rotary, false, "Space",
-      "Adds subtle modulation to the tail." },
+    { "Ducking", ControlKind::level, true, "Levels",
+      "Lowers the completed wet reverb while input is present, then smoothly restores the tail." },
     { "Width", ControlKind::horizontal, false, "Stereo",
       "Sets wet stereo spread; 100% is natural width." },
     { "Damping", ControlKind::rotary, false, "Decay Color",
@@ -231,7 +231,9 @@ constexpr Metadata convolutionReverbMetadata {{
       "Adjusts level from -18 to +18 dB after the convolution reverb." },
     { "Dry", ControlKind::level, true, "Levels",
       "Sets the independent level of the latency-aligned original signal." },
-    unused, unused, unused, unused, unused, unused, unused
+    { "Ducking", ControlKind::level, true, "Levels",
+      "Lowers the filtered wet convolution while input is present, then smoothly restores the tail." },
+    unused, unused, unused, unused, unused, unused
 }};
 constexpr Metadata dynamicEqualizerMetadata {{
     { "Frequency", ControlKind::horizontal, true, "Band",
@@ -1030,6 +1032,32 @@ constexpr Metadata neuralAmpModelerMetadata {{
       "Adjusts level after the neural model and tone stack." },
     unused, unused, unused, unused, unused, unused, unused
 }};
+constexpr Metadata stageVocalMetadata {{
+    { "Low Cut", ControlKind::horizontal, true, "Cleanup",
+      "Removes stage rumble and proximity buildup below the selected frequency." },
+    { "Expander Threshold", ControlKind::level, true, "Expander",
+      "Sets the vocal level below which background sound is attenuated." },
+    { "Expander Range", ControlKind::level, false, "Expander",
+      "Limits the maximum attenuation instead of hard-muting the microphone." },
+    { "De-Ess Frequency", ControlKind::horizontal, true, "De-Esser",
+      "Sets the lower edge of the sibilance band." },
+    { "De-Ess Amount", ControlKind::level, true, "De-Esser",
+      "Sets the maximum linked high-band attenuation for sibilant consonants." },
+    { "Compressor Threshold", ControlKind::level, true, "Compressor",
+      "Sets where broadband vocal compression begins." },
+    { "Ratio", ControlKind::rotary, true, "Compressor",
+      "Sets how strongly vocal peaks above the threshold are controlled." },
+    { "Attack", ControlKind::rotary, false, "Compressor",
+      "Sets how quickly compression catches vocal peaks." },
+    { "Release", ControlKind::rotary, false, "Compressor",
+      "Sets how quickly compression recovers between phrases." },
+    { "Presence", ControlKind::level, true, "Tone",
+      "Cuts or boosts vocal articulation between roughly 1.2 and 5 kHz." },
+    { "Air", ControlKind::level, true, "Tone",
+      "Cuts or boosts the open high-frequency band above roughly 8 kHz." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts final level after the complete vocal strip." }
+}};
 constexpr Metadata midnightCurrentMetadata {{
     { "Filter Center", ControlKind::horizontal, true, "Submerged Filter",
       "Sets the center of the dark resonant filter and phase network." },
@@ -1133,7 +1161,7 @@ constexpr Names limiterNames {
 };
 constexpr Names reverbNames {
     "Decay", "Room Scale", "Dry", "Wet", "Mode", "Pre-delay",
-    "Diffusion", "Modulation", "Width", "Damping", "Low Cut", "High Cut"
+    "Diffusion", "Ducking", "Width", "Damping", "Low Cut", "High Cut"
 };
 constexpr Names stereoWidthNames {
     "Width", "Dimension", "Mono Below", "Focus", "Balance", "Mix",
@@ -1153,8 +1181,8 @@ constexpr Names rotarySpeakerNames {
     "Output"
 };
 constexpr Names convolutionReverbNames {
-    "Low Cut", "High Cut", "Wet", "Output Trim", "Dry", "-", "-", "-", "-", "-",
-    "-", "-"
+    "Low Cut", "High Cut", "Wet", "Output Trim", "Dry", "Ducking", "-", "-",
+    "-", "-", "-", "-"
 };
 constexpr Names dynamicEqualizerNames {
     "Frequency", "Q", "Range", "Threshold", "Ratio", "Attack", "Release",
@@ -1293,6 +1321,11 @@ constexpr Names spectralNebulaNames {
 constexpr Names neuralAmpModelerNames {
     "Pre Gain", "Bass", "Mid", "Treble", "Post Gain",
     "-", "-", "-", "-", "-", "-", "-"
+};
+constexpr Names stageVocalNames {
+    "Low Cut", "Expander Threshold", "Expander Range",
+    "De-Ess Frequency", "De-Ess Amount", "Compressor Threshold",
+    "Ratio", "Attack", "Release", "Presence", "Air", "Output"
 };
 constexpr Names midnightCurrentNames {
     "Filter Center", "Filter Sweep", "Motion Rate", "Phase Depth",
@@ -1654,7 +1687,7 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
             values = { exponentialNormalized(0.2f, 12.0f, 2.0f),
                        linearNormalized(25.0f, 200.0f, 100.0f), 1.0f, 0.10f,
                        discreteValue(0, 3), 20.0f / 250.0f,
-                       0.55f, 0.20f,
+                       0.55f, 0.0f,
                        100.0f / 150.0f, 0.50f,
                        exponentialNormalized(20.0f, 1000.0f, 120.0f),
                        exponentialNormalized(2000.0f, 20000.0f, 12000.0f) };
@@ -1693,7 +1726,7 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 exponentialNormalized(20.0f, 1000.0f, 20.0f),
                 exponentialNormalized(2000.0f, 20000.0f, 20000.0f),
                 0.10f, linearNormalized(-18.0f, 18.0f, 0.0f),
-                1.0f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f
+                1.0f, 0.0f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f
             };
             break;
         case ModuleType::dynamicEqualizer:
@@ -2057,6 +2090,22 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
             };
             break;
+        case ModuleType::stageVocal:
+            values = {
+                exponentialNormalized(40.0f, 220.0f, 80.0f),
+                linearNormalized(-70.0f, -20.0f, -50.0f),
+                linearNormalized(0.0f, 36.0f, 18.0f),
+                exponentialNormalized(3000.0f, 10000.0f, 6500.0f),
+                linearNormalized(0.0f, 12.0f, 4.0f),
+                linearNormalized(-40.0f, 0.0f, -18.0f),
+                exponentialNormalized(1.0f, 10.0f, 3.0f),
+                exponentialNormalized(0.5f, 50.0f, 8.0f),
+                exponentialNormalized(30.0f, 800.0f, 120.0f),
+                linearNormalized(-6.0f, 6.0f, 1.0f),
+                linearNormalized(-6.0f, 6.0f, 1.5f),
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
         case ModuleType::midnightCurrent:
             values = {
                 exponentialNormalized(120.0f, 3000.0f, 520.0f),
@@ -2157,7 +2206,7 @@ juce::String formatControlValue(ModuleType type, int control, float value)
                 return juce::String(value * 100.0f, 0) + "%";
             if (control == 5) return juce::String(value * 250.0f, 0) + " ms";
             if (control == 6) return juce::String(value * 100.0f, 0) + "%";
-            if (control == 7) return juce::String(value * 100.0f, 0) + "%";
+            if (control == 7) return juce::String(value * 18.0f, 1) + " dB";
             if (control == 8) return juce::String(value * 150.0f, 0) + "%";
             if (control == 9) return juce::String(value * 100.0f, 0) + "%";
             if (control == 10) return formatFrequency(exponential(20.0f, 1000.0f, value));
@@ -2216,6 +2265,7 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 2 || control == 4)
                 return juce::String(value * 100.0f, 0) + "%";
             if (control == 3) return juce::String(linear(-18.0f, 18.0f, value), 1) + " dB";
+            if (control == 5) return juce::String(value * 18.0f, 1) + " dB";
             break;
         case ModuleType::dynamicEqualizer:
             if (control == 0) return formatFrequency(exponential(20.0f, 20000.0f, value));
@@ -2715,6 +2765,42 @@ juce::String formatControlValue(ModuleType type, int control, float value)
                     + juce::String(gain, 1) + " dB";
             }
             break;
+        case ModuleType::stageVocal:
+            if (control == 0)
+                return formatFrequency(exponential(40.0f, 220.0f, value));
+            if (control == 1)
+                return juce::String(linear(-70.0f, -20.0f, value), 1)
+                    + " dB";
+            if (control == 2)
+                return juce::String(linear(0.0f, 36.0f, value), 1)
+                    + " dB";
+            if (control == 3)
+                return formatFrequency(exponential(3000.0f, 10000.0f, value));
+            if (control == 4)
+                return juce::String(linear(0.0f, 12.0f, value), 1)
+                    + " dB";
+            if (control == 5)
+                return juce::String(linear(-40.0f, 0.0f, value), 1)
+                    + " dB";
+            if (control == 6)
+                return juce::String(exponential(1.0f, 10.0f, value), 2)
+                    + ":1";
+            if (control == 7)
+                return juce::String(exponential(0.5f, 50.0f, value), 1)
+                    + " ms";
+            if (control == 8)
+                return juce::String(exponential(30.0f, 800.0f, value), 0)
+                    + " ms";
+            if (control == 9 || control == 10)
+            {
+                const auto gain = linear(-6.0f, 6.0f, value);
+                return (gain > 0.05f ? "+" : "")
+                    + juce::String(gain, 1) + " dB";
+            }
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1)
+                    + " dB";
+            break;
         case ModuleType::midnightCurrent:
             if (control == 0)
                 return formatFrequency(exponential(120.0f, 3000.0f, value));
@@ -2855,8 +2941,10 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 2 || control == 3)
                 return juce::jlimit(0.0f, 1.0f, value / 100.0f);
             if (control == 5) return juce::jlimit(0.0f, 1.0f, value / 250.0f);
-            if (control == 6 || control == 7)
+            if (control == 6)
                 return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 7)
+                return linearNormalized(0.0f, 18.0f, value);
             if (control == 8) return juce::jlimit(0.0f, 1.0f, value / 150.0f);
             if (control == 9) return juce::jlimit(0.0f, 1.0f, value / 100.0f);
             if (control == 10) return exponentialNormalized(
@@ -2927,6 +3015,7 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 2 || control == 4)
                 return juce::jlimit(0.0f, 1.0f, value / 100.0f);
             if (control == 3) return linearNormalized(-18.0f, 18.0f, value);
+            if (control == 5) return linearNormalized(0.0f, 18.0f, value);
             break;
         case ModuleType::dynamicEqualizer:
             if (control == 0) return exponentialNormalized(
@@ -3404,6 +3493,34 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control >= 1 && control <= 3)
                 return linearNormalized(-12.0f, 12.0f, value);
             break;
+        case ModuleType::stageVocal:
+            if (control == 0)
+                return exponentialNormalized(
+                    40.0f, 220.0f, parsedFrequency(text, value));
+            if (control == 1)
+                return linearNormalized(-70.0f, -20.0f, value);
+            if (control == 2)
+                return linearNormalized(0.0f, 36.0f, value);
+            if (control == 3)
+                return exponentialNormalized(
+                    3000.0f, 10000.0f, parsedFrequency(text, value));
+            if (control == 4)
+                return linearNormalized(0.0f, 12.0f, value);
+            if (control == 5)
+                return linearNormalized(-40.0f, 0.0f, value);
+            if (control == 6)
+                return exponentialNormalized(1.0f, 10.0f, value);
+            if (control == 7)
+                return exponentialNormalized(
+                    0.5f, 50.0f, parsedMilliseconds(text, value));
+            if (control == 8)
+                return exponentialNormalized(
+                    30.0f, 800.0f, parsedMilliseconds(text, value));
+            if (control == 9 || control == 10)
+                return linearNormalized(-6.0f, 6.0f, value);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
         case ModuleType::midnightCurrent:
             if (control == 0)
                 return exponentialNormalized(
@@ -3533,7 +3650,8 @@ bool isControlContextuallyVisible(
             if (control == 3)
                 return values[2] >= 0.5f;
             break;
-        case ModuleType::neuralAmpModeler: break;
+        case ModuleType::neuralAmpModeler:
+        case ModuleType::stageVocal: break;
         case ModuleType::empty:
         case ModuleType::equalizer:
         case ModuleType::saturator:
@@ -3666,7 +3784,8 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModulePresentation::algorithmicReverb, "Algorithmic Reverb",
             ModuleCategory::reverbAndSpace,
             "Build animated halls, chambers, and plates.",
-            "reverb hall chamber plate ambience space", reverbNames,
+            "reverb hall chamber plate ambience space ducking high pass",
+            reverbNames,
             reverbMetadata, &makeModule<AlgorithmicReverbModule>),
         makeDefinition(
             ModuleType::stereoWidth, ModulePresentation::stereoWidth,
@@ -3701,7 +3820,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModulePresentation::convolutionReverb, "Convolution Reverb",
             ModuleCategory::reverbAndSpace,
             "Place sounds in captured spaces with an impulse response.",
-            "convolution reverb impulse response ir room space",
+            "convolution reverb impulse response ir room space ducking high pass",
             convolutionReverbNames, convolutionReverbMetadata,
             &makeModule<ConvolutionReverbModule>,
             ModuleCapability::impulseResponse),
@@ -3995,12 +4114,21 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
         makeDefinition(
             ModuleType::neuralAmpModeler,
             ModulePresentation::neuralAmpModeler, "Neural Amp Modeler",
-            ModuleCategory::saturationAndColor,
+            ModuleCategory::guitar,
             "Load .nam neural amp models including A2 Standard and A2 Nano for authentic amp tones.",
             "nam neural amp modeler guitar tone cabinet a2 machine learning",
             neuralAmpModelerNames, neuralAmpModelerMetadata,
             &makeModule<NeuralAmpModelerModule>,
-            ModuleCapability::neuralAmpModel)
+            ModuleCapability::neuralAmpModel),
+        makeDefinition(
+            ModuleType::stageVocal,
+            ModulePresentation::stageVocal, "Stage Vocal",
+            ModuleCategory::dynamics,
+            "Prepare a live vocal with rumble control, expansion, de-essing, compression, presence, and air.",
+            "stage live vocal microphone expander deesser compressor presence air strip",
+            stageVocalNames, stageVocalMetadata,
+            &makeModule<StageVocalModule>,
+            ModuleCapability::continuousTelemetry)
     }};
     return definitions;
 }
@@ -4051,6 +4179,7 @@ const char* moduleCategoryName(ModuleCategory category)
         case ModuleCategory::modulation: return "Modulation";
         case ModuleCategory::stereoAndUtility: return "Stereo & Utility";
         case ModuleCategory::glitchAndCreative: return "Glitch & Creative";
+        case ModuleCategory::guitar: return "Guitar";
         case ModuleCategory::none: return "";
     }
     return "";

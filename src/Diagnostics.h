@@ -14,7 +14,8 @@ enum class DiagnosticEvent : std::uint32_t
     latencyChanged,
     topologyChanged,
     stateRejected,
-    impulseResponseFailed
+    impulseResponseFailed,
+    snapshotRecallWorkload
 };
 
 class Diagnostics final : private juce::Thread

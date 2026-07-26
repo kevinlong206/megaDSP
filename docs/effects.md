@@ -1,6 +1,6 @@
 # Effects reference
 
-Detailed control and interaction notes for each of megaDSP's forty-six
+Detailed control and interaction notes for each of megaDSP's forty-seven
 modules. For installation and a quick overview see the [README](../README.md).
 
 Runtime-specific graphs show **DSP telemetry waiting** until the selected slot
@@ -16,6 +16,39 @@ wet field begins after its internal analysis window, which acts as a short
 pre-delay rather than delaying everything else in the DAW. Corrective spectral
 tools and processors whose topology depends on phase alignment, oversampling,
 or lookahead continue to report fixed latency and align their dry paths.
+
+## Snapshots
+
+The rack header contains eight complete snapshots. Snapshot 1 starts with the
+current rack. Click any button to recall without copying the current rack;
+clicking an unused slot activates a fresh blank rack. Shift-click saves the
+current rack to an unused slot or overwrites a populated one. Edits immediately
+become part of the selected snapshot. Drag a populated snapshot onto another
+slot to replace the destination with a prepared copy; the source and current
+selection remain unchanged.
+
+Snapshots include module type/order, all controls and bypass states, global
+Input/Output gain, and convolution IR or NAM model paths. MIDI Program Change
+0-7 recalls Snapshots 1-8 on any channel at the exact event sample. A
+zero-slope 20 ms input crossfade prevents switching clicks, after which up to
+two outgoing effect tails continue to spill on zero input. Natural snapshot
+spills are capped at eight seconds and fade over their final 500 ms. Sustained
+generators such as Chord Loom and frozen spectral fields use a shorter
+1.5-second spill instead of persisting indefinitely. A third outgoing tail
+fades the oldest one to keep CPU bounded.
+
+Normally, inactive snapshots remain prepared but do not process audio or
+visualization. **LIVE SAFE** instead processes every populated snapshot once per
+audio range, feeding silence to inactive racks so recall does not create a
+temporary CPU spike. This costs predictable steady CPU; test the complete rack
+set before live use. Inactive snapshots never receive or retain monitored input.
+
+Each snapshot retains its native processing latency rather than delaying every
+snapshot to the slowest one. In LIVE SAFE mode, a changed host latency is
+reported only after audio callbacks stop, avoiding a PDC rebuild during playback
+or monitoring at the cost of temporarily offset timing. Missing external files
+leave the rest of a snapshot available and mark the affected snapshot with an
+explicit error.
 
 ---
 
@@ -101,7 +134,7 @@ Entirely controlled in its enlarged graph. **Threshold** has a dedicated left ha
 
 A 16-line energy-preserving feedback network with clustered early reflections, sparse diffusion, decorrelated motion, and click-safe Room Scale and mode transitions.
 
-**Decay** sets mid-band T60. **Damping** shortens or extends the high-band tail. **Room Scale** displays Compact, Natural, Large, or Vast while retaining the exact 25–200% value. **Low Cut** and **High Cut** control the signal entering the reverb. **Width** keeps low frequencies more coherent while widening the upper wet field. **Dry** and **Wet** are independent smoothed linear 0–100% amplitude gains; both may be fully off or on.
+**Decay** sets mid-band T60. **Damping** shortens or extends the high-band tail. **Room Scale** displays Compact, Natural, Large, or Vast while retaining the exact 25–200% value. **Low Cut** is a true high-pass filter and **High Cut** is a low-pass filter on the signal entering the reverb. **Width** keeps low frequencies more coherent while widening the upper wet field. **Ducking** applies up to 18 dB of smooth input-responsive attenuation to the completed wet field and releases naturally into the tail. **Dry** and **Wet** are independent smoothed linear 0–100% amplitude gains; both may be fully off or on.
 
 Modes are Hall, Chamber, and Plate. The interactive early-reflection and stereo decay field accepts a direct Decay/Room Scale handle.
 
@@ -111,9 +144,10 @@ Modes are Hall, Chamber, and Plate. The interactive early-reflection and stereo 
 
 Loads mono or stereo WAV, AIFF, and FLAC impulse responses from the **Load IR…** button or by dropping a file on the graph. Uses JUCE non-uniform partitioned convolution with a 256-sample head. IR file work stays off the audio thread.
 
-The normalised IR envelope and shaded passband remain visible while draggable **Low Cut** and **High Cut** handles shape only the wet convolution signal. **Dry** and **Wet** are adjacent, independent linear 0–100% amplitude rails. **Output Trim** adjusts their sum. With no available IR, Wet contributes no signal and the result is `Dry × input × Output`. The absolute IR path is stored with plugin and preset state and follows rack reordering; if the file moves, the graph identifies the missing filename.
+The normalised IR envelope and shaded passband remain visible while draggable **Low Cut** (high-pass) and **High Cut** (low-pass) handles shape only the wet convolution signal. **Ducking** applies up to 18 dB of smooth input-responsive attenuation to the filtered wet response and releases naturally into the tail. **Dry** and **Wet** are adjacent, independent linear 0–100% amplitude rails. **Output Trim** adjusts their sum. With no available IR, Wet contributes no signal and the result is `Dry × input × Output`. The absolute IR path is stored with plugin and preset state and follows rack reordering; if the file moves, the graph identifies the missing filename.
 
-True-stereo IRs intentionally retain their captured left/right acoustic differences.
+Mono IRs use a centered wet send, even for asymmetric stereo input. Stereo IRs
+retain their captured left/right acoustic differences.
 
 ---
 
@@ -237,6 +271,36 @@ Range and shows the selected DSP slot's detector level, gain envelope,
 attenuation, and open state alongside input and output. A two-handle detector
 passband, external-sidechain status, Listen, and Stereo Link remain close to the
 history they affect.
+
+---
+
+## Stage Vocal
+
+Combines the essential cleanup, control, and finishing stages for a live vocal
+in one zero-latency module. A two-stage Low Cut removes handling and stage
+rumble; the stereo-linked expander lowers bleed without hard muting; and the
+frequency-selective de-esser controls sibilance before smooth linked
+compression. Presence and Air provide final broad tone shaping, followed by
+Output trim. The live display shows measured input/output levels and separate
+expander, de-esser, and compressor reduction.
+
+| # | Control | Range | Default | Description |
+|---|---------|-------|---------|-------------|
+| 0 | Low Cut | 40–220 Hz | 80 Hz | Two-stage rumble filter |
+| 1 | Expander Threshold | -70–-20 dB | -50 dB | Level below which stage bleed is reduced |
+| 2 | Expander Range | 0–36 dB | 18 dB | Maximum downward attenuation |
+| 3 | De-Ess Frequency | 3–10 kHz | 6.5 kHz | Start of the detected sibilance band |
+| 4 | De-Ess Amount | 0–12 dB | 4 dB | Maximum sibilance reduction |
+| 5 | Compressor Threshold | -40–0 dB | -18 dB | Level above which compression begins |
+| 6 | Ratio | 1:1–10:1 | 3:1 | Compression strength |
+| 7 | Attack | 0.5–50 ms | 8 ms | Compressor response to peaks |
+| 8 | Release | 30–800 ms | 120 ms | Compressor recovery time |
+| 9 | Presence | -6–+6 dB | +1 dB | Broad vocal-definition contour |
+| 10 | Air | -6–+6 dB | +1.5 dB | High-frequency openness |
+| 11 | Output | -18–+12 dB | 0 dB | Final level trim |
+
+All audible controls are smoothed. Mono input remains mono-compatible, while
+stereo-linked detection prevents gain changes from shifting the image.
 
 ---
 

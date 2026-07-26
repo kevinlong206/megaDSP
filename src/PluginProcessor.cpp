@@ -4,28 +4,119 @@
 #include "ui/GraphStyle.h"
 #include "ui/GuiLayout.h"
 
+thread_local bool
+    MegaDSPAudioProcessor::publishingSnapshotParameters = false;
+
+namespace
+{
+float smoothSnapshotFade(float position) noexcept
+{
+    position = juce::jlimit(0.0f, 1.0f, position);
+    return position * position * (3.0f - 2.0f * position);
+}
+
+int programChangeNumber(
+    const juce::MidiMessageMetadata& metadata) noexcept
+{
+    if (metadata.data == nullptr || metadata.numBytes < 2
+        || (metadata.data[0] & 0xf0u) != 0xc0u)
+        return -1;
+    return metadata.data[1] & 0x7f;
+}
+
+void applySnapshotTransitionWeight(
+    juce::AudioBuffer<float>& buffer, float start, float end,
+    bool incoming) noexcept
+{
+    const auto samples = buffer.getNumSamples();
+    if (samples <= 0)
+        return;
+    const auto increment = (end - start) / static_cast<float>(samples);
+    for (int sample = 0; sample < samples; ++sample)
+    {
+        const auto smoothPosition = smoothSnapshotFade(
+            start + increment * static_cast<float>(sample));
+        const auto gain =
+            incoming ? smoothPosition : 1.0f - smoothPosition;
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            buffer.setSample(
+                channel, sample,
+                buffer.getSample(channel, sample) * gain);
+    }
+}
+
+void applySnapshotSpillFade(
+    juce::AudioBuffer<float>& buffer,
+    int samplesRemaining,
+    int naturalFadeSamples,
+    int retiringFadeSamplesRemaining,
+    int retiringFadeSamplesTotal) noexcept
+{
+    const auto naturalFadeActive =
+        samplesRemaining <= naturalFadeSamples + buffer.getNumSamples();
+    const auto retiringFadeActive = retiringFadeSamplesTotal > 0;
+    if (!naturalFadeActive && !retiringFadeActive)
+        return;
+
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        auto gain = 1.0f;
+        if (naturalFadeActive)
+            gain *= smoothSnapshotFade(
+                static_cast<float>(samplesRemaining - sample)
+                / static_cast<float>(naturalFadeSamples));
+        if (retiringFadeActive)
+            gain *= smoothSnapshotFade(
+                static_cast<float>(
+                    retiringFadeSamplesRemaining - sample)
+                / static_cast<float>(retiringFadeSamplesTotal));
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            buffer.setSample(
+                channel, sample,
+                buffer.getSample(channel, sample) * gain);
+    }
+}
+} // namespace
+
 MegaDSPAudioProcessor::MegaDSPAudioProcessor()
     : AudioProcessor(BusesProperties()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                          .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
-      parameters(*this, nullptr, "megaDSPState", megadsp::createParameterLayout()),
-      rack(parameters)
+      parameters(*this, nullptr, "megaDSPState", megadsp::createParameterLayout())
 {
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        typeParameterIds[static_cast<size_t>(slot)] =
+            megadsp::slotParameterId(slot, "type");
+        bypassParameterIds[static_cast<size_t>(slot)] =
+            megadsp::slotParameterId(slot, "bypass");
+        for (int control = 0;
+             control < megadsp::controlsPerSlot; ++control)
+            controlParameterIds[static_cast<size_t>(slot)]
+                               [static_cast<size_t>(control)] =
+                megadsp::controlParameterId(slot, control);
+    }
+    for (int index = 0; index < megadsp::snapshotCount; ++index)
+        snapshotRacks[static_cast<size_t>(index)] =
+            std::make_unique<megadsp::EffectRack>(
+                snapshotStates[static_cast<size_t>(index)]);
+    snapshotStates[0].populated.store(true, std::memory_order_relaxed);
+    captureParametersToSnapshot(0);
     diagnosticInstanceId =
         megadsp::Diagnostics::instance().registerInstance();
-    for (int slot = 0; slot < megadsp::slotCount; ++slot)
-        parameters.addParameterListener(
-            megadsp::slotParameterId(slot, "type"), this);
+    for (auto* parameter : getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter))
+            parameters.addParameterListener(ranged->paramID, this);
     startTimerHz(30);
 }
 
 MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
 {
     stopTimer();
-    for (int slot = 0; slot < megadsp::slotCount; ++slot)
-        parameters.removeParameterListener(
-            megadsp::slotParameterId(slot, "type"), this);
+    for (auto* parameter : getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter))
+            parameters.removeParameterListener(ranged->paramID, this);
     cancelPendingUpdate();
     megadsp::Diagnostics::instance().unregisterInstance(
         diagnosticInstanceId);
@@ -33,15 +124,51 @@ MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
 
 void MegaDSPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    rack.prepare(sampleRate, samplesPerBlock, getTotalNumOutputChannels());
+    preparedSampleRate = sampleRate;
+    preparedMaximumBlockSize = juce::jmax(1, samplesPerBlock);
+    preparedChannelCount = juce::jmax(1, getTotalNumOutputChannels());
+    snapshotTransition = {};
+    for (auto& spill : spillSnapshots)
+        spill = {};
+    nextSpillOrder = 0;
+    activeAudioSnapshot.store(
+        selectedSnapshot.load(std::memory_order_acquire),
+        std::memory_order_release);
+    snapshotTailSamples.store(0, std::memory_order_release);
+    pendingSnapshotRecall.store(-1, std::memory_order_release);
+    for (int index = 0; index < megadsp::snapshotCount; ++index)
+    {
+        auto& state = snapshotStates[static_cast<size_t>(index)];
+        snapshotRacks[static_cast<size_t>(index)]->prepare(
+            sampleRate, samplesPerBlock, preparedChannelCount);
+        state.ready.store(
+            state.populated.load(std::memory_order_relaxed),
+            std::memory_order_release);
+    }
+    snapshotScratch.setSize(preparedChannelCount, preparedMaximumBlockSize);
+    snapshotZero.setSize(preparedChannelCount, preparedMaximumBlockSize);
+    snapshotZero.clear();
+    for (auto& output : liveSafeSnapshotOutputs)
+    {
+        output.setSize(
+            preparedChannelCount, preparedMaximumBlockSize,
+            false, true, false);
+        output.clear();
+    }
     const auto bypassCapacity = static_cast<size_t>(
         juce::jmax(1, juce::roundToInt(sampleRate * 0.02) * megadsp::slotCount));
     for (auto& channel : hostBypassDelay)
         channel.assign(bypassCapacity, 0.0f);
     hostBypassWritePosition = 0;
     lastHostBypassLatency = 0;
-    pendingLatency.store(rack.latencySamples());
+    pendingLatency.store(getRack().latencySamples());
     setLatencySamples(pendingLatency.load());
+    latencyDirty.store(false, std::memory_order_release);
+    audioCallbackGeneration.store(0, std::memory_order_release);
+    lastAudioBlockSamples.store(0, std::memory_order_release);
+    observedAudioCallbackGeneration = 0;
+    audioIdlePollCount = 0;
+    audioStreamActive.store(false, std::memory_order_release);
     megadsp::Diagnostics::instance().log(
         "prepare",
         "instance=" + juce::String(diagnosticInstanceId)
@@ -52,7 +179,8 @@ void MegaDSPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
 
 void MegaDSPAudioProcessor::releaseResources()
 {
-    rack.reset();
+    for (auto& snapshotRack : snapshotRacks)
+        snapshotRack->reset();
 }
 
 bool MegaDSPAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -76,8 +204,14 @@ bool MegaDSPAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) c
 }
 
 void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
-                                         juce::MidiBuffer&)
+                                         juce::MidiBuffer& midi)
 {
+    const auto callbackStart = juce::Time::getHighResolutionTicks();
+    auto recalledSnapshot = false;
+    audioStreamActive.store(true, std::memory_order_release);
+    lastAudioBlockSamples.store(
+        buffer.getNumSamples(), std::memory_order_relaxed);
+    audioCallbackGeneration.fetch_add(1, std::memory_order_relaxed);
     for (int channel = getTotalNumInputChannels();
          channel < getTotalNumOutputChannels(); ++channel)
         buffer.clear(channel, 0, buffer.getNumSamples());
@@ -107,8 +241,62 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         }
     }
 
-    rack.process(main, sidechainPointer, currentBpm());
-    const auto latency = rack.latencySamples();
+    const auto bpm = currentBpm();
+    const auto processRange = [this, &main, sidechainPointer, bpm](
+                                  int start, int samples)
+    {
+        if (samples <= 0)
+            return;
+        std::array<float*, 2> mainPointers {};
+        for (int channel = 0; channel < main.getNumChannels(); ++channel)
+            mainPointers[static_cast<size_t>(channel)] =
+                main.getWritePointer(channel, start);
+        juce::AudioBuffer<float> mainRange(
+            mainPointers.data(), main.getNumChannels(), samples);
+
+        std::array<float*, 2> sidechainPointers {};
+        std::optional<juce::AudioBuffer<float>> sidechainRange;
+        if (sidechainPointer != nullptr)
+        {
+            for (int channel = 0;
+                 channel < sidechainPointer->getNumChannels(); ++channel)
+                sidechainPointers[static_cast<size_t>(channel)] =
+                    const_cast<float*>(
+                        sidechainPointer->getReadPointer(channel, start));
+            sidechainRange.emplace(
+                sidechainPointers.data(),
+                sidechainPointer->getNumChannels(), samples);
+        }
+        processSnapshotRange(
+            mainRange,
+            sidechainRange.has_value() ? &*sidechainRange : nullptr,
+            bpm);
+    };
+
+    if (const auto requested =
+            pendingSnapshotRecall.exchange(-1, std::memory_order_acq_rel);
+        requested >= 0)
+    {
+        beginSnapshotRecall(requested);
+        recalledSnapshot = true;
+    }
+
+    auto position = 0;
+    for (const auto metadata : midi)
+    {
+        const auto program = programChangeNumber(metadata);
+        if (program < 0)
+            continue;
+        const auto eventPosition = juce::jlimit(
+            position, main.getNumSamples(), metadata.samplePosition);
+        processRange(position, eventPosition - position);
+        beginSnapshotRecall(program);
+        recalledSnapshot = true;
+        position = eventPosition;
+    }
+    processRange(position, main.getNumSamples() - position);
+
+    const auto latency = getAudioRack().latencySamples();
     if (latency != pendingLatency.exchange(latency))
     {
         latencyDirty.store(true, std::memory_order_release);
@@ -126,11 +314,67 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             diagnosticInstanceId, lastDiagnosticBlockSize,
             lastDiagnosticChannelCount);
     }
+    if (recalledSnapshot)
+    {
+        const auto elapsedTicks =
+            juce::Time::getHighResolutionTicks() - callbackStart;
+        const auto micros = static_cast<std::int64_t>(
+            juce::Time::highResolutionTicksToSeconds(elapsedTicks)
+            * 1000000.0);
+        snapshotRecallDurationMicros.store(
+            micros, std::memory_order_release);
+        megadsp::Diagnostics::instance().logRealtime(
+            megadsp::DiagnosticEvent::snapshotRecallWorkload,
+            diagnosticInstanceId, micros,
+            processedSnapshotGraphCount.load(
+                std::memory_order_relaxed));
+    }
 }
 
 void MegaDSPAudioProcessor::processBlockBypassed(
-    juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+    juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
+    audioStreamActive.store(true, std::memory_order_release);
+    lastAudioBlockSamples.store(
+        buffer.getNumSamples(), std::memory_order_relaxed);
+    audioCallbackGeneration.fetch_add(1, std::memory_order_relaxed);
+    for (auto& spill : spillSnapshots)
+    {
+        if (spill.snapshot >= 0)
+            snapshotRacks[static_cast<size_t>(spill.snapshot)]->reset();
+        spill = {};
+    }
+    if (snapshotTransition.outgoing >= 0)
+        snapshotRacks[static_cast<size_t>(
+            snapshotTransition.outgoing)]->reset();
+    snapshotTransition = {};
+    snapshotTailSamples.store(0, std::memory_order_release);
+
+    const auto selectWithoutTransition = [this](int index)
+    {
+        if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount)
+            || !snapshotStates[static_cast<size_t>(index)]
+                    .populated.load(std::memory_order_acquire)
+            || !snapshotStates[static_cast<size_t>(index)]
+                    .ready.load(std::memory_order_acquire))
+            return;
+        const auto previous =
+            activeAudioSnapshot.exchange(index, std::memory_order_acq_rel);
+        selectedSnapshot.store(index, std::memory_order_release);
+        snapshotRacks[static_cast<size_t>(previous)]
+            ->visualizationData().setSelectedSlot(-1);
+        snapshotUiDirty.store(true, std::memory_order_release);
+        snapshotGeneration.fetch_add(1, std::memory_order_release);
+    };
+    if (const auto requested =
+            pendingSnapshotRecall.exchange(-1, std::memory_order_acq_rel);
+        requested >= 0)
+        selectWithoutTransition(requested);
+    for (const auto metadata : midi)
+        if (const auto program = programChangeNumber(metadata);
+            program >= 0)
+            selectWithoutTransition(program);
+
     auto main = getBusBuffer(buffer, false, 0);
     const auto latency = juce::jmin(
         getLatencySamples(), static_cast<int>(hostBypassDelay[0].size()));
@@ -176,7 +420,11 @@ double MegaDSPAudioProcessor::currentBpm() const
 
 double MegaDSPAudioProcessor::getTailLengthSeconds() const
 {
-    return rack.tailSeconds();
+    const auto spillSeconds =
+        static_cast<double>(
+            snapshotTailSamples.load(std::memory_order_acquire))
+        / juce::jmax(1.0, preparedSampleRate);
+    return juce::jmax(getAudioRack().tailSeconds(), spillSeconds);
 }
 
 int MegaDSPAudioProcessor::getBackgroundThemeIndex() const
@@ -212,12 +460,809 @@ void MegaDSPAudioProcessor::setInstanceName(const juce::String& name)
     updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
 }
 
-void MegaDSPAudioProcessor::parameterChanged(
-    const juce::String&, float)
+void MegaDSPAudioProcessor::setLiveSafeSnapshotsEnabled(bool enabled)
 {
-    topologyRequestGeneration.fetch_add(
-        1, std::memory_order_release);
-    topologyDirty.store(true, std::memory_order_release);
+    if (liveSafeSnapshots.exchange(
+            enabled, std::memory_order_acq_rel) == enabled)
+        return;
+    parameters.state.setProperty(
+        "liveSafeSnapshots", enabled, nullptr);
+    snapshotGeneration.fetch_add(1, std::memory_order_release);
+    updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+}
+
+void MegaDSPAudioProcessor::parameterChanged(
+    const juce::String& parameterId, float value)
+{
+    if (publishingSnapshotParameters)
+        return;
+
+    const auto snapshotIndex =
+        selectedSnapshot.load(std::memory_order_acquire);
+    auto& state =
+        snapshotStates[static_cast<size_t>(snapshotIndex)];
+    if (parameterId == "global.input")
+    {
+        state.inputGainDb.store(value, std::memory_order_relaxed);
+        return;
+    }
+    if (parameterId == "global.output")
+    {
+        state.outputGainDb.store(value, std::memory_order_relaxed);
+        return;
+    }
+
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        auto& destination = state.slots[static_cast<size_t>(slot)];
+        if (parameterId == typeParameterIds[static_cast<size_t>(slot)])
+        {
+            destination.type.store(value, std::memory_order_relaxed);
+            topologyRequestGeneration.fetch_add(
+                1, std::memory_order_release);
+            pendingTopologySnapshotMask.fetch_or(
+                std::uint32_t { 1 }
+                    << static_cast<unsigned int>(snapshotIndex),
+                std::memory_order_release);
+            topologyDirty.store(true, std::memory_order_release);
+            return;
+        }
+        if (parameterId == bypassParameterIds[static_cast<size_t>(slot)])
+        {
+            destination.bypass.store(value, std::memory_order_relaxed);
+            return;
+        }
+        for (int control = 0;
+             control < megadsp::controlsPerSlot; ++control)
+        {
+            if (parameterId
+                != controlParameterIds[static_cast<size_t>(slot)]
+                                      [static_cast<size_t>(control)])
+                continue;
+            destination.controls[static_cast<size_t>(control)].store(
+                value, std::memory_order_relaxed);
+            return;
+        }
+    }
+}
+
+void MegaDSPAudioProcessor::captureParametersToSnapshot(int index)
+{
+    if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount))
+        return;
+    auto& state = snapshotStates[static_cast<size_t>(index)];
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        auto& destination = state.slots[static_cast<size_t>(slot)];
+        if (const auto* value = parameters.getRawParameterValue(
+                megadsp::slotParameterId(slot, "type")))
+            destination.type.store(
+                value->load(), std::memory_order_relaxed);
+        if (const auto* value = parameters.getRawParameterValue(
+                megadsp::slotParameterId(slot, "bypass")))
+            destination.bypass.store(
+                value->load(), std::memory_order_relaxed);
+        for (int control = 0;
+             control < megadsp::controlsPerSlot; ++control)
+            if (const auto* value = parameters.getRawParameterValue(
+                    megadsp::controlParameterId(slot, control)))
+                destination.controls[static_cast<size_t>(control)].store(
+                    value->load(), std::memory_order_relaxed);
+    }
+    if (const auto* value =
+            parameters.getRawParameterValue("global.input"))
+        state.inputGainDb.store(value->load(), std::memory_order_relaxed);
+    if (const auto* value =
+            parameters.getRawParameterValue("global.output"))
+        state.outputGainDb.store(value->load(), std::memory_order_relaxed);
+    state.populated.store(true, std::memory_order_release);
+}
+
+void MegaDSPAudioProcessor::publishSnapshotToParameters(
+    int index, bool notifyHost)
+{
+    if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount))
+        return;
+    const auto& state = snapshotStates[static_cast<size_t>(index)];
+    publishingSnapshotParameters = true;
+    const auto setPlain =
+        [this, notifyHost](
+            const juce::String& id, float plainValue)
+    {
+        if (auto* parameter = parameters.getParameter(id))
+        {
+            const auto normalized =
+                parameter->convertTo0to1(plainValue);
+            if (std::abs(parameter->getValue() - normalized)
+                <= 1.0e-7f)
+                return;
+            if (notifyHost)
+                parameter->setValueNotifyingHost(normalized);
+            else
+                parameter->setValue(normalized);
+        }
+    };
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        const auto& source = state.slots[static_cast<size_t>(slot)];
+        setPlain(
+            megadsp::slotParameterId(slot, "type"),
+            source.type.load(std::memory_order_relaxed));
+        setPlain(
+            megadsp::slotParameterId(slot, "bypass"),
+            source.bypass.load(std::memory_order_relaxed));
+        for (int control = 0;
+             control < megadsp::controlsPerSlot; ++control)
+            setPlain(
+                megadsp::controlParameterId(slot, control),
+                source.controls[static_cast<size_t>(control)].load(
+                    std::memory_order_relaxed));
+        const auto irProperty =
+            juce::Identifier("impulseResponse" + juce::String(slot + 1));
+        const auto namProperty =
+            juce::Identifier("neuralModel" + juce::String(slot + 1));
+        if (source.impulseResponsePath.isEmpty())
+            parameters.state.removeProperty(irProperty, nullptr);
+        else
+            parameters.state.setProperty(
+                irProperty, source.impulseResponsePath, nullptr);
+        if (source.namModelPath.isEmpty())
+            parameters.state.removeProperty(namProperty, nullptr);
+        else
+            parameters.state.setProperty(
+                namProperty, source.namModelPath, nullptr);
+    }
+    setPlain(
+        "global.input",
+        state.inputGainDb.load(std::memory_order_relaxed));
+    setPlain(
+        "global.output",
+        state.outputGainDb.load(std::memory_order_relaxed));
+    publishingSnapshotParameters = false;
+}
+
+bool MegaDSPAudioProcessor::isSnapshotPopulated(int index) const noexcept
+{
+    return juce::isPositiveAndBelow(index, megadsp::snapshotCount)
+           && snapshotStates[static_cast<size_t>(index)]
+                  .populated.load(std::memory_order_acquire);
+}
+
+bool MegaDSPAudioProcessor::isSnapshotReady(int index) const noexcept
+{
+    return juce::isPositiveAndBelow(index, megadsp::snapshotCount)
+           && snapshotStates[static_cast<size_t>(index)]
+                  .ready.load(std::memory_order_acquire);
+}
+
+juce::String MegaDSPAudioProcessor::snapshotError(int index) const
+{
+    return juce::isPositiveAndBelow(index, megadsp::snapshotCount)
+               ? snapshotStates[static_cast<size_t>(index)].error
+               : juce::String();
+}
+
+void MegaDSPAudioProcessor::prepareSnapshot(int index)
+{
+    if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount))
+        return;
+    auto& state = snapshotStates[static_cast<size_t>(index)];
+    state.ready.store(false, std::memory_order_release);
+    state.error.clear();
+    snapshotRacks[static_cast<size_t>(index)]->rebuildModules(false);
+    restoreSnapshotAssets(index);
+    state.ready.store(true, std::memory_order_release);
+}
+
+void MegaDSPAudioProcessor::restoreSnapshotAssets(int index)
+{
+    if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount))
+        return;
+    auto& rack = *snapshotRacks[static_cast<size_t>(index)];
+    auto& state = snapshotStates[static_cast<size_t>(index)];
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        const auto ir = state.slots[static_cast<size_t>(slot)]
+                            .impulseResponsePath;
+        if (ir.isNotEmpty())
+        {
+            const auto result = rack.loadImpulseResponse(
+                slot, juce::File(ir));
+            if (result.failed())
+                state.error += "IR slot " + juce::String(slot + 1)
+                               + ": " + result.getErrorMessage() + " ";
+        }
+        const auto nam =
+            state.slots[static_cast<size_t>(slot)].namModelPath;
+        if (nam.isNotEmpty())
+        {
+            const auto result = rack.loadNamModel(slot, juce::File(nam));
+            if (result.failed())
+                state.error += "NAM slot " + juce::String(slot + 1)
+                               + ": " + result.getErrorMessage() + " ";
+        }
+    }
+}
+
+void MegaDSPAudioProcessor::recallSnapshot(int index)
+{
+    if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount))
+        return;
+    if (!isSnapshotPopulated(index))
+    {
+        suspendProcessing(true);
+        auto& state = snapshotStates[static_cast<size_t>(index)];
+        state.clear();
+        state.populated.store(true, std::memory_order_release);
+        prepareSnapshot(index);
+        suspendProcessing(false);
+    }
+    if (!isSnapshotReady(index))
+        return;
+    selectedSnapshot.store(index, std::memory_order_release);
+    pendingSnapshotRecall.store(index, std::memory_order_release);
+    snapshotUiDirty.store(true, std::memory_order_release);
+    snapshotGeneration.fetch_add(1, std::memory_order_release);
+}
+
+void MegaDSPAudioProcessor::storeSnapshot(int index, bool overwrite)
+{
+    if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount)
+        || (isSnapshotPopulated(index) && !overwrite))
+        return;
+    const auto source = getSelectedSnapshot();
+    suspendProcessing(true);
+    snapshotStates[static_cast<size_t>(index)].copyFrom(
+        snapshotStates[static_cast<size_t>(source)]);
+    snapshotStates[static_cast<size_t>(index)]
+        .populated.store(true, std::memory_order_release);
+    prepareSnapshot(index);
+    suspendProcessing(false);
+    recallSnapshot(index);
+}
+
+void MegaDSPAudioProcessor::copySnapshot(int source, int destination)
+{
+    if (!juce::isPositiveAndBelow(source, megadsp::snapshotCount)
+        || !juce::isPositiveAndBelow(destination, megadsp::snapshotCount)
+        || source == destination
+        || !isSnapshotPopulated(source)
+        || !isSnapshotReady(source))
+        return;
+
+    suspendProcessing(true);
+    for (auto& spill : spillSnapshots)
+    {
+        if (spill.snapshot >= 0)
+            snapshotRacks[static_cast<size_t>(spill.snapshot)]->reset();
+        spill = {};
+    }
+    if (snapshotTransition.outgoing >= 0)
+        snapshotRacks[static_cast<size_t>(
+            snapshotTransition.outgoing)]->reset();
+    snapshotTransition = {};
+    snapshotTailSamples.store(0, std::memory_order_release);
+
+    snapshotStates[static_cast<size_t>(destination)].copyFrom(
+        snapshotStates[static_cast<size_t>(source)]);
+    snapshotStates[static_cast<size_t>(destination)]
+        .populated.store(true, std::memory_order_release);
+    prepareSnapshot(destination);
+    suspendProcessing(false);
+
+    if (destination == getSelectedSnapshot())
+        publishSnapshotToParameters(destination);
+    topologyGeneration.fetch_add(1, std::memory_order_release);
+    snapshotGeneration.fetch_add(1, std::memory_order_release);
+    updateHostDisplay(
+        ChangeDetails{}.withNonParameterStateChanged(true));
+    refreshLatency();
+}
+
+void MegaDSPAudioProcessor::beginSnapshotRecall(int index) noexcept
+{
+    if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount)
+        || !snapshotStates[static_cast<size_t>(index)]
+                .populated.load(std::memory_order_acquire)
+        || !snapshotStates[static_cast<size_t>(index)]
+                .ready.load(std::memory_order_acquire))
+        return;
+
+    const auto current =
+        activeAudioSnapshot.load(std::memory_order_acquire);
+    if (index == current)
+        return;
+    if (snapshotTransition.outgoing == index
+        && snapshotTransition.incoming == current)
+    {
+        std::swap(
+            snapshotTransition.outgoing,
+            snapshotTransition.incoming);
+        snapshotTransition.samplesDone = juce::jlimit(
+            0, snapshotTransition.totalSamples,
+            snapshotTransition.totalSamples
+                - snapshotTransition.samplesDone);
+        snapshotTransition.fadeIncomingOutput = false;
+        const auto visualSlot =
+            snapshotRacks[static_cast<size_t>(current)]
+                ->visualizationData().getSelectedSlot();
+        snapshotRacks[static_cast<size_t>(current)]
+            ->visualizationData().setSelectedSlot(-1);
+        snapshotRacks[static_cast<size_t>(index)]
+            ->visualizationData().setSelectedSlot(visualSlot);
+        activeAudioSnapshot.store(index, std::memory_order_release);
+        selectedSnapshot.store(index, std::memory_order_release);
+        snapshotUiDirty.store(true, std::memory_order_release);
+        snapshotGeneration.fetch_add(1, std::memory_order_release);
+        return;
+    }
+    if (snapshotTransition.outgoing >= 0)
+        addSpillSnapshot(snapshotTransition.outgoing);
+    auto incomingWasSpilling = false;
+    for (auto& spill : spillSnapshots)
+        if (spill.snapshot == index)
+        {
+            incomingWasSpilling = true;
+            spill = {};
+        }
+
+    snapshotTransition.outgoing = current;
+    snapshotTransition.incoming = index;
+    snapshotTransition.samplesDone = 0;
+    snapshotTransition.totalSamples = juce::jmax(
+        1, juce::roundToInt(preparedSampleRate * 0.02));
+    snapshotTransition.fadeIncomingOutput = !incomingWasSpilling;
+    const auto visualSlot =
+        snapshotRacks[static_cast<size_t>(current)]
+            ->visualizationData().getSelectedSlot();
+    snapshotRacks[static_cast<size_t>(current)]
+        ->visualizationData().setSelectedSlot(-1);
+    snapshotRacks[static_cast<size_t>(index)]
+        ->visualizationData().setSelectedSlot(visualSlot);
+    activeAudioSnapshot.store(index, std::memory_order_release);
+    selectedSnapshot.store(index, std::memory_order_release);
+    snapshotTailSamples.store(
+        juce::jmax(
+            snapshotTailSamples.load(std::memory_order_relaxed),
+            snapshotTransition.totalSamples
+                + juce::roundToInt(
+                    snapshotRacks[static_cast<size_t>(current)]
+                        ->snapshotSpillSeconds()
+                    * preparedSampleRate)),
+        std::memory_order_release);
+    snapshotUiDirty.store(true, std::memory_order_release);
+    snapshotGeneration.fetch_add(1, std::memory_order_release);
+}
+
+void MegaDSPAudioProcessor::addSpillSnapshot(int index) noexcept
+{
+    if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount)
+        || index == activeAudioSnapshot.load(std::memory_order_acquire))
+        return;
+    for (const auto& spill : spillSnapshots)
+        if (spill.snapshot == index)
+            return;
+    const auto tailSamples = juce::jlimit(
+        0, juce::roundToInt(preparedSampleRate * 30.0),
+        juce::jmax(
+            snapshotRacks[static_cast<size_t>(index)]->latencySamples(),
+            juce::roundToInt(
+                snapshotRacks[static_cast<size_t>(index)]
+                    ->snapshotSpillSeconds()
+                * preparedSampleRate)));
+    if (tailSamples <= 0)
+    {
+        if (!liveSafeSnapshots.load(std::memory_order_acquire))
+            snapshotRacks[static_cast<size_t>(index)]->reset();
+        return;
+    }
+    snapshotTailSamples.store(
+        juce::jmax(
+            snapshotTailSamples.load(std::memory_order_relaxed),
+            tailSamples),
+        std::memory_order_release);
+
+    auto activeSpills = 0;
+    for (const auto& spill : spillSnapshots)
+        if (spill.snapshot >= 0 && spill.fadeSamplesRemaining <= 0)
+            ++activeSpills;
+    if (activeSpills >= 2)
+    {
+        auto* oldest = static_cast<SpillState*>(nullptr);
+        for (auto& spill : spillSnapshots)
+            if (spill.snapshot >= 0 && spill.fadeSamplesRemaining <= 0
+                && (oldest == nullptr || spill.order < oldest->order))
+                oldest = &spill;
+        jassert(oldest != nullptr);
+        oldest->fadeSamplesTotal = juce::jmax(
+            1, juce::roundToInt(preparedSampleRate * 0.02));
+        oldest->fadeSamplesRemaining = oldest->fadeSamplesTotal;
+    }
+    for (auto& spill : spillSnapshots)
+        if (spill.snapshot < 0)
+        {
+            spill.snapshot = index;
+            spill.samplesRemaining = tailSamples;
+            spill.naturalFadeSamples = juce::jmax(
+                1, juce::jmin(
+                       tailSamples,
+                       juce::roundToInt(preparedSampleRate * 0.5)));
+            spill.order = ++nextSpillOrder;
+            return;
+        }
+
+    auto* oldest = &spillSnapshots[0];
+    for (auto& spill : spillSnapshots)
+        if (spill.order < oldest->order)
+            oldest = &spill;
+    if (!liveSafeSnapshots.load(std::memory_order_acquire))
+        snapshotRacks[static_cast<size_t>(oldest->snapshot)]->reset();
+    *oldest = {
+        index,
+        tailSamples,
+        juce::jmax(
+            1, juce::jmin(
+                   tailSamples,
+                   juce::roundToInt(preparedSampleRate * 0.5))),
+        0,
+        0,
+        ++nextSpillOrder
+    };
+}
+
+void MegaDSPAudioProcessor::processSpillSnapshots(
+    juce::AudioBuffer<float>& main,
+    const juce::AudioBuffer<float>*,
+    double bpm)
+{
+    for (auto& spill : spillSnapshots)
+    {
+        if (spill.snapshot < 0)
+            continue;
+        snapshotZero.clear();
+        std::array<float*, 2> pointers {};
+        for (int channel = 0; channel < main.getNumChannels(); ++channel)
+            pointers[static_cast<size_t>(channel)] =
+                snapshotZero.getWritePointer(channel);
+        juce::AudioBuffer<float> tail(
+            pointers.data(), main.getNumChannels(), main.getNumSamples());
+        snapshotRacks[static_cast<size_t>(spill.snapshot)]
+            ->process(tail, nullptr, bpm);
+
+        applySnapshotSpillFade(
+            tail, spill.samplesRemaining,
+            spill.naturalFadeSamples,
+            spill.fadeSamplesRemaining, spill.fadeSamplesTotal);
+        spill.fadeSamplesRemaining = juce::jmax(
+            0, spill.fadeSamplesRemaining - main.getNumSamples());
+        for (int channel = 0; channel < main.getNumChannels(); ++channel)
+            main.addFrom(
+                channel, 0, tail, channel, 0, main.getNumSamples());
+        spill.samplesRemaining -= main.getNumSamples();
+        if (spill.samplesRemaining <= 0
+            || (spill.fadeSamplesTotal > 0
+                && spill.fadeSamplesRemaining <= 0))
+        {
+            snapshotRacks[static_cast<size_t>(spill.snapshot)]->reset();
+            spill = {};
+        }
+    }
+    auto remaining = 0;
+    for (const auto& spill : spillSnapshots)
+        if (spill.snapshot >= 0)
+            remaining = juce::jmax(remaining, spill.samplesRemaining);
+    if (snapshotTransition.outgoing >= 0)
+        remaining = juce::jmax(
+            remaining,
+            juce::jmax(
+                0,
+                snapshotTransition.totalSamples
+                    - snapshotTransition.samplesDone
+                    - main.getNumSamples())
+                + juce::roundToInt(
+                    snapshotRacks[static_cast<size_t>(
+                        snapshotTransition.outgoing)]
+                        ->snapshotSpillSeconds()
+                    * preparedSampleRate));
+    snapshotTailSamples.store(remaining, std::memory_order_release);
+}
+
+void MegaDSPAudioProcessor::mixLiveSafeSpills(
+    juce::AudioBuffer<float>& main)
+{
+    for (auto& spill : spillSnapshots)
+    {
+        if (spill.snapshot < 0)
+            continue;
+        auto& tail =
+            liveSafeSnapshotOutputs[static_cast<size_t>(spill.snapshot)];
+        applySnapshotSpillFade(
+            tail, spill.samplesRemaining,
+            spill.naturalFadeSamples,
+            spill.fadeSamplesRemaining, spill.fadeSamplesTotal);
+        spill.fadeSamplesRemaining = juce::jmax(
+            0, spill.fadeSamplesRemaining - main.getNumSamples());
+        for (int channel = 0; channel < main.getNumChannels(); ++channel)
+            main.addFrom(
+                channel, 0, tail, channel, 0, main.getNumSamples());
+        spill.samplesRemaining -= main.getNumSamples();
+        if (spill.samplesRemaining <= 0
+            || (spill.fadeSamplesTotal > 0
+                && spill.fadeSamplesRemaining <= 0))
+            spill = {};
+    }
+
+    auto remaining = 0;
+    for (const auto& spill : spillSnapshots)
+        if (spill.snapshot >= 0)
+            remaining = juce::jmax(remaining, spill.samplesRemaining);
+    if (snapshotTransition.outgoing >= 0)
+        remaining = juce::jmax(
+            remaining,
+            juce::jmax(
+                0,
+                snapshotTransition.totalSamples
+                    - snapshotTransition.samplesDone
+                    - main.getNumSamples())
+                + juce::roundToInt(
+                    snapshotRacks[static_cast<size_t>(
+                        snapshotTransition.outgoing)]
+                        ->snapshotSpillSeconds()
+                    * preparedSampleRate));
+    snapshotTailSamples.store(remaining, std::memory_order_release);
+}
+
+void MegaDSPAudioProcessor::processLiveSafeSnapshotRange(
+    juce::AudioBuffer<float>& main,
+    const juce::AudioBuffer<float>* sidechain,
+    double bpm)
+{
+    const auto active =
+        activeAudioSnapshot.load(std::memory_order_acquire);
+    const auto transitioning = snapshotTransition.outgoing >= 0;
+    auto start = 1.0f;
+    auto end = 1.0f;
+    if (transitioning)
+    {
+        start = juce::jlimit(
+            0.0f, 1.0f,
+            static_cast<float>(snapshotTransition.samplesDone)
+                / static_cast<float>(snapshotTransition.totalSamples));
+        end = juce::jlimit(
+            0.0f, 1.0f,
+            static_cast<float>(
+                snapshotTransition.samplesDone + main.getNumSamples())
+                / static_cast<float>(
+                    snapshotTransition.totalSamples));
+    }
+
+    auto processed = 0;
+    for (int index = 0; index < megadsp::snapshotCount; ++index)
+    {
+        const auto& state =
+            snapshotStates[static_cast<size_t>(index)];
+        if (!state.populated.load(std::memory_order_acquire)
+            || !state.ready.load(std::memory_order_acquire))
+            continue;
+
+        auto& storage =
+            liveSafeSnapshotOutputs[static_cast<size_t>(index)];
+        std::array<float*, 2> pointers {};
+        for (int channel = 0; channel < main.getNumChannels(); ++channel)
+            pointers[static_cast<size_t>(channel)] =
+                storage.getWritePointer(channel);
+        juce::AudioBuffer<float> output(
+            pointers.data(), main.getNumChannels(), main.getNumSamples());
+
+        const auto incoming =
+            transitioning && index == snapshotTransition.incoming;
+        const auto outgoing =
+            transitioning && index == snapshotTransition.outgoing;
+        const auto receivesLiveInput =
+            transitioning ? incoming || outgoing : index == active;
+        if (receivesLiveInput)
+        {
+            for (int channel = 0; channel < main.getNumChannels(); ++channel)
+                output.copyFrom(
+                    channel, 0, main, channel, 0,
+                    main.getNumSamples());
+            if (outgoing
+                || (incoming
+                    && !snapshotTransition.fadeIncomingOutput))
+                applySnapshotTransitionWeight(
+                    output, start, end, incoming);
+        }
+        else
+        {
+            output.clear();
+        }
+
+        snapshotRacks[static_cast<size_t>(index)]->process(
+            output, receivesLiveInput ? sidechain : nullptr, bpm);
+        if (incoming && snapshotTransition.fadeIncomingOutput)
+            applySnapshotTransitionWeight(
+                output, start, end, true);
+        ++processed;
+    }
+    processedSnapshotGraphCount.store(
+        processed, std::memory_order_release);
+
+    main.clear();
+    const auto addSnapshot = [this, &main](int index)
+    {
+        if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount))
+            return;
+        const auto& output =
+            liveSafeSnapshotOutputs[static_cast<size_t>(index)];
+        for (int channel = 0; channel < main.getNumChannels(); ++channel)
+            main.addFrom(
+                channel, 0, output, channel, 0,
+                main.getNumSamples());
+    };
+    if (transitioning)
+    {
+        addSnapshot(snapshotTransition.outgoing);
+        addSnapshot(snapshotTransition.incoming);
+    }
+    else
+    {
+        addSnapshot(active);
+    }
+    mixLiveSafeSpills(main);
+
+    if (transitioning)
+    {
+        snapshotTransition.samplesDone += main.getNumSamples();
+        if (snapshotTransition.samplesDone
+            >= snapshotTransition.totalSamples)
+        {
+            addSpillSnapshot(snapshotTransition.outgoing);
+            snapshotTransition = {};
+        }
+    }
+}
+
+void MegaDSPAudioProcessor::processSnapshotRange(
+    juce::AudioBuffer<float>& main,
+    const juce::AudioBuffer<float>* sidechain,
+    double bpm)
+{
+    if (snapshotTransition.outgoing >= 0)
+    {
+        const auto remaining = juce::jmax(
+            1, snapshotTransition.totalSamples
+                   - snapshotTransition.samplesDone);
+        if (main.getNumSamples() > remaining)
+        {
+            for (int part = 0; part < 2; ++part)
+            {
+                const auto offset = part == 0 ? 0 : remaining;
+                const auto samples = part == 0
+                                         ? remaining
+                                         : main.getNumSamples() - remaining;
+                std::array<float*, 2> mainPointers {};
+                for (int channel = 0;
+                     channel < main.getNumChannels(); ++channel)
+                    mainPointers[static_cast<size_t>(channel)] =
+                        main.getWritePointer(channel, offset);
+                juce::AudioBuffer<float> mainPart(
+                    mainPointers.data(), main.getNumChannels(), samples);
+
+                std::array<float*, 2> sidechainPointers {};
+                std::optional<juce::AudioBuffer<float>> sidechainPart;
+                if (sidechain != nullptr)
+                {
+                    for (int channel = 0;
+                         channel < sidechain->getNumChannels(); ++channel)
+                        sidechainPointers[static_cast<size_t>(channel)] =
+                            const_cast<float*>(
+                                sidechain->getReadPointer(channel, offset));
+                    sidechainPart.emplace(
+                        sidechainPointers.data(),
+                        sidechain->getNumChannels(), samples);
+                }
+                processSnapshotRange(
+                    mainPart,
+                    sidechainPart.has_value() ? &*sidechainPart : nullptr,
+                    bpm);
+            }
+            return;
+        }
+    }
+
+    if (main.getNumSamples() > preparedMaximumBlockSize)
+    {
+        for (int offset = 0; offset < main.getNumSamples();
+             offset += preparedMaximumBlockSize)
+        {
+            const auto samples = juce::jmin(
+                preparedMaximumBlockSize,
+                main.getNumSamples() - offset);
+            std::array<float*, 2> mainPointers {};
+            for (int channel = 0;
+                 channel < main.getNumChannels(); ++channel)
+                mainPointers[static_cast<size_t>(channel)] =
+                    main.getWritePointer(channel, offset);
+            juce::AudioBuffer<float> mainChunk(
+                mainPointers.data(), main.getNumChannels(), samples);
+
+            std::array<float*, 2> sidechainPointers {};
+            std::optional<juce::AudioBuffer<float>> sidechainChunk;
+            if (sidechain != nullptr)
+            {
+                for (int channel = 0;
+                     channel < sidechain->getNumChannels(); ++channel)
+                    sidechainPointers[static_cast<size_t>(channel)] =
+                        const_cast<float*>(
+                            sidechain->getReadPointer(channel, offset));
+                sidechainChunk.emplace(
+                    sidechainPointers.data(),
+                    sidechain->getNumChannels(), samples);
+            }
+            processSnapshotRange(
+                mainChunk,
+                sidechainChunk.has_value() ? &*sidechainChunk : nullptr,
+                bpm);
+        }
+        return;
+    }
+
+    if (liveSafeSnapshots.load(std::memory_order_acquire))
+    {
+        processLiveSafeSnapshotRange(main, sidechain, bpm);
+        return;
+    }
+
+    processedSnapshotGraphCount.store(
+        snapshotTransition.outgoing >= 0 ? 2 : 1,
+        std::memory_order_release);
+    if (snapshotTransition.outgoing < 0)
+    {
+        getAudioRack().process(main, sidechain, bpm);
+        processSpillSnapshots(main, sidechain, bpm);
+        return;
+    }
+
+    for (int channel = 0; channel < main.getNumChannels(); ++channel)
+        snapshotScratch.copyFrom(
+            channel, 0, main, channel, 0, main.getNumSamples());
+    std::array<float*, 2> pointers {};
+    for (int channel = 0; channel < main.getNumChannels(); ++channel)
+        pointers[static_cast<size_t>(channel)] =
+            snapshotScratch.getWritePointer(channel);
+    juce::AudioBuffer<float> outgoing(
+        pointers.data(), main.getNumChannels(), main.getNumSamples());
+
+    const auto start = juce::jlimit(
+        0.0f, 1.0f,
+        static_cast<float>(snapshotTransition.samplesDone)
+            / static_cast<float>(snapshotTransition.totalSamples));
+    const auto end = juce::jlimit(
+        0.0f, 1.0f,
+        static_cast<float>(
+            snapshotTransition.samplesDone + main.getNumSamples())
+            / static_cast<float>(snapshotTransition.totalSamples));
+    applySnapshotTransitionWeight(outgoing, start, end, false);
+    if (!snapshotTransition.fadeIncomingOutput)
+        applySnapshotTransitionWeight(main, start, end, true);
+    snapshotRacks[static_cast<size_t>(snapshotTransition.outgoing)]
+        ->process(outgoing, sidechain, bpm);
+    snapshotRacks[static_cast<size_t>(snapshotTransition.incoming)]
+        ->process(main, sidechain, bpm);
+    if (snapshotTransition.fadeIncomingOutput)
+        applySnapshotTransitionWeight(main, start, end, true);
+    for (int channel = 0; channel < main.getNumChannels(); ++channel)
+        main.addFrom(
+            channel, 0, outgoing, channel, 0, main.getNumSamples());
+    processSpillSnapshots(main, sidechain, bpm);
+
+    snapshotTransition.samplesDone += main.getNumSamples();
+    if (snapshotTransition.samplesDone
+        >= snapshotTransition.totalSamples)
+    {
+        addSpillSnapshot(snapshotTransition.outgoing);
+        snapshotTransition = {};
+    }
 }
 
 bool MegaDSPAudioProcessor::beginTopologyMutation()
@@ -236,6 +1281,7 @@ bool MegaDSPAudioProcessor::beginTopologyMutation()
 void MegaDSPAudioProcessor::finishTopologyMutation(
     bool compact, bool resetRack, bool publishAlways)
 {
+    auto& rack = getRack();
     const auto compacted = compact && rack.compactSlots();
     const auto modulesChanged = rack.synchronizeModules(false);
     if (resetRack || compacted || modulesChanged)
@@ -245,6 +1291,12 @@ void MegaDSPAudioProcessor::finishTopologyMutation(
     }
     selectedTab = juce::jlimit(
         0, juce::jmax(0, rack.activeSlotCount() - 1), selectedTab);
+    selectedSnapshotState().populated.store(
+        true, std::memory_order_release);
+    selectedSnapshotState().ready.store(
+        true, std::memory_order_release);
+    if (compacted)
+        publishSnapshotToParameters(getSelectedSnapshot());
     suspendProcessing(false);
     refreshLatency();
     if (publishAlways || compacted || modulesChanged)
@@ -274,6 +1326,7 @@ void MegaDSPAudioProcessor::finishTopologyMutation(
 
 void MegaDSPAudioProcessor::restorePendingImpulseResponses()
 {
+    auto& rack = getRack();
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
         const auto path = rack.pendingImpulseResponsePath(slot);
@@ -299,6 +1352,7 @@ void MegaDSPAudioProcessor::restorePendingImpulseResponses()
 
 void MegaDSPAudioProcessor::restorePendingNamModels()
 {
+    auto& rack = getRack();
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
         const auto path = rack.pendingNamModelPath(slot);
@@ -329,15 +1383,166 @@ void MegaDSPAudioProcessor::handleAsyncUpdate()
         return;
     const auto requestGeneration =
         topologyRequestGeneration.load(std::memory_order_acquire);
-    if (!beginTopologyMutation())
+    auto snapshotMask = pendingTopologySnapshotMask.exchange(
+        0, std::memory_order_acq_rel);
+    if (snapshotMask == 0)
+        snapshotMask =
+            std::uint32_t { 1 }
+            << static_cast<unsigned int>(getSelectedSnapshot());
+
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+    {
+        pendingTopologySnapshotMask.fetch_or(
+            snapshotMask, std::memory_order_release);
+        topologyDirty.store(true, std::memory_order_release);
         return;
-    finishTopologyMutation(true, false, false);
+    }
+
+    suspendProcessing(true);
+    for (int index = 0; index < megadsp::snapshotCount; ++index)
+    {
+        const auto bit =
+            std::uint32_t { 1 } << static_cast<unsigned int>(index);
+        if ((snapshotMask & bit) == 0)
+            continue;
+        auto& rack = *snapshotRacks[static_cast<size_t>(index)];
+        const auto compacted = rack.compactSlots();
+        const auto changed = rack.synchronizeModules(false);
+        if (compacted || changed)
+        {
+            rack.reset();
+            rack.visualizationData().clear();
+        }
+        snapshotStates[static_cast<size_t>(index)]
+            .populated.store(true, std::memory_order_release);
+        snapshotStates[static_cast<size_t>(index)]
+            .ready.store(true, std::memory_order_release);
+        if (index == getSelectedSnapshot() && compacted)
+            publishSnapshotToParameters(index);
+    }
+    suspendProcessing(false);
+    topologyGeneration.fetch_add(1, std::memory_order_release);
+    refreshLatency();
+    topologyMutationInProgress.store(false, std::memory_order_release);
+
     if (topologyRequestGeneration.load(std::memory_order_acquire)
-        != requestGeneration)
+            != requestGeneration
+        || pendingTopologySnapshotMask.load(std::memory_order_acquire) != 0)
     {
         topologyDirty.store(true, std::memory_order_release);
         triggerAsyncUpdate();
     }
+}
+
+void MegaDSPAudioProcessor::serializeSnapshots(
+    juce::ValueTree& root) const
+{
+    if (const auto existing = root.getChildWithName("SNAPSHOTS");
+        existing.isValid())
+        root.removeChild(existing, nullptr);
+    juce::ValueTree snapshots("SNAPSHOTS");
+    snapshots.setProperty(
+        "selected",
+        selectedSnapshot.load(std::memory_order_acquire), nullptr);
+    for (int index = 0; index < megadsp::snapshotCount; ++index)
+        snapshots.addChild(
+            snapshotStates[static_cast<size_t>(index)]
+                .toValueTree(index),
+            -1, nullptr);
+    root.addChild(snapshots, -1, nullptr);
+}
+
+void MegaDSPAudioProcessor::restoreSnapshots(
+    const juce::ValueTree& root, int sourceSchema)
+{
+    for (auto& state : snapshotStates)
+        state.clear();
+
+    auto selected = 0;
+    const auto snapshots = root.getChildWithName("SNAPSHOTS");
+    if (sourceSchema >= 10 && snapshots.isValid())
+    {
+        selected = juce::jlimit(
+            0, megadsp::snapshotCount - 1,
+            static_cast<int>(snapshots.getProperty("selected", 0)));
+        for (const auto child : snapshots)
+        {
+            if (!child.hasType("SNAPSHOT"))
+                continue;
+            const auto index =
+                static_cast<int>(child.getProperty("index", -1));
+            if (juce::isPositiveAndBelow(
+                    index, megadsp::snapshotCount))
+            {
+                snapshotStates[static_cast<size_t>(index)]
+                    .fromValueTree(child);
+                if (sourceSchema < 11)
+                {
+                    auto& state =
+                        snapshotStates[static_cast<size_t>(index)];
+                    for (auto& slot : state.slots)
+                    {
+                        const auto type = static_cast<megadsp::ModuleType>(
+                            juce::roundToInt(slot.type.load(
+                                std::memory_order_relaxed)));
+                        if (type
+                            == megadsp::ModuleType::algorithmicReverb)
+                            slot.controls[7].store(
+                                0.0f, std::memory_order_relaxed);
+                        else if (type
+                                 == megadsp::ModuleType::convolutionReverb)
+                            slot.controls[5].store(
+                                0.0f, std::memory_order_relaxed);
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        captureParametersToSnapshot(0);
+        for (int slot = 0; slot < megadsp::slotCount; ++slot)
+        {
+            snapshotStates[0].slots[static_cast<size_t>(slot)]
+                .impulseResponsePath =
+                root.getProperty(
+                    "impulseResponse" + juce::String(slot + 1)).toString();
+            snapshotStates[0].slots[static_cast<size_t>(slot)]
+                .namModelPath =
+                root.getProperty(
+                    "neuralModel" + juce::String(slot + 1)).toString();
+        }
+        snapshotStates[0].populated.store(
+            true, std::memory_order_release);
+    }
+
+    if (!snapshotStates[static_cast<size_t>(selected)]
+             .populated.load(std::memory_order_acquire))
+        selected = 0;
+    for (int index = 0; index < megadsp::snapshotCount; ++index)
+    {
+        auto& state = snapshotStates[static_cast<size_t>(index)];
+        if (state.populated.load(std::memory_order_acquire))
+        {
+            prepareSnapshot(index);
+        }
+        else
+        {
+            snapshotRacks[static_cast<size_t>(index)]
+                ->rebuildModules();
+            state.ready.store(false, std::memory_order_release);
+        }
+    }
+    selectedSnapshot.store(selected, std::memory_order_release);
+    activeAudioSnapshot.store(selected, std::memory_order_release);
+    snapshotTransition = {};
+    for (auto& spill : spillSnapshots)
+        spill = {};
+    snapshotTailSamples.store(0, std::memory_order_release);
+    publishSnapshotToParameters(selected, false);
+    snapshotGeneration.fetch_add(1, std::memory_order_release);
 }
 
 void MegaDSPAudioProcessor::getStateInformation(juce::MemoryBlock& destination)
@@ -356,6 +1561,7 @@ void MegaDSPAudioProcessor::getStateInformation(juce::MemoryBlock& destination)
     state.setProperty("selectedTab", selectedTab, nullptr);
     state.setProperty("editorWidth", editorWidth, nullptr);
     state.setProperty("editorHeight", editorHeight, nullptr);
+    serializeSnapshots(state);
     if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destination);
 }
@@ -398,6 +1604,7 @@ void MegaDSPAudioProcessor::setStateInformation(const void* data, int size)
         if (!beginTopologyMutation())
             return;
         restoreParameterState(restored);
+        restoreSnapshots(restored, schemaVersion);
         finishTopologyMutation(true, true, true);
         setSelectedTab(selectedTab);
         megadsp::Diagnostics::instance().log(
@@ -411,7 +1618,8 @@ void MegaDSPAudioProcessor::moveSlot(int source, int destination)
 {
     if (!beginTopologyMutation())
         return;
-    rack.moveSlot(source, destination);
+    getRack().moveSlot(source, destination);
+    publishSnapshotToParameters(getSelectedSnapshot());
     finishTopologyMutation(false, true, true);
 }
 
@@ -419,7 +1627,8 @@ void MegaDSPAudioProcessor::clearSlot(int slot)
 {
     if (!beginTopologyMutation())
         return;
-    rack.clearSlot(slot);
+    getRack().clearSlot(slot);
+    publishSnapshotToParameters(getSelectedSnapshot());
     finishTopologyMutation(true, true, true);
 }
 
@@ -427,20 +1636,21 @@ void MegaDSPAudioProcessor::removeSlot(int slot)
 {
     if (!beginTopologyMutation())
         return;
-    rack.removeSlot(slot);
+    getRack().removeSlot(slot);
+    publishSnapshotToParameters(getSelectedSnapshot());
     finishTopologyMutation(false, true, true);
 }
 
 void MegaDSPAudioProcessor::addModule(megadsp::ModuleType type)
 {
-    const auto slot = rack.activeSlotCount();
+    const auto slot = getRack().activeSlotCount();
     if (!juce::isPositiveAndBelow(slot, megadsp::slotCount)
         || type == megadsp::ModuleType::empty
         || megadsp::findModuleDefinition(type) == nullptr)
         return;
     if (!beginTopologyMutation())
         return;
-    rack.clearSlot(slot);
+    getRack().clearSlot(slot);
     const auto defaults = megadsp::moduleDefaults(type);
     for (int control = 0; control < megadsp::controlsPerSlot; ++control)
         if (auto* parameter = parameters.getParameter(
@@ -463,7 +1673,7 @@ void MegaDSPAudioProcessor::resetModuleToDefaults(int slot)
 {
     if (!juce::isPositiveAndBelow(slot, megadsp::slotCount))
         return;
-    const auto type = rack.moduleType(slot);
+    const auto type = getRack().moduleType(slot);
     if (type == megadsp::ModuleType::empty)
         return;
 
@@ -480,8 +1690,8 @@ void MegaDSPAudioProcessor::resetModuleToDefaults(int slot)
             parameter->endChangeGesture();
         }
     }
-    rack.reset();
-    rack.visualizationData().slotData(slot).clear();
+    getRack().reset();
+    getRack().visualizationData().slotData(slot).clear();
     suspendProcessing(false);
     refreshLatency();
 }
@@ -503,7 +1713,7 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     };
 
     megadsp::EffectRack::PreparedImpulseResponseLoad load;
-    auto result = rack.prepareImpulseResponse(slot, file, load);
+    auto result = getRack().prepareImpulseResponse(slot, file, load);
     if (result.failed())
     {
         megadsp::Diagnostics::instance().log(
@@ -517,17 +1727,18 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     }
 
     suspendProcessing(true);
-    const auto committed = rack.commitImpulseResponse(load);
+    const auto committed = getRack().commitImpulseResponse(load);
     suspendProcessing(false);
     if (!committed)
     {
-        rack.cancelImpulseResponse(load);
+        getRack().cancelImpulseResponse(load);
         finishDataMutation();
         return juce::Result::fail(
             "The impulse response request was superseded.");
     }
 
     finishDataMutation();
+    publishSnapshotToParameters(getSelectedSnapshot());
     updateHostDisplay(
         ChangeDetails{}.withNonParameterStateChanged(true));
     return juce::Result::ok();
@@ -539,13 +1750,16 @@ void MegaDSPAudioProcessor::clearImpulseResponse(int slot)
     if (!topologyMutationInProgress.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel))
         return;
-    const auto result = rack.clearImpulseResponse(slot);
+    const auto result = getRack().clearImpulseResponse(slot);
     topologyMutationInProgress.store(false, std::memory_order_release);
     if (topologyDirty.load(std::memory_order_acquire))
         triggerAsyncUpdate();
     if (result.wasOk())
+    {
+        publishSnapshotToParameters(getSelectedSnapshot());
         updateHostDisplay(
             ChangeDetails{}.withNonParameterStateChanged(true));
+    }
 }
 
 juce::Result MegaDSPAudioProcessor::loadNamModel(
@@ -566,7 +1780,7 @@ juce::Result MegaDSPAudioProcessor::loadNamModel(
     };
 
     megadsp::EffectRack::PreparedNamModelLoad load;
-    auto result = rack.prepareNamModel(slot, file, load);
+    auto result = getRack().prepareNamModel(slot, file, load);
     if (result.failed())
     {
         finishDataMutation();
@@ -574,17 +1788,18 @@ juce::Result MegaDSPAudioProcessor::loadNamModel(
     }
 
     suspendProcessing(true);
-    const auto committed = rack.commitNamModel(load);
+    const auto committed = getRack().commitNamModel(load);
     refreshLatency();
     suspendProcessing(false);
     if (!committed)
     {
-        rack.cancelNamModel(load);
+        getRack().cancelNamModel(load);
         finishDataMutation();
         return juce::Result::fail("NAM model commit superseded.");
     }
 
     finishDataMutation();
+    publishSnapshotToParameters(getSelectedSnapshot());
     updateHostDisplay(
         ChangeDetails{}.withNonParameterStateChanged(true));
     return juce::Result::ok();
@@ -670,7 +1885,7 @@ void MegaDSPAudioProcessor::loadFactoryPreset(int presetIndex)
 
     if (!beginTopologyMutation())
         return;
-    rack.clearModuleDataState();
+    getRack().clearModuleDataState();
     const auto setPlain = [this](const juce::String& id, float value)
     {
         if (auto* parameter = parameters.getParameter(id))
@@ -701,6 +1916,7 @@ juce::Result MegaDSPAudioProcessor::savePreset(const juce::File& file)
     auto state = parameters.copyState();
     state.setProperty("schemaVersion", megadsp::stateSchemaVersion, nullptr);
     state.setProperty("selectedTab", selectedTab, nullptr);
+    serializeSnapshots(state);
     auto xml = state.createXml();
     if (xml == nullptr)
         return juce::Result::fail("Could not serialize preset state.");
@@ -735,6 +1951,7 @@ juce::Result MegaDSPAudioProcessor::loadPreset(const juce::File& file)
             "Another topology update is already in progress.");
     selectedTab = static_cast<int>(state.getProperty("selectedTab", 0));
     restoreParameterState(state);
+    restoreSnapshots(state, schemaVersion);
     finishTopologyMutation(true, true, true);
     setSelectedTab(selectedTab);
     return juce::Result::ok();
@@ -742,10 +1959,10 @@ juce::Result MegaDSPAudioProcessor::loadPreset(const juce::File& file)
 
 void MegaDSPAudioProcessor::refreshLatency()
 {
-    const auto latency = rack.latencySamples();
+    const auto latency = getAudioRack().latencySamples();
     pendingLatency.store(latency);
-    if (auto* messages = juce::MessageManager::getInstanceWithoutCreating();
-        messages != nullptr && messages->isThisTheMessageThread())
+    if (!liveSafeSnapshots.load(std::memory_order_acquire)
+        || !audioStreamActive.load(std::memory_order_acquire))
     {
         latencyDirty.store(false, std::memory_order_release);
         setLatencySamples(latency);
@@ -759,6 +1976,11 @@ void MegaDSPAudioProcessor::refreshLatency()
 void MegaDSPAudioProcessor::restoreParameterState(const juce::ValueTree& state)
 {
     parameters.replaceState(state);
+    liveSafeSnapshots.store(
+        static_cast<bool>(
+            parameters.state.getProperty(
+                "liveSafeSnapshots", false)),
+        std::memory_order_release);
     parameters.state.setProperty(
         "instanceName",
         megadsp::ui::normalizeInstanceName(
@@ -787,10 +2009,44 @@ void MegaDSPAudioProcessor::restoreParameterState(const juce::ValueTree& state)
 
 void MegaDSPAudioProcessor::timerCallback()
 {
+    const auto callbackGeneration =
+        audioCallbackGeneration.load(std::memory_order_acquire);
+    if (callbackGeneration != observedAudioCallbackGeneration)
+    {
+        observedAudioCallbackGeneration = callbackGeneration;
+        audioIdlePollCount = 0;
+        audioStreamActive.store(true, std::memory_order_release);
+    }
+    else if (audioStreamActive.load(std::memory_order_acquire))
+    {
+        const auto blockDurationPolls = juce::roundToInt(
+            30.0 * static_cast<double>(
+                       lastAudioBlockSamples.load(std::memory_order_acquire))
+            / juce::jmax(1.0, preparedSampleRate));
+        if (++audioIdlePollCount >= juce::jmax(5, blockDurationPolls + 3))
+            audioStreamActive.store(false, std::memory_order_release);
+    }
+
+    if (snapshotUiDirty.exchange(false, std::memory_order_acq_rel))
+    {
+        const auto selected = getSelectedSnapshot();
+        publishSnapshotToParameters(selected, false);
+        selectedTab = juce::jlimit(
+            0, juce::jmax(
+                   0, getRack().activeSlotCount() - 1),
+            selectedTab);
+        getRack().visualizationData().setSelectedSlot(selectedTab);
+        topologyGeneration.fetch_add(1, std::memory_order_release);
+        refreshLatency();
+        updateHostDisplay(
+            ChangeDetails{}.withNonParameterStateChanged(true));
+    }
     if (topologyDirty.load(std::memory_order_acquire)
         && !topologyMutationInProgress.load(std::memory_order_acquire))
         handleAsyncUpdate();
-    if (latencyDirty.exchange(false, std::memory_order_acq_rel))
+    if ((!liveSafeSnapshots.load(std::memory_order_acquire)
+         || !audioStreamActive.load(std::memory_order_acquire))
+        && latencyDirty.exchange(false, std::memory_order_acq_rel))
     {
         setLatencySamples(pendingLatency.load());
         updateHostDisplay(juce::AudioProcessorListener::ChangeDetails()

@@ -207,6 +207,13 @@ double SpectralPrismModule::tailSeconds(const ControlValues& controls) const
            / sampleRate;
 }
 
+double SpectralPrismModule::snapshotSpillSeconds(
+    const ControlValues& controls) const
+{
+    return normalized(controls[4], 0.0f) >= 0.5f
+        ? 1.5 : DspModule::snapshotSpillSeconds(controls);
+}
+
 void SpectralPrismModule::initialiseWindows()
 {
     for (int index = 0; index < fftSize; ++index)

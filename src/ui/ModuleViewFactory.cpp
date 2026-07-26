@@ -73,7 +73,8 @@ constexpr std::array<ViewCreator,
         &createMidnightCurrentView,
         &createAutoWahView,
         &createResonantSculptureView,
-        &createNeuralAmpModelerView
+        &createNeuralAmpModelerView,
+        &createStageVocalView
     };
 
 static_assert([]

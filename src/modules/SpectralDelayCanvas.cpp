@@ -370,4 +370,11 @@ double SpectralDelayCanvasModule::tailSeconds(
             * static_cast<double>(juce::jmax(1.0f, repeats))
             + static_cast<double>(FixedLatencyStft::fftSize) / sampleRate);
 }
+
+double SpectralDelayCanvasModule::snapshotSpillSeconds(
+    const ControlValues& controls) const
+{
+    return detail::normalizedControl(controls[freezeControl], 0.0f) >= 0.5f
+        ? 1.5 : DspModule::snapshotSpillSeconds(controls);
+}
 } // namespace megadsp

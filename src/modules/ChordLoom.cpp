@@ -428,6 +428,13 @@ double ChordLoomModule::tailSeconds(const ControlValues& controls) const
         ? 120.0 : 0.0;
 }
 
+double ChordLoomModule::snapshotSpillSeconds(
+    const ControlValues& controls) const
+{
+    return detail::normalizedControl(controls[10], 0.55f) > 0.0001f
+        ? 1.5 : 0.0;
+}
+
 bool ChordLoomModule::readContinuousTelemetry(
     ContinuousTelemetrySnapshot& snapshot) const noexcept
 {

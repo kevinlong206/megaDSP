@@ -17,10 +17,10 @@ serial slots and twelve fixed generic controls per slot.
   Spectral Delay Canvas 35, Formant Forge 36, Harmonic Mirage 37, Chaos Field
   38, Time Mosaic 39, Guitar Cabinet 40, Chord Loom 41, Volume Swell 42,
   Spectral Nebula 43, Midnight Current 44, Auto Wah 45, Resonant Sculpture 46,
-  and Neural Amp Modeler 47.
+  Neural Amp Modeler 47, and Stage Vocal 48.
 - Preserve the eight-slot, twelve-control host parameter topology and existing
   parameter IDs.
-- Keep state migration compatible with schema 2 through current schema 9.
+- Keep state migration compatible with schema 2 through current schema 11.
 - Module type parameters are not automatable; saved integer module values must
   continue to restore exactly.
 - Processing after `prepare()` must be allocation-free, lock-free, finite, and
@@ -40,8 +40,10 @@ serial slots and twelve fixed generic controls per slot.
 - `src/DspModules.h`: compatibility umbrella for all DSP module declarations.
 - `src/EffectRack.*`: slot ownership, serial routing, bypass interpolation,
   latency alignment, visualization capture, and tail aggregation.
+- `src/SnapshotState.*`: independent fixed rack states for eight prepared
+  snapshots, including external asset references and schema serialization.
 - `src/PluginProcessor.*`: host buses, state, presets, latency reporting, and
-  rack topology operations.
+  rack topology operations plus sample-accurate snapshot recall and spill.
 - `src/PluginEditor.*`: tabbed rack shell and semantic module controls.
 - `src/ui/*`: reusable effect graph shell, module view interface, and factory.
 - `src/ui/modules/*`: module-specific graph rendering and interactions.
@@ -56,6 +58,19 @@ parsing/formatting, and tests.
 
 - Smooth every audible continuous parameter and make structural changes
   click-safe.
+- All eight populated snapshots own prepared rack graphs. MIDI Program Change
+  0-7 recall must be sample-accurate and perform no allocation, locking, file
+  access, construction, or destruction on the audio thread. Recall uses a
+  zero-slope 20 ms input crossfade, keeps at most two zero-input spill tails,
+  and fades the oldest on overflow. Snapshot spill is distinct from host tail
+  reporting: natural tails are capped at eight seconds with a final 500 ms
+  fade, while sustained generators and frozen spectral fields spill for 1.5
+  seconds. Normally inactive snapshots do not process.
+  LIVE SAFE processes every populated graph exactly once per range, feeding
+  silence to inactive graphs and reusing their prepared outputs for transitions
+  and spills so recall does not increase graph count. It must not send per-control
+  host notifications on recall. Snapshot latency remains native; LIVE SAFE
+  defers PDC notification until callbacks stop rather than adding common latency.
 - Keep stereo effects mono-compatible. Synthetic side content must cancel on
   fold-down; do not use uncompensated Haas delays for widening.
 - Preserve a focused low-frequency image in stereo processors.
@@ -77,9 +92,12 @@ parsing/formatting, and tests.
   256-sample head and one shared convolution message queue. IR file work must
   stay off the audio thread; Dry and Wet are independent smoothed linear gains,
   Low Cut/High Cut process only the wet path, and an unloaded or unavailable IR
-  produces `Dry * input * Output` with no synthetic wet signal.
+  produces `Dry * input * Output` with no synthetic wet signal. Mono IR wet
+  sends are centered; stereo IRs preserve their encoded channel differences.
+  Ducking attenuates only the completed wet path and releases into the tail.
 - Algorithmic Reverb applies independent smoothed Dry to the original input and
   Wet to the completed reverb field. Damping and input Low Cut/High Cut remain;
+  Ducking attenuates only the completed wet field and releases into the tail;
   there is no independent broad output Tone stage.
 - Dynamic EQ is a stackable single focused band. Its detector must remain
   frequency-selective, external-sidechain selection must fall back to internal
@@ -197,6 +215,11 @@ parsing/formatting, and tests.
   model loading and runs those models at full size. Its five active controls
   are Pre Gain, Bass, Mid, Treble, and Post Gain; it has no internal dry/wet
   blend. All tone and gain controls are smoothed and unloaded models are silent.
+- Stage Vocal is a zero-latency integrated live strip. Its stereo-linked
+  expander uses bounded attenuation rather than hard muting; de-essing remains
+  frequency-selective while compression is broadband. Low Cut, Presence, Air,
+  and Output retain their exact musician-facing meanings, and telemetry reports
+  measured input/output and reduction from all three dynamics stages.
 
 ## Build and test
 

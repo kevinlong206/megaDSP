@@ -92,6 +92,13 @@ public:
         auto source = makeSignal(1, 24000);
         renderInBlocks(delay, source, delayControls);
         delayControls[9] = 1.0f;
+        expectEquals(
+            delay.snapshotSpillSeconds(delayControls), 1.5);
+        auto frozenMosaicControls = mosaicControls;
+        frozenMosaicControls[
+            megadsp::TimeMosaicModule::freezeControl] = 1.0f;
+        expectEquals(
+            mosaic.snapshotSpillSeconds(frozenMosaicControls), 1.5);
         juce::AudioBuffer<float> frozen(1, 12000);
         frozen.clear();
         renderInBlocks(delay, frozen, delayControls);

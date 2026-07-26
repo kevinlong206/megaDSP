@@ -120,9 +120,11 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> widthSmoothed;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> preDelaySmoothed;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> diffusionSmoothed;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> modulationSmoothed;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> duckAmountSmoothed;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> dampingSmoothed;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> lowCoefficientSmoothed;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> highCoefficientSmoothed;
+    float duckEnvelope = 0.0f;
+    float duckGainDb = 0.0f;
 };
 } // namespace megadsp

@@ -22,6 +22,8 @@ public:
         auto controls = moduleDefaults(ModuleType::chordLoom);
         ChordLoomModule module;
         module.prepare({ rate, 96000, 2 });
+        expectEquals(module.tailSeconds(controls), 120.0);
+        expectEquals(module.snapshotSpillSeconds(controls), 1.5);
         auto first = makeChord(2, 96000, rate, { 220.0f, 277.18f, 329.63f });
         module.process(first, controls, capture);
         expectFinite(first);

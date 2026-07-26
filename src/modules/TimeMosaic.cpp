@@ -459,4 +459,11 @@ double TimeMosaicModule::tailSeconds(const ControlValues& controls) const
         detail::normalizedControl(controls[historyControl], 0.5f)))
         + static_cast<double>(FixedLatencyStft::fftSize) / sampleRate;
 }
+
+double TimeMosaicModule::snapshotSpillSeconds(
+    const ControlValues& controls) const
+{
+    return detail::normalizedControl(controls[freezeControl], 0.0f) >= 0.5f
+        ? 1.5 : DspModule::snapshotSpillSeconds(controls);
+}
 } // namespace megadsp

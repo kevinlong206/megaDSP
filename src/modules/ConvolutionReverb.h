@@ -72,6 +72,8 @@ private:
     juce::AudioBuffer<float> wetBuffer;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> wetSmoothed;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> drySmoothed;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>
+        duckAmountSmoothed;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>
         outputSmoothed;
     double sampleRate = 44100.0;
@@ -80,7 +82,10 @@ private:
     std::atomic<std::uint64_t> requestedGeneration { 0 };
     std::atomic<std::uint64_t> committedGeneration { 0 };
     std::atomic<bool> committedImpulseAvailable { false };
+    std::atomic<bool> committedImpulseIsMono { false };
     std::atomic<double> impulseLengthSeconds { 0.0 };
+    float duckEnvelope = 0.0f;
+    float duckGainDb = 0.0f;
     mutable juce::CriticalSection metadataLock;
     juce::String loadedImpulseName;
     ImpulseResponsePreview preview {};
