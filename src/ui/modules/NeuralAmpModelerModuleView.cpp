@@ -59,7 +59,8 @@ private:
     static juce::Rectangle<float> knobBounds(
         juce::Rectangle<float> area, int control)
     {
-        area.removeFromTop(78.0f);
+        area.removeFromTop(
+            juce::jlimit(54.0f, 70.0f, area.getHeight() * 0.28f));
         const auto width = area.getWidth() / 5.0f;
         return { area.getX() + width * static_cast<float>(control),
                  area.getY(), width, area.getHeight() };
@@ -141,15 +142,17 @@ void NeuralAmpModelerModuleView::paint(
     juce::Graphics& graphics, juce::Rectangle<float> area)
 {
     const auto fullArea = area;
-    auto header = area.removeFromTop(68.0f);
+    auto header = area.removeFromTop(
+        juce::jlimit(48.0f, 62.0f, area.getHeight() * 0.25f));
     graphics.setColour(juce::Colour(0xff10141b));
     graphics.fillRoundedRectangle(header, 8.0f);
     graphics.setColour(cachedInfo.valid
         ? juce::Colours::white : juce::Colour(0xffa8b3c0));
-    graphics.setFont(juce::FontOptions(14.0f, juce::Font::bold));
+    graphics.setFont(juce::FontOptions(12.0f, juce::Font::bold));
     graphics.drawText(
         cachedInfo.valid ? cachedInfo.name : "No model loaded",
-        header.removeFromTop(28.0f).reduced(10.0f, 0.0f).toNearestInt(),
+        header.removeFromTop(header.getHeight() * 0.48f)
+            .reduced(10.0f, 0.0f).toNearestInt(),
         juce::Justification::centredLeft);
     graphics.setFont(juce::FontOptions(10.0f));
     graphics.setColour(juce::Colour(0xffa8b3c0));
@@ -173,7 +176,7 @@ void NeuralAmpModelerModuleView::paint(
     {
         auto bounds = knobBounds(fullArea, control);
         const auto diameter = juce::jmin(
-            74.0f, juce::jmin(bounds.getWidth() - 16.0f,
+            58.0f, juce::jmin(bounds.getWidth() - 16.0f,
                               bounds.getHeight() - 42.0f));
         const auto knob = juce::Rectangle<float>(diameter, diameter)
             .withCentre({ bounds.getCentreX(), bounds.getCentreY() - 4.0f });

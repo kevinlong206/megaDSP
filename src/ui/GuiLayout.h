@@ -13,6 +13,9 @@ inline constexpr int editorMinimumHeight = 620;
 inline constexpr int editorMaximumWidth = 1800;
 inline constexpr int editorMaximumHeight = 1200;
 inline constexpr int instanceNameMaximumLength = 32;
+inline constexpr int moduleCardHeight = 320;
+inline constexpr int moduleCardGap = 8;
+inline constexpr int addModuleCardHeight = 42;
 
 juce::String normalizeInstanceName(const juce::String&);
 
@@ -57,6 +60,7 @@ struct TabLayout
 
 TabLayout calculateTabLayout(
     int availableWidth, int activeTabs, bool showAddButton);
+int calculateRackContentHeight(int activeModules, bool showAddButton);
 juce::String compactTabName(ModuleType);
 float normalizedWheelDelta(float deltaX, float deltaY, bool isReversed);
 

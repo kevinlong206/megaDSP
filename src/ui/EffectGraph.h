@@ -38,6 +38,8 @@ public:
     bool isInterestedInFileDrag(const juce::StringArray&) override;
     void filesDropped(const juce::StringArray&, int x, int y) override;
     bool usesFullPanel() const;
+    void setVisualizationActive(bool);
+    bool isVisualizationActive() const { return visualizationActive; }
 
     float value(int control) const;
     juce::RangedAudioParameter* parameter(int control) const;
@@ -129,6 +131,6 @@ private:
     juce::String dragReadout;
     std::unique_ptr<ModuleView> moduleView;
     bool bypassVisualsSuspended = false;
-    bool interactiveRefresh = false;
+    bool visualizationActive = false;
 };
 } // namespace megadsp::ui

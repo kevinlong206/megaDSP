@@ -132,12 +132,18 @@ void DiffusionDelayModuleView::mouseDrag(const juce::MouseEvent& event)
         setValue(dragPrimary, juce::jlimit(
             0.0f, 1.0f,
             (event.position.x - bounds.getX()) / bounds.getWidth()));
+        if (dragPrimary == 2)
+            setValue(2, discreteValue(
+                discreteIndex(value(2), 8), 8));
         setValue(4, juce::jlimit(
             0.0f, 1.0f,
             (bounds.getBottom() - event.position.y) / bounds.getHeight()));
-        dragReadout = juce::String(value(1) >= 0.5f ? "DIVISION  " : "TIME  ")
+        dragReadout = juce::String(value(1) >= 0.5f
+                                       ? "REPEAT DIVISION  "
+                                       : "REPEAT TIME  ")
             + formatControlValue(type, dragPrimary, value(dragPrimary))
-            + "    DIFFUSION  " + formatControlValue(type, 4, value(4));
+            + "    CLOUD DENSITY  "
+            + formatControlValue(type, 4, value(4));
         repaint();
         return;
     }
@@ -216,7 +222,7 @@ void DiffusionDelayModuleView::paint(
     graphics.fillRoundedRectangle(cloud, 8.0f);
     const auto timing = value(1) >= 0.5f ? value(2) : value(0);
     const auto primaryX = cloud.getX()
-        + juce::jmap(timing, 0.0f, 1.0f, 0.12f, 0.42f) * cloud.getWidth();
+        + juce::jmap(timing, 0.0f, 1.0f, 0.06f, 0.94f) * cloud.getWidth();
     const auto centreY = cloud.getCentreY();
     graphics.setColour(juce::Colours::white.withAlpha(0.15f));
     graphics.drawHorizontalLine(juce::roundToInt(centreY),
@@ -225,6 +231,22 @@ void DiffusionDelayModuleView::paint(
     graphics.setColour(juce::Colours::white.withAlpha(0.75f));
     graphics.drawVerticalLine(juce::roundToInt(cloud.getX() + 12.0f),
                               centreY - 18.0f, centreY + 18.0f);
+    graphics.setColour(juce::Colours::white.withAlpha(0.48f));
+    graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
+    const auto horizontalAxis = cloud.reduced(8.0f, 3.0f);
+    const auto timingAxis = horizontalAxis.withTrimmedLeft(48.0f);
+    graphics.drawText(
+        value(1) >= 0.5f ? "1/32" : "10 ms",
+        timingAxis.toNearestInt(), juce::Justification::bottomLeft);
+    graphics.drawText(
+        value(1) >= 0.5f ? "1/2" : "2 s",
+        timingAxis.toNearestInt(), juce::Justification::bottomRight);
+    graphics.drawText(
+        "DENSE", horizontalAxis.toNearestInt(),
+        juce::Justification::topLeft);
+    graphics.drawText(
+        "DISTINCT", horizontalAxis.toNearestInt(),
+        juce::Justification::bottomLeft);
     EventTelemetrySnapshot telemetry;
     const auto hasTelemetry =
         readEventTelemetry(telemetry) && telemetry.sequence != 0;
@@ -296,13 +318,18 @@ void DiffusionDelayModuleView::paint(
     graphics.fillEllipse(
         juce::Rectangle<float>(13.0f, 13.0f).withCentre(node));
     graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+    auto readout = juce::Rectangle<float>(205.0f, 20.0f)
+        .withCentre(node.translated(0.0f, -17.0f))
+        .constrainedWithin(cloud);
+    graphics.setColour(juce::Colour(0xe626303c));
+    graphics.fillRoundedRectangle(readout, 5.0f);
+    graphics.setColour(juce::Colours::white);
     graphics.drawText(
-        formatControlValue(type, value(1) >= 0.5f ? 2 : 0, timing)
-            + "  /  " + formatControlValue(type, 4, value(4)),
-        juce::Rectangle<float>(180.0f, 18.0f)
-            .withCentre(node.translated(0.0f, -15.0f))
-            .constrainedWithin(cloud).toNearestInt(),
-        juce::Justification::centred);
+        juce::String(value(1) >= 0.5f ? "REPEAT  " : "TIME  ")
+            + formatControlValue(
+                type, value(1) >= 0.5f ? 2 : 0, timing)
+            + "    CLOUD  " + formatControlValue(type, 4, value(4)),
+        readout.toNearestInt(), juce::Justification::centred);
 
     for (const auto control : { 3, 5, 6, 7, 8, 9, 10, 11 })
     {

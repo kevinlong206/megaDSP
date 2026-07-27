@@ -190,7 +190,9 @@ EffectGraph::EffectGraph(MegaDSPAudioProcessor& processorToUse, int slotToUse,
             refreshFocusedControl(false);
         }
     }
-    startTimerHz(15);
+    visualizationActive =
+        processor.getVisualizationData().getSelectedSlot() == slot;
+    startTimerHz(30);
 }
 
 EffectGraph::~EffectGraph()
@@ -377,6 +379,19 @@ bool EffectGraph::usesFullPanel() const
     return moduleView != nullptr && moduleView->usesFullPanel();
 }
 
+void EffectGraph::setVisualizationActive(bool active)
+{
+    if (visualizationActive == active)
+        return;
+    visualizationActive = active;
+    auto& visualization = processor.getVisualizationData();
+    if (active)
+        visualization.setSelectedSlot(slot);
+    else if (visualization.getSelectedSlot() == slot)
+        visualization.setSelectedSlot(-1);
+    repaint();
+}
+
 float EffectGraph::value(int control) const
 {
     if (auto* raw = processor.parameters.getRawParameterValue(
@@ -437,12 +452,12 @@ void EffectGraph::timerCallback()
     if (!isShowing())
         return;
 
-    auto& data = processor.getVisualizationData().slotData(slot);
     if (processor.isSlotBypassed(slot))
     {
         if (!bypassVisualsSuspended)
         {
-            data.clear();
+            if (visualizationActive)
+                processor.getVisualizationData().slotData(slot).clear();
             inputSamples.fill(0.0f);
             outputSamples.fill(0.0f);
             stereoLeftSamples.fill(0.0f);
@@ -459,6 +474,17 @@ void EffectGraph::timerCallback()
         return;
     }
     bypassVisualsSuspended = false;
+
+    if (!visualizationActive)
+    {
+        if (moduleView != nullptr)
+            moduleView->timerCallback();
+        refreshFocusedControl(true);
+        repaint();
+        return;
+    }
+
+    auto& data = processor.getVisualizationData().slotData(slot);
     data.input.copyLatest(inputSamples);
     data.output.copyLatest(outputSamples);
     data.outputLeft.copyLatest(stereoLeftSamples);
@@ -478,12 +504,8 @@ void EffectGraph::timerCallback()
     repaint();
 }
 
-void EffectGraph::setInteractiveRefresh(bool interactive)
+void EffectGraph::setInteractiveRefresh(bool)
 {
-    if (interactiveRefresh == interactive)
-        return;
-    interactiveRefresh = interactive;
-    startTimerHz(interactive ? 30 : 15);
 }
 
 std::unique_ptr<juce::AccessibilityHandler>

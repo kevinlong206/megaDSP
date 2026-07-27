@@ -4,8 +4,8 @@
 #include "ModuleViewCreators.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
-#include <limits>
 
 namespace megadsp::ui
 {
@@ -15,6 +15,7 @@ class RotarySpeakerModuleView final : public ModuleView
 {
 public:
     using ModuleView::ModuleView;
+    bool usesFullPanel() const override { return true; }
     void configureAccessibility(juce::Component&) const override;
     void paint(juce::Graphics&, juce::Rectangle<float>) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -22,12 +23,15 @@ public:
     void mouseDoubleClick(const juce::MouseEvent&) override;
 
 private:
+    static juce::Rectangle<float> controlsBounds(juce::Rectangle<float>);
+    static juce::Rectangle<float> animationBounds(juce::Rectangle<float>);
     static juce::Rectangle<float> speedPillBounds(
         juce::Rectangle<float>, int);
-    static juce::Rectangle<float> rotorBounds(juce::Rectangle<float>);
-    static juce::Rectangle<float> balanceBounds(juce::Rectangle<float>);
-    static juce::Rectangle<float> motionBounds(juce::Rectangle<float>);
-    static juce::Rectangle<float> spinUpBounds(juce::Rectangle<float>);
+    static juce::Rectangle<float> controlBounds(
+        juce::Rectangle<float>, int);
+    static juce::Rectangle<float> groupBounds(
+        juce::Rectangle<float>, int);
+    int hitControl(juce::Rectangle<float>, juce::Point<float>) const;
     juce::Point<float> microphonePoint(
         juce::Rectangle<float>, int channel) const;
 };
@@ -35,70 +39,119 @@ private:
 void RotarySpeakerModuleView::configureAccessibility(
     juce::Component& component) const
 {
-    component.setTitle("Rotary Speaker rotor and microphone editor");
+    component.setTitle("Rotary Speaker full panel editor");
     component.setHelpText(
-        "Choose Brake, Chorale, or Tremolo with the dominant Speed pills. "
-        "Drag Rotor Balance horizontally, Motion and Spin-up vertically, "
-        "or drag either microphone in two dimensions for exact distance "
-        "and spread. Double-click a gesture to restore its default.");
+        "The left panel directly edits all twelve Rotary Speaker controls. "
+        "Choose Brake, Chorale, or Tremolo with the Speed selector, then drag "
+        "the grouped Rotor, Microphones, Character, and Output tracks. The "
+        "unobstructed right panel visualizes the cabinet, rotors, and "
+        "microphones. Double-click any control to restore its default.");
+}
+
+juce::Rectangle<float> RotarySpeakerModuleView::controlsBounds(
+    juce::Rectangle<float> area)
+{
+    return area.removeFromLeft(area.getWidth() * 0.59f).reduced(0.0f, 1.0f);
+}
+
+juce::Rectangle<float> RotarySpeakerModuleView::animationBounds(
+    juce::Rectangle<float> area)
+{
+    area.removeFromLeft(area.getWidth() * 0.59f);
+    return area.reduced(10.0f, 3.0f);
 }
 
 juce::Rectangle<float> RotarySpeakerModuleView::speedPillBounds(
     juce::Rectangle<float> area, int index)
 {
-    auto pills = area.removeFromTop(31.0f);
-    const auto width = pills.getWidth() / 3.0f;
+    auto row = controlsBounds(area).removeFromTop(35.0f);
+    row.removeFromLeft(48.0f);
+    const auto width = row.getWidth() / 3.0f;
     return juce::Rectangle<float>(
-        pills.getX() + static_cast<float>(index) * width,
-        pills.getY(), width, pills.getHeight()).reduced(3.0f, 2.0f);
+               row.getX() + width * static_cast<float>(index),
+               row.getY(), width, row.getHeight())
+        .reduced(3.0f, 4.0f);
 }
 
-juce::Rectangle<float> RotarySpeakerModuleView::rotorBounds(
-    juce::Rectangle<float> area)
+juce::Rectangle<float> RotarySpeakerModuleView::groupBounds(
+    juce::Rectangle<float> area, int group)
 {
-    area.removeFromTop(35.0f);
-    area.removeFromBottom(34.0f);
-    area.removeFromLeft(28.0f);
-    area.removeFromRight(28.0f);
-    return area;
+    auto controls = controlsBounds(area);
+    controls.removeFromTop(38.0f);
+    const auto remaining = controls.getHeight();
+    const std::array<float, 4> heights {
+        remaining * 0.34f, remaining * 0.22f,
+        remaining * 0.22f, remaining * 0.22f
+    };
+    for (int index = 0; index < group; ++index)
+        controls.removeFromTop(heights[static_cast<size_t>(index)]);
+    return controls.removeFromTop(heights[static_cast<size_t>(group)]);
 }
 
-juce::Rectangle<float> RotarySpeakerModuleView::balanceBounds(
-    juce::Rectangle<float> area)
+juce::Rectangle<float> RotarySpeakerModuleView::controlBounds(
+    juce::Rectangle<float> area, int control)
 {
-    return area.removeFromBottom(27.0f).reduced(5.0f, 2.0f);
+    int group = 0;
+    int item = 0;
+    int columns = 2;
+    if (control == 2 || control == 3 || control == 4 || control == 7)
+    {
+        constexpr std::array<int, 4> rotorControls { 2, 3, 4, 7 };
+        item = static_cast<int>(std::find(
+            rotorControls.begin(), rotorControls.end(), control)
+                                - rotorControls.begin());
+    }
+    else if (control == 5 || control == 6)
+    {
+        group = 1;
+        item = control - 5;
+    }
+    else if (control == 1 || control == 8 || control == 9)
+    {
+        group = 2;
+        columns = 3;
+        item = control == 1 ? 0 : control - 7;
+    }
+    else
+    {
+        group = 3;
+        item = control - 10;
+    }
+
+    auto bounds = groupBounds(area, group);
+    bounds.removeFromTop(15.0f);
+    const auto rows = group == 0 ? 2 : 1;
+    const auto width = bounds.getWidth() / static_cast<float>(columns);
+    const auto height = bounds.getHeight() / static_cast<float>(rows);
+    return juce::Rectangle<float>(
+               bounds.getX() + width * static_cast<float>(item % columns),
+               bounds.getY() + height * static_cast<float>(item / columns),
+               width, height)
+        .reduced(4.0f, 3.0f);
 }
 
-juce::Rectangle<float> RotarySpeakerModuleView::motionBounds(
-    juce::Rectangle<float> area)
+int RotarySpeakerModuleView::hitControl(
+    juce::Rectangle<float> area, juce::Point<float> point) const
 {
-    area.removeFromTop(39.0f);
-    area.removeFromBottom(38.0f);
-    return area.removeFromLeft(22.0f).reduced(2.0f);
-}
-
-juce::Rectangle<float> RotarySpeakerModuleView::spinUpBounds(
-    juce::Rectangle<float> area)
-{
-    area.removeFromTop(39.0f);
-    area.removeFromBottom(38.0f);
-    return area.removeFromRight(22.0f).reduced(2.0f);
+    for (int control = 1; control < 12; ++control)
+        if (controlBounds(area, control).contains(point))
+            return control;
+    return -1;
 }
 
 juce::Point<float> RotarySpeakerModuleView::microphonePoint(
     juce::Rectangle<float> area, int channel) const
 {
-    const auto rotor = rotorBounds(area);
-    const auto centre = rotor.getCentre();
+    const auto animation = animationBounds(area);
+    const auto centre = animation.getCentre();
     const auto radius =
-        juce::jmin(rotor.getWidth(), rotor.getHeight()) * 0.35f;
+        juce::jmin(animation.getWidth(), animation.getHeight()) * 0.31f;
     const auto distance = radius * lerp(1.08f, 1.55f, value(5));
     const auto spread = juce::degreesToRadians(value(6) * 180.0f);
     const auto angle = -juce::MathConstants<float>::halfPi
         + (channel == 0 ? -0.5f : 0.5f) * spread;
     return centre
-           + juce::Point<float>(std::cos(angle), std::sin(angle))
-                 * distance;
+           + juce::Point<float>(std::cos(angle), std::sin(angle)) * distance;
 }
 
 void RotarySpeakerModuleView::mouseDown(const juce::MouseEvent& event)
@@ -107,6 +160,7 @@ void RotarySpeakerModuleView::mouseDown(const juce::MouseEvent& event)
     for (int speed = 0; speed < 3; ++speed)
         if (speedPillBounds(area, speed).contains(event.position))
         {
+            graph.focusKeyboardControl(0);
             if (auto* target = parameter(0))
             {
                 target->beginChangeGesture();
@@ -117,104 +171,43 @@ void RotarySpeakerModuleView::mouseDown(const juce::MouseEvent& event)
             return;
         }
 
-    if (balanceBounds(area).contains(event.position))
-        dragPrimary = 2;
-    else if (motionBounds(area).contains(event.position))
-        dragPrimary = 4;
-    else if (spinUpBounds(area).contains(event.position))
-        dragPrimary = 7;
-    else if (event.position.getDistanceFrom(microphonePoint(area, 0))
-                 <= 20.0f
-             || event.position.getDistanceFrom(microphonePoint(area, 1))
-                    <= 20.0f)
-    {
-        dragPrimary = 5;
-        dragSecondary = 6;
-    }
+    dragPrimary = hitControl(area, event.position);
     if (dragPrimary < 0)
         return;
+    graph.focusKeyboardControl(dragPrimary);
     beginGestures();
     mouseDrag(event);
 }
 
 void RotarySpeakerModuleView::mouseDrag(const juce::MouseEvent& event)
 {
-    if (dragPrimary < 0)
+    if (dragPrimary <= 0)
         return;
     const auto area = getLocalBounds().toFloat().reduced(12.0f);
-    if (dragPrimary == 2)
-    {
-        const auto balance = balanceBounds(area);
-        setValue(2, juce::jlimit(
-            0.0f, 1.0f,
-            (event.position.x - balance.getX()) / balance.getWidth()));
-    }
-    else if (dragPrimary == 4 || dragPrimary == 7)
-    {
-        const auto rail =
-            dragPrimary == 4 ? motionBounds(area) : spinUpBounds(area);
-        setValue(dragPrimary, juce::jlimit(
-            0.0f, 1.0f,
-            (rail.getBottom() - event.position.y) / rail.getHeight()));
-    }
-    else
-    {
-        const auto rotor = rotorBounds(area);
-        const auto centre = rotor.getCentre();
-        const auto radius =
-            juce::jmin(rotor.getWidth(), rotor.getHeight()) * 0.35f;
-        const auto vector = event.position - centre;
-        const auto distance = vector.getDistanceFromOrigin()
-                              / juce::jmax(1.0f, radius);
-        setValue(5, juce::jlimit(
-            0.0f, 1.0f, (distance - 1.08f) / (1.55f - 1.08f)));
-        const auto angle = std::atan2(vector.y, vector.x);
-        const auto spread = 2.0f
-            * std::abs(angle + juce::MathConstants<float>::halfPi);
-        setValue(6, juce::jlimit(
-            0.0f, 1.0f, spread / juce::MathConstants<float>::pi));
-    }
-
-    if (dragPrimary == 5)
-        dragReadout =
-            "MICROPHONES  "
-            + megadsp::formatControlValue(type, 5, value(5))
-            + "  |  "
-            + megadsp::formatControlValue(type, 6, value(6));
-    else
-        updateDefaultDragReadout();
-    repaint();
+    const auto bounds = controlBounds(area, dragPrimary);
+    setValue(dragPrimary, juce::jlimit(
+        0.0f, 1.0f,
+        (event.position.x - bounds.getX()) / bounds.getWidth()));
+    updateDefaultDragReadout();
 }
 
 void RotarySpeakerModuleView::mouseDoubleClick(
     const juce::MouseEvent& event)
 {
     const auto area = getLocalBounds().toFloat().reduced(12.0f);
-    const auto defaults = moduleDefaults(type);
     for (int speed = 0; speed < 3; ++speed)
         if (speedPillBounds(area, speed).contains(event.position))
         {
-            setValue(0, defaults[0]);
-            repaint();
+            graph.focusKeyboardControl(0);
+            resetToDefault(0);
             return;
         }
-    if (balanceBounds(area).contains(event.position))
-        setValue(2, defaults[2]);
-    else if (motionBounds(area).contains(event.position))
-        setValue(4, defaults[4]);
-    else if (spinUpBounds(area).contains(event.position))
-        setValue(7, defaults[7]);
-    else if (event.position.getDistanceFrom(microphonePoint(area, 0))
-                 <= 22.0f
-             || event.position.getDistanceFrom(microphonePoint(area, 1))
-                    <= 22.0f)
+    const auto control = hitControl(area, event.position);
+    if (control >= 0)
     {
-        setValue(5, defaults[5]);
-        setValue(6, defaults[6]);
+        graph.focusKeyboardControl(control);
+        resetToDefault(control);
     }
-    else
-        return;
-    repaint();
 }
 
 void RotarySpeakerModuleView::paint(
@@ -223,27 +216,81 @@ void RotarySpeakerModuleView::paint(
     constexpr std::array<const char*, 3> speedNames {
         "BRAKE", "CHORALE", "TREMOLO"
     };
+    constexpr std::array<const char*, 4> groupNames {
+        "ROTOR", "MICROPHONES", "CHARACTER", "OUTPUT"
+    };
+    constexpr std::array<const char*, 12> controlNames {
+        "SPEED", "DRIVE", "BALANCE", "CROSSOVER", "MOTION", "DISTANCE",
+        "SPREAD", "SPIN-UP", "CABINET COLOR", "AMBIENCE", "MIX", "OUTPUT"
+    };
+
+    auto controls = controlsBounds(area);
+    graphics.setColour(juce::Colour(0x9a111821));
+    graphics.fillRoundedRectangle(controls, 9.0f);
+    graphics.setColour(juce::Colour(0xff9ba8b8));
+    graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+    graphics.drawText(
+        "SPEED", controls.removeFromTop(35.0f).removeFromLeft(48.0f)
+                     .toNearestInt(),
+        juce::Justification::centredLeft);
+
     const auto speed = megadsp::discreteIndex(value(0), 3);
     for (int pill = 0; pill < 3; ++pill)
     {
         const auto bounds = speedPillBounds(area, pill);
         graphics.setColour(
             pill == speed ? accent : juce::Colour(0xff27313d));
-        graphics.fillRoundedRectangle(bounds, 7.0f);
+        graphics.fillRoundedRectangle(bounds, 6.0f);
         graphics.setColour(
             pill == speed ? juce::Colour(0xff111820)
                           : juce::Colour(0xffabb6c4));
-        graphics.setFont(juce::FontOptions(
-            11.0f, pill == speed ? juce::Font::bold : juce::Font::plain));
         graphics.drawText(
             speedNames[static_cast<size_t>(pill)],
             bounds.toNearestInt(), juce::Justification::centred);
     }
 
-    const auto rotor = rotorBounds(area);
-    const auto centre = rotor.getCentre();
+    for (int group = 0; group < 4; ++group)
+    {
+        auto bounds = groupBounds(area, group);
+        graphics.setColour(juce::Colour(0xff718095));
+        graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+        graphics.drawText(
+            groupNames[static_cast<size_t>(group)],
+            bounds.removeFromTop(14.0f).toNearestInt(),
+            juce::Justification::centredLeft);
+    }
+
+    for (int control = 1; control < 12; ++control)
+    {
+        auto bounds = controlBounds(area, control);
+        const auto amount = value(control);
+        auto track = bounds.removeFromBottom(8.0f);
+        graphics.setColour(juce::Colour(0xff18212c));
+        graphics.fillRoundedRectangle(track, 4.0f);
+        graphics.setColour(accent.withAlpha(0.62f));
+        graphics.fillRoundedRectangle(
+            track.withWidth(track.getWidth() * amount), 4.0f);
+        const auto x = track.getX() + track.getWidth() * amount;
+        graphics.setColour(juce::Colours::white);
+        graphics.fillEllipse(
+            x - 3.5f, track.getCentreY() - 3.5f, 7.0f, 7.0f);
+
+        graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
+        graphics.setColour(juce::Colour(0xffc5ced9));
+        graphics.drawFittedText(
+            controlNames[static_cast<size_t>(control)],
+            bounds.removeFromLeft(bounds.getWidth() * 0.55f).toNearestInt(),
+            juce::Justification::centredLeft, 1);
+        graphics.setColour(juce::Colours::white);
+        graphics.drawFittedText(
+            megadsp::formatControlValue(type, control, amount),
+            bounds.toNearestInt(), juce::Justification::centredRight, 1);
+    }
+
+    const auto animation = animationBounds(area);
+    const auto centre = animation.getCentre();
     const auto cabinetRadius =
-        juce::jmin(rotor.getWidth(), rotor.getHeight()) * 0.35f;
+        juce::jmin(animation.getWidth(), animation.getHeight()) * 0.31f;
     const auto time = juce::Time::getMillisecondCounterHiRes() * 0.001;
     const auto hornHz = speed == 0 ? 0.0f : speed == 1 ? 0.8f : 6.67f;
     const auto drumHz = speed == 0 ? 0.0f : speed == 1 ? 0.67f : 5.67f;
@@ -257,19 +304,19 @@ void RotarySpeakerModuleView::paint(
     const auto motion = value(4);
     const auto spinUp = value(7);
 
+    graphics.setColour(juce::Colour(0x60151c25));
+    graphics.fillRoundedRectangle(animation, 12.0f);
     graphics.setColour(
         juce::Colour(0xff2d211c).interpolatedWith(
             juce::Colour(0xff674832), value(8)));
     graphics.fillRoundedRectangle(
-        juce::Rectangle<float>(
-            cabinetRadius * 2.0f, cabinetRadius * 2.0f)
+        juce::Rectangle<float>(cabinetRadius * 2.0f, cabinetRadius * 2.0f)
             .withCentre(centre),
         12.0f);
     graphics.setColour(
         juce::Colour(0xff74513b).withAlpha(0.55f + value(9) * 0.35f));
     graphics.drawRoundedRectangle(
-        juce::Rectangle<float>(
-            cabinetRadius * 2.0f, cabinetRadius * 2.0f)
+        juce::Rectangle<float>(cabinetRadius * 2.0f, cabinetRadius * 2.0f)
             .withCentre(centre)
             .expanded(value(9) * 5.0f),
         12.0f, 2.0f);
@@ -279,21 +326,17 @@ void RotarySpeakerModuleView::paint(
     {
         const auto emphasis =
             horn ? std::sqrt(balance) : std::sqrt(1.0f - balance);
-        graphics.setColour(
-            colour.withAlpha(0.10f + 0.24f * emphasis));
+        graphics.setColour(colour.withAlpha(0.10f + 0.24f * emphasis));
         graphics.fillEllipse(
             juce::Rectangle<float>(radius * 2.0f, radius * 2.0f)
                 .withCentre(centre));
-
-        const auto trailLength = lerp(0.12f, 1.2f, spinUp);
         juce::Path trail;
         trail.addCentredArc(
             centre.x, centre.y, radius, radius, 0.0f,
-            angle - trailLength, angle, true);
+            angle - lerp(0.12f, 1.2f, spinUp), angle, true);
         graphics.setColour(colour.withAlpha(0.16f + emphasis * 0.30f));
         graphics.strokePath(
             trail, juce::PathStrokeType(horn ? 3.0f : 5.0f));
-
         const auto direction =
             juce::Point<float>(std::cos(angle), std::sin(angle));
         const auto movingRadius = radius * lerp(0.74f, 1.0f, motion);
@@ -305,13 +348,10 @@ void RotarySpeakerModuleView::paint(
             horn ? 5.0f : 8.0f);
         graphics.fillEllipse(
             centre.x + direction.x * movingRadius - 5.0f,
-            centre.y + direction.y * movingRadius - 5.0f,
-            10.0f, 10.0f);
+            centre.y + direction.y * movingRadius - 5.0f, 10.0f, 10.0f);
     };
     drawRotor(
-        cabinetRadius * 0.42f,
-        rotorAngle(hornHz),
-        accent, true);
+        cabinetRadius * 0.42f, rotorAngle(hornHz), accent, true);
     drawRotor(
         cabinetRadius * 0.72f,
         rotorAngle(drumHz, juce::MathConstants<double>::pi),
@@ -322,64 +362,9 @@ void RotarySpeakerModuleView::paint(
         const auto microphone = microphonePoint(area, channel);
         graphics.setColour(channel == 0 ? accent : outputColour);
         graphics.fillEllipse(
-            juce::Rectangle<float>(13.0f, 13.0f)
-                .withCentre(microphone));
-        graphics.drawLine(
-            juce::Line<float>(microphone, centre), 1.0f);
+            juce::Rectangle<float>(13.0f, 13.0f).withCentre(microphone));
+        graphics.drawLine(juce::Line<float>(microphone, centre), 1.0f);
     }
-    graphics.setColour(juce::Colours::white);
-    graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
-    graphics.drawText(
-        "MICS  " + megadsp::formatControlValue(type, 5, value(5))
-            + "  |  "
-            + megadsp::formatControlValue(type, 6, value(6)),
-        rotor.toNearestInt(), juce::Justification::bottomRight);
-
-    const auto motionRail = motionBounds(area);
-    const auto spinRail = spinUpBounds(area);
-    auto drawVerticalRail = [&](juce::Rectangle<float> rail, float amount,
-                                const juce::String& title,
-                                const juce::String& readout)
-    {
-        graphics.setColour(juce::Colour(0xff151b24));
-        graphics.fillRoundedRectangle(rail, 4.0f);
-        auto fill = rail;
-        fill.setY(rail.getBottom() - rail.getHeight() * amount);
-        graphics.setColour(accent.withAlpha(0.68f));
-        graphics.fillRoundedRectangle(fill, 4.0f);
-        const auto y = rail.getBottom() - rail.getHeight() * amount;
-        graphics.setColour(juce::Colours::white);
-        graphics.fillEllipse(
-            rail.getCentreX() - 4.0f, y - 4.0f, 8.0f, 8.0f);
-        graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-        graphics.drawFittedText(
-            title + "\n" + readout, rail.toNearestInt().expanded(3, 0),
-            juce::Justification::centred, 2);
-    };
-    drawVerticalRail(
-        motionRail, motion, "MOTION",
-        megadsp::formatControlValue(type, 4, motion));
-    drawVerticalRail(
-        spinRail, spinUp, "SPIN-UP",
-        megadsp::formatControlValue(type, 7, spinUp));
-
-    const auto balanceRail = balanceBounds(area);
-    graphics.setColour(juce::Colour(0xff151b24));
-    graphics.fillRoundedRectangle(balanceRail, 5.0f);
-    const auto balanceX =
-        balanceRail.getX() + balance * balanceRail.getWidth();
-    graphics.setColour(juce::Colour(0xff6f8cff).withAlpha(0.42f));
-    graphics.fillRoundedRectangle(balanceRail.withRight(balanceX), 5.0f);
-    graphics.setColour(accent.withAlpha(0.42f));
-    graphics.fillRoundedRectangle(balanceRail.withLeft(balanceX), 5.0f);
-    graphics.setColour(juce::Colours::white);
-    graphics.fillEllipse(
-        balanceX - 5.0f, balanceRail.getCentreY() - 5.0f,
-        10.0f, 10.0f);
-    graphics.drawText(
-        "DRUM  <  ROTOR BALANCE  >  HORN     "
-            + megadsp::formatControlValue(type, 2, balance),
-        balanceRail.toNearestInt(), juce::Justification::centred);
 }
 } // namespace
 

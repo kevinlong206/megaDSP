@@ -61,7 +61,8 @@ node exposes **Bell**, **Low/High Shelf**, and **High/Low Pass** choices directl
 below the graph. Double-click a node, or use **Remove**, to return that band to
 a neutral inactive state. The right-side **Output** rail controls final EQ trim.
 
-Pre/post spectrum traces run continuously while the tab is selected.
+Pre/post spectrum traces run continuously while the EQ card is focused or
+hovered.
 
 ---
 
@@ -144,7 +145,22 @@ Modes are Hall, Chamber, and Plate. The interactive early-reflection and stereo 
 
 Loads mono or stereo WAV, AIFF, and FLAC impulse responses from the **Load IR…** button or by dropping a file on the graph. Uses JUCE non-uniform partitioned convolution with a 256-sample head. IR file work stays off the audio thread.
 
-The normalised IR envelope and shaded passband remain visible while draggable **Low Cut** (high-pass) and **High Cut** (low-pass) handles shape only the wet convolution signal. **Ducking** applies up to 18 dB of smooth input-responsive attenuation to the filtered wet response and releases naturally into the tail. **Dry** and **Wet** are adjacent, independent linear 0–100% amplitude rails. **Output Trim** adjusts their sum. With no available IR, Wet contributes no signal and the result is `Dry × input × Output`. The absolute IR path is stored with plugin and preset state and follows rack reordering; if the file moves, the graph identifies the missing filename.
+The last successfully loaded IR directory is saved with plugin state. **< IR**
+and **IR >** browse supported files in case-insensitive filename order and wrap
+at either end; after clearing an IR, **Load IR…** and directory browsing retain
+that location.
+
+The normalised IR envelope has an unobstructed waveform area. A dedicated strip
+below it owns draggable **Low Cut** (high-pass) and **High Cut** (low-pass)
+handles that shape only the wet convolution signal. A separate control deck
+keeps **Dry**, **Wet**, **Ducking**, and **Output Trim** together rather than
+covering the waveform. Ducking applies up to 18 dB of smooth input-responsive
+attenuation to the filtered wet response and releases naturally into the tail.
+Dry and Wet are adjacent, independent linear 0–100% amplitude rails. Output
+Trim adjusts their sum. With no available IR, Wet contributes no signal and the
+result is `Dry × input × Output`. The absolute IR path is stored with plugin and
+preset state and follows rack reordering; if the file moves, the graph
+identifies the missing filename.
 
 Mono IRs use a centered wet send, even for asymmetric stereo input. Stereo IRs
 retain their captured left/right acoustic differences.
@@ -355,8 +371,9 @@ the requested repeat time. While this slot is selected, the graph's moving
 repeat and cloud marks are published by the audio DSP: progress follows the
 processed repeat clock, brightness follows measured energy, and vertical
 placement follows measured stereo balance. Silence produces no activity marks.
-The graph owns Time or Division, cloud extent, wet passband, Width, and Ducking;
-Feedback remains filtered and strictly bounded.
+The graph owns a full-width Time or Division axis and a clearly labelled Cloud
+Density axis, plus wet passband, Width, and Ducking; Feedback remains filtered
+and strictly bounded.
 
 ---
 

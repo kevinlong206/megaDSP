@@ -124,21 +124,6 @@ void DiffusionDelayModule::addTelemetryEvent(
     float intervalSeconds, float diffusion, float pan, float spread,
     bool stereo) noexcept
 {
-    std::uint32_t retained = 0;
-    for (std::uint32_t index = 0;
-         index < telemetryWorking.eventCount; ++index)
-    {
-        auto event = telemetryWorking.events[index];
-        const auto duration = event.values[static_cast<size_t>(
-            DiffusionDelayTelemetryValue::intervalSeconds)];
-        if (duration > 0.0f)
-            event.progress +=
-                1.0f / static_cast<float>(sampleRate * duration);
-        if (event.progress < 1.0f)
-            telemetryWorking.events[retained++] = event;
-    }
-    telemetryWorking.eventCount = retained;
-
     if (!(energy > 0.00001f) || !std::isfinite(energy))
         return;
 
@@ -367,6 +352,25 @@ void DiffusionDelayModule::process(
         mixSmoothed.setCurrentAndTargetValue(mixTarget);
         outputSmoothed.setCurrentAndTargetValue(outputTarget);
         parametersInitialised = true;
+    }
+
+    if (environment.captureTelemetry)
+    {
+        const auto elapsedSeconds = static_cast<float>(
+            buffer.getNumSamples() / sampleRate);
+        std::uint32_t retained = 0;
+        for (std::uint32_t index = 0;
+             index < telemetryWorking.eventCount; ++index)
+        {
+            auto event = telemetryWorking.events[index];
+            const auto duration = event.values[static_cast<size_t>(
+                DiffusionDelayTelemetryValue::intervalSeconds)];
+            if (duration > 0.0f)
+                event.progress += elapsedSeconds / duration;
+            if (event.progress < 1.0f)
+                telemetryWorking.events[retained++] = event;
+        }
+        telemetryWorking.eventCount = retained;
     }
 
     const auto channels = juce::jmin(2, buffer.getNumChannels());

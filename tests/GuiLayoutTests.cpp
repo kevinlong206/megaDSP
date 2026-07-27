@@ -249,6 +249,10 @@ public:
                == std::vector<int>(
                    { 1, 2, 4, 3, 5, 6, 7, 8, 9, 10, 11 }));
         expect(keyboardControlOrder(
+                   ModuleType::convolutionReverb,
+                   moduleDefaults(ModuleType::convolutionReverb), true, true)
+               == std::vector<int>({ 0, 1, 4, 2, 5, 3 }));
+        expect(keyboardControlOrder(
                    ModuleType::pitchBloom,
                    moduleDefaults(ModuleType::pitchBloom), true, true)
                == std::vector<int>(
@@ -346,6 +350,20 @@ public:
         expectEquals(withAdd.addButtonWidth, 42);
         expect(withAdd.usedWidth <= 800);
         expect(withAdd.tabWidth < 180);
+
+        beginTest("Rack cards have uniform deterministic height");
+        expectEquals(calculateRackContentHeight(0, false), 0);
+        expectEquals(
+            calculateRackContentHeight(0, true), addModuleCardHeight);
+        expectEquals(
+            calculateRackContentHeight(1, false), moduleCardHeight);
+        expectEquals(
+            calculateRackContentHeight(2, false),
+            moduleCardHeight * 2 + moduleCardGap);
+        expectEquals(
+            calculateRackContentHeight(8, true),
+            moduleCardHeight * 8 + moduleCardGap * 8
+                + addModuleCardHeight);
 
         beginTest("Wheel direction matches JUCE sliders");
         expectWithinAbsoluteError(

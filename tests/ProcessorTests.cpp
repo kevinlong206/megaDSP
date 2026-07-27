@@ -3,6 +3,7 @@
 #include "ui/EffectGraph.h"
 #include "ui/GuiLayout.h"
 
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
 
 #include <vector>
@@ -220,6 +221,24 @@ public:
             auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
                 *editorProcessor, 1100, 720);
             expectEquals(editor->tabCountForTesting(), 2);
+            expect(editor->cardChildrenFitForTesting());
+            expectEquals(
+                editor->activeVisualizationCardCountForTesting(), 0);
+            expectEquals(
+                editorProcessor->getVisualizationData().getSelectedSlot(), -1);
+            editor->simulateDescendantFocusForTesting(1);
+            expectEquals(editorProcessor->getSelectedTab(), 1);
+            expectEquals(
+                editor->activeVisualizationCardCountForTesting(), 0);
+            editor->simulateCardHoverForTesting(0);
+            expectEquals(editorProcessor->getSelectedTab(), 0);
+            expectEquals(
+                editor->activeVisualizationCardCountForTesting(), 0);
+            editor->simulateCardHoverExitForTesting(0);
+            expectEquals(editorProcessor->getSelectedTab(), 1);
+            expectEquals(
+                editor->activeVisualizationCardCountForTesting(), 0);
+            editorProcessor->setSelectedTab(0);
             editor->simulateFocusGainDuringRefreshForTesting(1);
             expectEquals(editorProcessor->getSelectedTab(), 0);
             editor->clickCloseButtonForTesting(0);
@@ -227,6 +246,115 @@ public:
             expectEquals(editor->tabCountForTesting(), 1);
             expect(editorProcessor->getRack().moduleType(0)
                    == megadsp::ModuleType::compressor);
+        }
+
+        beginTest("Eight uniform cards persist and overflow vertically");
+        {
+            auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
+            rackProcessor->prepareToPlay(48000.0, 512);
+            for (int slot = 0; slot < megadsp::slotCount; ++slot)
+                rackProcessor->addModule(megadsp::ModuleType::equalizer);
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
+                *rackProcessor, 820, 620);
+
+            expectEquals(editor->cardCountForTesting(), megadsp::slotCount);
+            expect(editor->cardHeightsAreUniformForTesting());
+            expect(editor->cardChildrenFitForTesting());
+            expect(editor->rackOverflowsVerticallyForTesting());
+            expectEquals(
+                editor->activeVisualizationCardCountForTesting(), 0);
+
+            editor->refreshCardsForTesting();
+            expectEquals(editor->cardCountForTesting(), megadsp::slotCount);
+            expect(editor->cardHeightsAreUniformForTesting());
+            expect(editor->rackOverflowsVerticallyForTesting());
+        }
+
+        beginTest("Vertical rack follows topology, reorder, and saved selection");
+        {
+            auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
+            rackProcessor->prepareToPlay(48000.0, 512);
+            rackProcessor->addModule(megadsp::ModuleType::equalizer);
+            rackProcessor->addModule(megadsp::ModuleType::compressor);
+            rackProcessor->setSelectedTab(0);
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
+                *rackProcessor, 1100, 720);
+
+            editor->reorderCardForTesting(0, 1);
+            expect(rackProcessor->getRack().moduleType(0)
+                   == megadsp::ModuleType::compressor);
+            expect(rackProcessor->getRack().moduleType(1)
+                   == megadsp::ModuleType::equalizer);
+            expectEquals(editor->selectedCardForTesting(), 1);
+            expectEquals(
+                editor->activeVisualizationCardCountForTesting(), 0);
+
+            rackProcessor->addModule(megadsp::ModuleType::delay);
+            editor->refreshCardsForTesting();
+            expectEquals(editor->cardCountForTesting(), 3);
+            expectEquals(editor->selectedCardForTesting(), 2);
+            expectEquals(rackProcessor->getSelectedTab(), 2);
+
+            rackProcessor->setSelectedTab(1);
+            auto buildDirectory =
+                juce::File::getCurrentWorkingDirectory();
+            if (!buildDirectory.getChildFile("CMakeCache.txt").existsAsFile())
+                buildDirectory = buildDirectory.getChildFile("build");
+            const auto presetFile = buildDirectory.getChildFile(
+                "megaDSP-rack-workflow-test.megadsp");
+            presetFile.deleteFile();
+            expect(rackProcessor->savePreset(presetFile).wasOk());
+            rackProcessor->loadFactoryPreset(4);
+            editor->refreshCardsForTesting();
+            expectEquals(
+                editor->cardCountForTesting(),
+                rackProcessor->getRack().activeSlotCount());
+            expectEquals(editor->selectedCardForTesting(), 1);
+            expectEquals(
+                editor->activeVisualizationCardCountForTesting(), 0);
+
+            expect(rackProcessor->loadPreset(presetFile).wasOk());
+            editor->refreshCardsForTesting();
+            expectEquals(editor->cardCountForTesting(), 3);
+            expectEquals(editor->selectedCardForTesting(), 1);
+            expectEquals(rackProcessor->getSelectedTab(), 1);
+            expect(presetFile.deleteFile());
+        }
+
+        beginTest("Vertical rack follows snapshot recall and asset drop types");
+        {
+            auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
+            rackProcessor->prepareToPlay(48000.0, 512);
+            rackProcessor->addModule(
+                megadsp::ModuleType::convolutionReverb);
+            rackProcessor->addModule(
+                megadsp::ModuleType::neuralAmpModeler);
+            rackProcessor->setSelectedTab(1);
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
+                *rackProcessor, 1100, 720);
+
+            expect(editor->cardAcceptsAssetDropForTesting(
+                0, "room.WAV"));
+            expect(!editor->cardAcceptsAssetDropForTesting(
+                0, "amp.nam"));
+            expect(editor->cardAcceptsAssetDropForTesting(
+                1, "amp.NAM"));
+            expect(!editor->cardAcceptsAssetDropForTesting(
+                1, "room.flac"));
+
+            rackProcessor->storeSnapshot(1, false);
+            rackProcessor->removeSlot(1);
+            editor->refreshCardsForTesting();
+            expectEquals(editor->cardCountForTesting(), 1);
+            rackProcessor->recallSnapshot(0);
+            rackProcessor->flushPendingUpdatesForTesting();
+            editor->refreshCardsForTesting();
+            expectEquals(editor->cardCountForTesting(), 2);
+            expectEquals(
+                editor->activeVisualizationCardCountForTesting(), 0);
+            expectEquals(
+                editor->selectedCardForTesting(),
+                rackProcessor->getSelectedTab());
         }
 
         beginTest("Rotary Speaker paints safely after long system uptime");
@@ -244,6 +372,30 @@ public:
             juce::Graphics graphics(image);
             graph.paint(graphics);
             expect(!image.isNull());
+        }
+
+        beginTest("Only the active graph owns visualization capture");
+        {
+            MegaDSPAudioProcessor graphProcessor;
+            graphProcessor.prepareToPlay(48000.0, 512);
+            setType(graphProcessor, 0, megadsp::ModuleType::equalizer);
+            setType(graphProcessor, 1, megadsp::ModuleType::compressor);
+            graphProcessor.flushPendingUpdatesForTesting();
+            graphProcessor.getVisualizationData().setSelectedSlot(0);
+            megadsp::ui::EffectGraph first(
+                graphProcessor, 0, megadsp::ModuleType::equalizer);
+            megadsp::ui::EffectGraph second(
+                graphProcessor, 1, megadsp::ModuleType::compressor);
+            expect(first.isVisualizationActive());
+            expect(!second.isVisualizationActive());
+
+            second.setVisualizationActive(true);
+            first.setVisualizationActive(false);
+            expectEquals(
+                graphProcessor.getVisualizationData().getSelectedSlot(), 1);
+            second.setVisualizationActive(false);
+            expectEquals(
+                graphProcessor.getVisualizationData().getSelectedSlot(), -1);
         }
 
         beginTest("Bypassed slots suspend DSP and visualization capture");
@@ -908,6 +1060,74 @@ public:
             snapshotState.getData(),
             static_cast<int>(snapshotState.getSize()));
         expect(liveSafeRestored.isLiveSafeSnapshotsEnabled());
+
+        beginTest("IR directory persists and adjacent browsing wraps");
+        const auto irDirectory =
+            juce::File::getSpecialLocation(juce::File::tempDirectory)
+                .getNonexistentChildFile(
+                    "megaDSP-ir-browser", {}, true);
+        expect(irDirectory.createDirectory().wasOk());
+        const auto writeImpulse = [this](const juce::File& file)
+        {
+            std::unique_ptr<juce::OutputStream> stream =
+                file.createOutputStream();
+            juce::WavAudioFormat format;
+            auto writer = format.createWriterFor(
+                stream, juce::AudioFormatWriterOptions {}
+                            .withSampleRate(48000.0)
+                            .withNumChannels(2)
+                            .withBitsPerSample(24));
+            expect(writer != nullptr);
+            juce::AudioBuffer<float> impulse(2, 256);
+            impulse.clear();
+            impulse.setSample(0, 0, 1.0f);
+            impulse.setSample(1, 0, 1.0f);
+            expect(writer != nullptr
+                   && writer->writeFromAudioSampleBuffer(
+                       impulse, 0, impulse.getNumSamples()));
+        };
+        const auto firstIr = irDirectory.getChildFile("a-room.wav");
+        const auto secondIr = irDirectory.getChildFile("B-room.wav");
+        writeImpulse(firstIr);
+        writeImpulse(secondIr);
+        {
+            MegaDSPAudioProcessor irBrowser;
+            irBrowser.prepareToPlay(48000.0, 512);
+            setType(irBrowser, 0, megadsp::ModuleType::convolutionReverb);
+            irBrowser.flushPendingUpdatesForTesting();
+            expect(irBrowser.loadImpulseResponse(0, secondIr).wasOk());
+            expectEquals(
+                irBrowser.impulseResponseDirectory(0).getFullPathName(),
+                irDirectory.getFullPathName());
+            expect(irBrowser.loadAdjacentImpulseResponse(0, 1).wasOk());
+            expectEquals(irBrowser.impulseResponseName(0), firstIr.getFileName());
+            expect(irBrowser.loadAdjacentImpulseResponse(0, -1).wasOk());
+            expectEquals(
+                irBrowser.impulseResponseName(0), secondIr.getFileName());
+
+            irBrowser.clearImpulseResponse(0);
+            expect(irBrowser.impulseResponsePath(0).isEmpty());
+            expectEquals(
+                irBrowser.impulseResponseDirectory(0).getFullPathName(),
+                irDirectory.getFullPathName());
+            juce::MemoryBlock irBrowserState;
+            irBrowser.getStateInformation(irBrowserState);
+            MegaDSPAudioProcessor restoredIrBrowser;
+            restoredIrBrowser.prepareToPlay(48000.0, 512);
+            restoredIrBrowser.setStateInformation(
+                irBrowserState.getData(),
+                static_cast<int>(irBrowserState.getSize()));
+            expectEquals(
+                restoredIrBrowser.impulseResponseDirectory(0).getFullPathName(),
+                irDirectory.getFullPathName());
+            expect(restoredIrBrowser.loadAdjacentImpulseResponse(0, 1).wasOk());
+            expectEquals(
+                restoredIrBrowser.impulseResponseName(0),
+                firstIr.getFileName());
+        }
+        expect(firstIr.deleteFile());
+        expect(secondIr.deleteFile());
+        expect(irDirectory.deleteRecursively());
 
         beginTest("Legacy schema 9 migrates into Snapshot 1 only");
         auto legacyState = snapshotRestored.parameters.copyState();

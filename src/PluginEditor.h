@@ -16,27 +16,43 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    void visibilityChanged() override;
 #if defined(MEGADSP_TESTS)
     void clickCloseButtonForTesting(int slot);
     void simulateFocusGainDuringRefreshForTesting(int slot);
-    int tabCountForTesting() const { return static_cast<int>(tabs.size()); }
+    void simulateDescendantFocusForTesting(int slot);
+    void simulateCardHoverForTesting(int slot);
+    void simulateCardHoverExitForTesting(int slot);
+    void reorderCardForTesting(int source, int destination);
+    void refreshCardsForTesting();
+    bool cardAcceptsAssetDropForTesting(
+        int slot, const juce::String& path) const;
+    int cardCountForTesting() const { return static_cast<int>(cards.size()); }
+    int selectedCardForTesting() const { return selectedSlot; }
+    int activeVisualizationCardCountForTesting() const;
+    bool cardChildrenFitForTesting() const;
+    bool cardHeightsAreUniformForTesting() const;
+    bool rackOverflowsVerticallyForTesting() const;
+    int tabCountForTesting() const { return cardCountForTesting(); }
 #endif
 
 private:
-    class ModuleTab;
-    class ModulePanel;
+    class ModuleCard;
     class HeaderMeter;
 
     void timerCallback() override;
     void selectSlot(int slot);
-    void refreshTabs();
+    void focusSlot(int slot);
+    void restoreFocusedCardAfterHover();
+    void refreshCards(bool followProcessorSelection = false);
+    void revealSelectedCard(bool focus);
     void showModuleBrowser();
     void showModuleSearch();
     void removeSlot(int slot);
     void reorderSlot(int source, int destination);
     void requestRemoveSlot(int slot);
     void requestReorderSlot(int source, int destination);
-    void applyPendingTabMutation();
+    void applyPendingCardMutation();
     void choosePreset(bool save);
     void commitInstanceName();
     void showThemePalette();
@@ -71,24 +87,25 @@ private:
                megadsp::snapshotCount> snapshotButtons;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> inputAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputAttachment;
-    juce::Component tabHost;
-    std::vector<std::unique_ptr<ModuleTab>> tabs;
-    juce::TextButton addButton { "+" };
-    std::unique_ptr<ModulePanel> modulePanel;
+    juce::Viewport rackViewport;
+    juce::Component rackContent;
+    std::vector<std::unique_ptr<ModuleCard>> cards;
+    juce::TextButton addButton { "+ ADD MODULE" };
     std::unique_ptr<juce::FileChooser> fileChooser;
     int selectedSlot = 0;
+    int focusedSlot = -1;
     int knownActiveSlots = -1;
     std::uint64_t knownTopologyGeneration = 0;
     std::uint64_t knownSnapshotGeneration = 0;
     int knownThemeIndex = -1;
-    bool refreshingTabs = false;
-    enum class PendingTabMutation
+    bool refreshingCards = false;
+    enum class PendingCardMutation
     {
         none,
         remove,
         reorder
     };
-    PendingTabMutation pendingTabMutation = PendingTabMutation::none;
+    PendingCardMutation pendingCardMutation = PendingCardMutation::none;
     int pendingSourceSlot = -1;
     int pendingDestinationSlot = -1;
     std::uint64_t pendingTopologyGeneration = 0;

@@ -130,6 +130,21 @@ TabLayout calculateTabLayout(
     return result;
 }
 
+int calculateRackContentHeight(int activeModules, bool showAddButton)
+{
+    const auto modules = juce::jmax(0, activeModules);
+    auto height = modules * moduleCardHeight;
+    if (modules > 1)
+        height += (modules - 1) * moduleCardGap;
+    if (showAddButton)
+    {
+        if (modules > 0)
+            height += moduleCardGap;
+        height += addModuleCardHeight;
+    }
+    return height;
+}
+
 juce::String compactTabName(ModuleType type)
 {
     switch (type)
@@ -245,6 +260,9 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::diffusionDelay:
             candidates = { 1, 0, 2, 4, 3, 5, 6, 7, 8, 9, 10, 11 };
             break;
+        case ModuleType::convolutionReverb:
+            candidates = { 0, 1, 4, 2, 5, 3, 6, 7, 8, 9, 10, 11 };
+            break;
         case ModuleType::pitchBloom:
             candidates = { 0, 2, 4, 3, 5, 1, 6, 7, 8, 9, 10, 11 };
             break;
@@ -261,7 +279,6 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::midSideDecoder:
         case ModuleType::tremolo:
         case ModuleType::rotarySpeaker:
-        case ModuleType::convolutionReverb:
         case ModuleType::dynamicEqualizer:
         case ModuleType::frequencyLab:
         case ModuleType::signalDecay:
@@ -299,7 +316,11 @@ std::vector<int> keyboardControlOrder(
                 || (control == 7
                     && equalizerHighIsLowPass(values[11]))))
             continue;
+        const auto directConvolutionControl =
+            type == ModuleType::convolutionReverb
+            && (control == 0 || control == 1);
         if (!isEqualizerModeControl(type, control)
+            && !directConvolutionControl
             && (!isControlContextuallyVisible(type, control, values)
                 || !isControlContextuallyEnabled(
                     type, control, values, hasStereoOutput,

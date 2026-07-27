@@ -11,6 +11,11 @@ namespace megadsp::ui
 {
 namespace
 {
+float selectorRowsHeight(juce::Rectangle<float> area)
+{
+    return juce::jlimit(66.0f, 83.0f, area.getHeight() * 0.33f);
+}
+
 class FrequencyLabModuleView final : public ModuleView
 {
 public:
@@ -45,7 +50,7 @@ private:
 juce::Rectangle<float> FrequencyLabModuleView::rootBounds(
     juce::Rectangle<float> area, int index)
 {
-    auto row = area.removeFromTop(27.0f);
+    auto row = area.removeFromTop(selectorRowsHeight(area) / 3.0f);
     const auto width = row.getWidth()
                        / static_cast<float>(FrequencyLabModule::rootCount);
     return juce::Rectangle<float>(
@@ -56,8 +61,9 @@ juce::Rectangle<float> FrequencyLabModuleView::rootBounds(
 juce::Rectangle<float> FrequencyLabModuleView::harmonyBounds(
     juce::Rectangle<float> area, int index)
 {
-    area.removeFromTop(27.0f);
-    auto row = area.removeFromTop(29.0f);
+    const auto rowHeight = selectorRowsHeight(area) / 3.0f;
+    area.removeFromTop(rowHeight);
+    auto row = area.removeFromTop(rowHeight);
     const auto width = row.getWidth()
                        / static_cast<float>(FrequencyLabModule::harmonyCount);
     return juce::Rectangle<float>(
@@ -68,8 +74,9 @@ juce::Rectangle<float> FrequencyLabModuleView::harmonyBounds(
 juce::Rectangle<float> FrequencyLabModuleView::registerBounds(
     juce::Rectangle<float> area, int index)
 {
-    area.removeFromTop(56.0f);
-    auto row = area.removeFromTop(25.0f);
+    const auto rowHeight = selectorRowsHeight(area) / 3.0f;
+    area.removeFromTop(rowHeight * 2.0f);
+    auto row = area.removeFromTop(rowHeight);
     const auto width = row.getWidth()
                        / static_cast<float>(FrequencyLabModule::registerCount);
     return juce::Rectangle<float>(
@@ -80,7 +87,7 @@ juce::Rectangle<float> FrequencyLabModuleView::registerBounds(
 juce::Rectangle<float> FrequencyLabModuleView::fieldBounds(
     juce::Rectangle<float> area)
 {
-    area.removeFromTop(83.0f);
+    area.removeFromTop(selectorRowsHeight(area));
     area.removeFromBottom(area.getHeight() * 0.43f);
     return area.reduced(5.0f, 3.0f);
 }
@@ -103,7 +110,7 @@ juce::Rectangle<float> FrequencyLabModuleView::trackBounds(
     return juce::Rectangle<float>(
         tracks.getX() + width * static_cast<float>(position % 3),
         tracks.getY() + height * static_cast<float>(position / 3),
-        width, height).reduced(6.0f, 4.0f);
+        width, height).reduced(6.0f, 2.0f);
 }
 
 void FrequencyLabModuleView::mouseDown(const juce::MouseEvent& event)

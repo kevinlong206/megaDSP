@@ -80,7 +80,9 @@ public:
     void addModule(megadsp::ModuleType type);
     void resetModuleToDefaults(int slot);
     juce::Result loadImpulseResponse(int slot, const juce::File& file);
+    juce::Result loadAdjacentImpulseResponse(int slot, int direction);
     void clearImpulseResponse(int slot);
+    juce::File impulseResponseDirectory(int slot) const;
     juce::String impulseResponseName(int slot) const
     {
         return getRack().impulseResponseName(slot);

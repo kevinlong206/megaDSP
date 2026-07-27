@@ -116,7 +116,18 @@ public:
     void setMeterSource(std::function<float()> source)
     {
         meterSource = std::move(source);
-        startTimerHz(30);
+    }
+
+    void setMeterActive(bool active)
+    {
+        if (active && meterSource)
+            startTimerHz(30);
+        else
+        {
+            stopTimer();
+            meterLevelDb = -60.0f;
+            repaint();
+        }
     }
 
     void paint(juce::Graphics& graphics) override
@@ -133,7 +144,7 @@ public:
             18.0f, trackArea.getHeight()).withCentre(trackArea.getCentre());
         graphics.setColour(juce::Colour(0xff141a21));
         graphics.fillRoundedRectangle(meter, 5.0f);
-        const auto levelDb = juce::jlimit(-60.0f, 0.0f, meterSource());
+        const auto levelDb = meterLevelDb;
         const auto proportion = (levelDb + 60.0f) / 60.0f;
         auto fill = meter;
         fill.setY(meter.getBottom() - meter.getHeight() * proportion);
@@ -157,8 +168,16 @@ public:
     }
 
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override
+    {
+        if (meterSource)
+            meterLevelDb =
+                juce::jlimit(-60.0f, 0.0f, meterSource());
+        repaint();
+    }
+
     std::function<float()> meterSource;
+    float meterLevelDb = -60.0f;
 };
 
 class SnapshotButton final : public juce::TextButton,
@@ -474,336 +493,6 @@ private:
 };
 } // namespace
 
-class MegaDSPAudioProcessorEditor::ModuleTab final
-    : public juce::Component,
-      public juce::DragAndDropTarget,
-      public juce::SettableTooltipClient
-{
-public:
-    class CloseButton final : public juce::Button
-    {
-    public:
-        CloseButton() : juce::Button("Remove module") {}
-
-        void paintButton(juce::Graphics& graphics, bool highlighted,
-                         bool pressed) override
-        {
-            const auto colour = pressed ? juce::Colours::white
-                              : highlighted ? juce::Colour(0xffff8b8b)
-                                            : juce::Colour(0xff9ba6b5);
-            graphics.setColour(colour);
-            const auto area = getLocalBounds().toFloat().reduced(5.5f);
-            graphics.drawLine(
-                juce::Line<float>(area.getTopLeft(), area.getBottomRight()),
-                2.0f);
-            graphics.drawLine(
-                juce::Line<float>(area.getTopRight(), area.getBottomLeft()),
-                2.0f);
-        }
-    };
-
-    class BypassButton final : public juce::ToggleButton
-    {
-    public:
-        BypassButton() : juce::ToggleButton("Bypass module") {}
-
-        void paintButton(juce::Graphics& graphics, bool highlighted,
-                         bool pressed) override
-        {
-            const auto isBypassed = getToggleState();
-            auto area = getLocalBounds().toFloat().reduced(2.0f);
-            auto colour = isBypassed ? juce::Colour(0xffa84b4b)
-                                     : juce::Colour(0xff344151);
-            if (highlighted || pressed)
-                colour = colour.brighter(0.18f);
-            graphics.setColour(colour);
-            graphics.fillRoundedRectangle(area, 4.0f);
-            graphics.setColour(
-                isBypassed ? juce::Colours::white
-                           : juce::Colour(0xffc9d2dd));
-            graphics.setFont(
-                juce::FontOptions(10.0f, juce::Font::bold));
-            graphics.drawFittedText(
-                isBypassed ? "BYP" : "ON", getLocalBounds(),
-                juce::Justification::centred, 1, 0.7f);
-        }
-    };
-
-    class TabAccessibilityHandler final
-        : public juce::AccessibilityHandler
-    {
-    public:
-        explicit TabAccessibilityHandler(ModuleTab& tabToUse)
-            : juce::AccessibilityHandler(
-                  tabToUse, juce::AccessibilityRole::button,
-                  makeActions(tabToUse)),
-              tab(tabToUse)
-        {
-        }
-
-        juce::AccessibleState getCurrentState() const override
-        {
-            auto state =
-                juce::AccessibilityHandler::getCurrentState()
-                    .withSelectable();
-            return tab.selected ? state.withSelected() : state;
-        }
-
-        juce::String getTitle() const override
-        {
-            return tab.name + " effect, slot "
-                   + juce::String(tab.slot + 1);
-        }
-
-        juce::String getDescription() const override
-        {
-            return juce::String(tab.selected ? "Selected, " : "")
-                   + (tab.bypassed ? "bypassed" : "enabled");
-        }
-
-        juce::String getHelp() const override
-        {
-            return "Press Enter to select this tab. Use Left and Right to "
-                   "select adjacent tabs. Press Space or B to toggle bypass.";
-        }
-
-    private:
-        static juce::AccessibilityActions makeActions(ModuleTab& tab)
-        {
-            juce::AccessibilityActions actions;
-            actions.addAction(
-                juce::AccessibilityActionType::press,
-                [&tab] { tab.selectAndFocus(); });
-            actions.addAction(
-                juce::AccessibilityActionType::focus,
-                [&tab] { tab.selectAndFocus(); });
-            return actions;
-        }
-
-        ModuleTab& tab;
-    };
-
-    ModuleTab(MegaDSPAudioProcessorEditor& editorToUse, int slotToUse,
-              megadsp::ModuleType typeToUse)
-        : editor(editorToUse), slot(slotToUse),
-          name(megadsp::moduleDefinition(typeToUse).displayName),
-          displayName(megadsp::ui::compactTabName(typeToUse))
-    {
-        close.setTooltip("Remove " + name);
-        close.setTitle("Remove " + name);
-        close.setDescription("Removes this effect from the rack.");
-        close.setHelpText("Press to remove " + name + " from slot "
-                          + juce::String(slot + 1) + ".");
-        close.onClick = [this]
-        {
-            close.setEnabled(false);
-            editor.requestRemoveSlot(slot);
-        };
-        addAndMakeVisible(close);
-        bypass.onClick = [this]
-        {
-            editor.audioProcessor.toggleSlotBypass(slot);
-            syncBypassState();
-        };
-        addAndMakeVisible(bypass);
-        setWantsKeyboardFocus(true);
-        setTooltip(name + " - slot " + juce::String(slot + 1));
-        setHelpText(
-            "Press Enter to select. Use Left and Right to select adjacent "
-            "tabs. Double-click, Space, or B toggles bypass. Drag to reorder.");
-        syncBypassState();
-    }
-
-    void setSelected(bool shouldBeSelected)
-    {
-        if (selected == shouldBeSelected)
-            return;
-        selected = shouldBeSelected;
-        repaint();
-        if (auto* handler = getAccessibilityHandler())
-            handler->notifyAccessibilityEvent(
-                juce::AccessibilityEvent::valueChanged);
-    }
-
-    void syncBypassState()
-    {
-        const auto newState = editor.audioProcessor.isSlotBypassed(slot);
-        bypass.setToggleState(newState, juce::dontSendNotification);
-        bypass.setTitle("Bypass " + name);
-        bypass.setDescription(
-            name + (newState ? " is bypassed." : " is enabled."));
-        bypass.setHelpText(
-            "Press to " + juce::String(newState ? "enable " : "bypass ")
-            + name + ".");
-        bypass.setTooltip(
-            newState ? "BYP - " + name + " is bypassed"
-                     : "ON - " + name + " is enabled");
-        if (newState != bypassed)
-        {
-            bypassed = newState;
-            repaint();
-            bypass.repaint();
-            if (auto* handler = getAccessibilityHandler())
-                handler->notifyAccessibilityEvent(
-                    juce::AccessibilityEvent::valueChanged);
-        }
-    }
-
-#if defined(MEGADSP_TESTS)
-    void clickCloseButtonForTesting()
-    {
-        close.onClick();
-    }
-#endif
-
-    void paint(juce::Graphics& graphics) override
-    {
-        auto bounds = getLocalBounds().toFloat().reduced(1.0f);
-        const auto theme = backgroundColour(
-            editor.audioProcessor.getBackgroundThemeIndex());
-        graphics.setColour(theme.brighter(selected ? 0.42f : 0.20f));
-        graphics.fillRoundedRectangle(bounds, 6.0f);
-        graphics.setColour(selected ? accent : juce::Colour(0xff566273));
-        graphics.drawRoundedRectangle(bounds, 6.0f, selected ? 2.0f : 1.0f);
-        graphics.setColour(bypassed ? juce::Colour(0xff78818d)
-                                    : juce::Colours::white);
-        graphics.setFont(juce::FontOptions(12.0f, selected ? juce::Font::bold
-                                                          : juce::Font::plain));
-        graphics.drawFittedText(
-            juce::String(slot + 1) + " " + displayName,
-            getLocalBounds().reduced(6, 0).withTrimmedRight(58),
-            juce::Justification::centredLeft,
-            1, 0.5f);
-    }
-
-    void resized() override
-    {
-        const auto buttonHeight = juce::jmax(24, getHeight() - 8);
-        close.setBounds(getWidth() - 30, 4, 26, buttonHeight);
-        bypass.setBounds(getWidth() - 58, 4, 26, buttonHeight);
-    }
-
-    void mouseDown(const juce::MouseEvent& event) override
-    {
-        dragStart = event.position;
-        selectAndFocus();
-        if (event.getNumberOfClicks() >= 2)
-            toggleBypass();
-    }
-
-    void mouseDrag(const juce::MouseEvent& event) override
-    {
-        if (event.position.getDistanceFrom(dragStart) > 5.0f
-            && !editor.isDragAndDropActive())
-            editor.startDragging(slot, this);
-    }
-
-    bool keyPressed(const juce::KeyPress& key) override
-    {
-        const auto modifiers = key.getModifiers();
-        if (modifiers.isCommandDown() || modifiers.isCtrlDown()
-            || modifiers.isAltDown())
-            return false;
-        if (key.getKeyCode() == juce::KeyPress::returnKey)
-        {
-            selectAndFocus();
-            return true;
-        }
-        if (key.getKeyCode() == juce::KeyPress::leftKey)
-            return selectAdjacent(-1);
-        if (key.getKeyCode() == juce::KeyPress::rightKey)
-            return selectAdjacent(1);
-        if (key.getKeyCode() == juce::KeyPress::spaceKey
-            || key.getTextCharacter() == 'b'
-            || key.getTextCharacter() == 'B')
-        {
-            toggleBypass();
-            return true;
-        }
-        return false;
-    }
-
-    void focusGained(FocusChangeType) override
-    {
-        if (!selected)
-            editor.selectSlot(slot);
-    }
-
-    bool isInterestedInDragSource(const SourceDetails& details) override
-    {
-        return static_cast<int>(details.description) != slot;
-    }
-
-    void itemDragEnter(const SourceDetails&) override
-    {
-        dragOver = true;
-        repaint();
-    }
-
-    void itemDragExit(const SourceDetails&) override
-    {
-        dragOver = false;
-        repaint();
-    }
-
-    void itemDropped(const SourceDetails& details) override
-    {
-        dragOver = false;
-        const auto source = static_cast<int>(details.description);
-        const auto destination = slot;
-        editor.requestReorderSlot(source, destination);
-    }
-
-private:
-    std::unique_ptr<juce::AccessibilityHandler>
-        createAccessibilityHandler() override
-    {
-        return std::make_unique<TabAccessibilityHandler>(*this);
-    }
-
-    void selectAndFocus()
-    {
-        editor.selectSlot(slot);
-        grabKeyboardFocus();
-    }
-
-    bool selectAdjacent(int direction)
-    {
-        const auto count = static_cast<int>(editor.tabs.size());
-        if (count <= 0 || direction == 0)
-            return false;
-        const auto target =
-            juce::jlimit(0, count - 1, slot + (direction < 0 ? -1 : 1));
-        auto* targetTab = editor.tabs[static_cast<size_t>(target)].get();
-        if (targetTab == nullptr)
-            return false;
-        if (target == slot)
-        {
-            grabKeyboardFocus();
-            return true;
-        }
-        targetTab->selectAndFocus();
-        return true;
-    }
-
-    void toggleBypass()
-    {
-        editor.audioProcessor.toggleSlotBypass(slot);
-        syncBypassState();
-    }
-
-    MegaDSPAudioProcessorEditor& editor;
-    int slot;
-    juce::String name;
-    juce::String displayName;
-    CloseButton close;
-    BypassButton bypass;
-    juce::Point<float> dragStart;
-    bool selected = false;
-    bool dragOver = false;
-    bool bypassed = false;
-};
-
 class MegaDSPAudioProcessorEditor::HeaderMeter final
     : public juce::Component,
       public juce::SettableTooltipClient
@@ -911,30 +600,111 @@ private:
     bool clipped = false;
 };
 
-class MegaDSPAudioProcessorEditor::ModulePanel final
+struct ControlGroupFrame
+{
+    juce::String name;
+    juce::Rectangle<int> bounds;
+    bool main = false;
+};
+
+class ControlsOverlay final : public juce::Component
+{
+public:
+    explicit ControlsOverlay(MegaDSPAudioProcessor& processorToUse)
+        : processor(processorToUse)
+    {
+        setInterceptsMouseClicks(false, false);
+    }
+
+    void setFrames(std::vector<ControlGroupFrame> newFrames)
+    {
+        frames = std::move(newFrames);
+        repaint();
+    }
+
+    void paint(juce::Graphics& graphics) override
+    {
+        const auto panelColour =
+            backgroundColour(processor.getBackgroundThemeIndex())
+                .brighter(0.12f);
+        for (const auto& frame : frames)
+        {
+            graphics.setColour(panelColour.withAlpha(
+                frame.main ? 0.94f : 0.90f));
+            graphics.fillRoundedRectangle(
+                frame.bounds.toFloat(), 7.0f);
+            graphics.setColour(
+                frame.main ? accent : juce::Colour(0xff596575));
+            graphics.drawRoundedRectangle(
+                frame.bounds.toFloat(), 7.0f,
+                frame.main ? 2.0f : 1.0f);
+            auto frameBounds = frame.bounds;
+            auto titleBounds =
+                frameBounds.removeFromTop(18).withTrimmedLeft(10);
+            graphics.setColour(panelColour);
+            graphics.fillRect(titleBounds.withWidth(
+                juce::jmin(titleBounds.getWidth(),
+                           juce::jmax(44, frame.name.length() * 8))));
+            graphics.setColour(
+                frame.main ? accent : juce::Colour(0xffaab4c1));
+            graphics.setFont(
+                juce::FontOptions(10.0f, juce::Font::bold));
+            graphics.drawText(
+                frame.name.toUpperCase(), titleBounds,
+                juce::Justification::centredLeft);
+        }
+    }
+
+private:
+    MegaDSPAudioProcessor& processor;
+    std::vector<ControlGroupFrame> frames;
+};
+
+class MegaDSPAudioProcessorEditor::ModuleCard final
     : public juce::Component,
+      public juce::DragAndDropTarget,
+      public juce::FileDragAndDropTarget,
+      private juce::FocusChangeListener,
       private juce::Timer
 {
 public:
-    ModulePanel(MegaDSPAudioProcessor& processorToUse, int slotToUse)
-        : processor(processorToUse), slot(slotToUse),
+    ModuleCard(MegaDSPAudioProcessorEditor& editorToUse, int slotToUse)
+        : editor(editorToUse), processor(editorToUse.audioProcessor),
+          slot(slotToUse),
           type(processor.getRack().moduleType(slot)),
           supportsImpulseResponse(
               processor.getRack().activeModuleHasCapability(
                   slot, megadsp::ModuleCapability::impulseResponse)),
           supportsNamModel(
               processor.getRack().activeModuleHasCapability(
-                  slot, megadsp::ModuleCapability::neuralAmpModel))
+                  slot, megadsp::ModuleCapability::neuralAmpModel)),
+          controlsOverlay(processor)
     {
-        name.setText(megadsp::descriptorFor(type).name, juce::dontSendNotification);
+        moduleName = megadsp::moduleDefinition(type).displayName;
+        name.setText("SLOT " + juce::String(slot + 1) + "  ·  " + moduleName,
+                     juce::dontSendNotification);
         name.setFont(juce::FontOptions(22.0f, juce::Font::bold));
         name.setColour(juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible(name);
 
+        bypass.onClick = [this]
+        {
+            processor.toggleSlotBypass(slot);
+            syncBypassState();
+        };
+        addAndMakeVisible(bypass);
         reset.setButtonText("Reset");
         reset.setTooltip("Reset this module to its musical starting point.");
         reset.onClick = [this] { processor.resetModuleToDefaults(slot); };
         addAndMakeVisible(reset);
+        remove.setButtonText("Remove");
+        remove.setTooltip("Remove " + moduleName + " from the rack.");
+        remove.onClick = [this]
+        {
+            remove.setEnabled(false);
+            editor.requestRemoveSlot(slot);
+        };
+        addAndMakeVisible(remove);
 
         if (supportsImpulseResponse)
         {
@@ -945,13 +715,12 @@ public:
             {
                 impulseChooser = std::make_unique<juce::FileChooser>(
                     "Load impulse response",
-                    juce::File::getSpecialLocation(
-                        juce::File::userMusicDirectory),
+                    processor.impulseResponseDirectory(slot),
                     "*.wav;*.aif;*.aiff;*.flac");
                 const auto flags =
                     juce::FileBrowserComponent::openMode
                     | juce::FileBrowserComponent::canSelectFiles;
-                juce::Component::SafePointer<ModulePanel> safeThis(this);
+                juce::Component::SafePointer<ModuleCard> safeThis(this);
                 impulseChooser->launchAsync(
                     flags, [safeThis](const juce::FileChooser& chooser)
                     {
@@ -960,18 +729,26 @@ public:
                         const auto file = chooser.getResult();
                         if (file == juce::File {})
                             return;
-                        const auto result =
-                            safeThis->processor.loadImpulseResponse(
-                                safeThis->slot, file);
-                        if (result.failed())
-                            juce::AlertWindow::showMessageBoxAsync(
-                                juce::MessageBoxIconType::WarningIcon,
-                                "Could not load impulse response",
-                                result.getErrorMessage());
-                        safeThis->graph->repaint();
+                        safeThis->loadAssetFile(file);
                     });
             };
             addAndMakeVisible(loadImpulse);
+            previousImpulse.setButtonText("< IR");
+            previousImpulse.setTooltip(
+                "Load the previous impulse response in this directory.");
+            previousImpulse.onClick = [this]
+            {
+                loadAdjacentImpulseResponse(-1);
+            };
+            addAndMakeVisible(previousImpulse);
+            nextImpulse.setButtonText("IR >");
+            nextImpulse.setTooltip(
+                "Load the next impulse response in this directory.");
+            nextImpulse.onClick = [this]
+            {
+                loadAdjacentImpulseResponse(1);
+            };
+            addAndMakeVisible(nextImpulse);
             clearImpulse.setButtonText("Clear IR");
             clearImpulse.setTooltip(
                 "Unload the current impulse response.");
@@ -997,22 +774,14 @@ public:
                 const auto flags =
                     juce::FileBrowserComponent::openMode
                     | juce::FileBrowserComponent::canSelectFiles;
-                juce::Component::SafePointer<ModulePanel> safeThis(this);
+                juce::Component::SafePointer<ModuleCard> safeThis(this);
                 namChooser->launchAsync(
                     flags, [safeThis](const juce::FileChooser& chooser)
                     {
                         if (safeThis == nullptr) return;
                         const auto file = chooser.getResult();
                         if (file == juce::File {}) return;
-                        const auto result =
-                            safeThis->processor.loadNamModel(
-                                safeThis->slot, file);
-                        if (result.failed())
-                            juce::AlertWindow::showMessageBoxAsync(
-                                juce::MessageBoxIconType::WarningIcon,
-                                "Could not load NAM model",
-                                result.getErrorMessage());
-                        safeThis->graph->repaint();
+                        safeThis->loadAssetFile(file);
                     });
             };
             addAndMakeVisible(loadNam);
@@ -1029,6 +798,18 @@ public:
         graph = std::make_unique<megadsp::ui::EffectGraph>(
             processor, slot, type);
         addAndMakeVisible(*graph);
+        addAndMakeVisible(controlsOverlay);
+        setWantsKeyboardFocus(true);
+        setTitle(moduleName + " module card, slot " + juce::String(slot + 1));
+        setDescription(
+            "Signal-flow position " + juce::String(slot + 1)
+            + ". Use Up and Down to select adjacent module cards.");
+        setHelpText(
+            "Press Enter to select. Use Up and Down for adjacent cards. "
+            "Space or B toggles bypass. Drag the card header to reorder.");
+        addMouseListener(this, true);
+        juce::Desktop::getInstance().addFocusChangeListener(this);
+        syncBypassState();
 
         if (graph->usesFullPanel())
             return;
@@ -1121,7 +902,12 @@ public:
             }
         }
         updateContext(true);
-        startTimerHz(10);
+        startTimerHz(2);
+    }
+
+    ~ModuleCard() override
+    {
+        juce::Desktop::getInstance().removeFocusChangeListener(this);
     }
 
     void paint(juce::Graphics& graphics) override
@@ -1129,22 +915,17 @@ public:
         const auto panelColour = backgroundColour(
             processor.getBackgroundThemeIndex()).brighter(0.16f);
         graphics.setColour(panelColour);
-        graphics.fillRoundedRectangle(getLocalBounds().toFloat(), 9.0f);
-        for (const auto& frame : groupFrames)
+        auto cardBounds = getLocalBounds().toFloat().reduced(1.0f);
+        graphics.fillRoundedRectangle(cardBounds, 9.0f);
+        graphics.setColour(selected ? accent : juce::Colour(0xff465263));
+        graphics.drawRoundedRectangle(
+            cardBounds, 9.0f, selected ? 2.0f : 1.0f);
+        if (dragOver)
         {
-            graphics.setColour(frame.main ? accent : juce::Colour(0xff3a4553));
-            graphics.drawRoundedRectangle(frame.bounds.toFloat(), 7.0f,
-                                          frame.main ? 2.0f : 1.0f);
-            auto frameBounds = frame.bounds;
-            auto titleBounds = frameBounds.removeFromTop(18).withTrimmedLeft(10);
-            graphics.setColour(panelColour);
-            graphics.fillRect(titleBounds.withWidth(
-                juce::jmin(titleBounds.getWidth(),
-                           juce::jmax(44, frame.name.length() * 8))));
-            graphics.setColour(frame.main ? accent : juce::Colour(0xff9ba6b5));
-            graphics.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-            graphics.drawText(frame.name.toUpperCase(), titleBounds,
-                              juce::Justification::centredLeft);
+            graphics.setColour(accent);
+            graphics.fillRect(
+                8.0f, dropAfter ? cardBounds.getBottom() - 4.0f : 1.0f,
+                cardBounds.getWidth() - 16.0f, 3.0f);
         }
     }
 
@@ -1152,10 +933,17 @@ public:
     {
         auto bounds = getLocalBounds().reduced(14);
         auto heading = bounds.removeFromTop(34);
-        name.setBounds(heading.removeFromLeft(260));
+        name.setBounds(heading.removeFromLeft(
+            juce::jmin(310, juce::jmax(180, heading.getWidth() / 3))));
+        remove.setBounds(heading.removeFromRight(72).reduced(2));
         reset.setBounds(heading.removeFromRight(64).reduced(2));
+        bypass.setBounds(heading.removeFromRight(54).reduced(2));
         if (supportsImpulseResponse)
         {
+            nextImpulse.setBounds(
+                heading.removeFromRight(46).reduced(2));
+            previousImpulse.setBounds(
+                heading.removeFromRight(46).reduced(2));
             clearImpulse.setBounds(
                 heading.removeFromRight(72).reduced(2));
             loadImpulse.setBounds(
@@ -1169,16 +957,14 @@ public:
                 heading.removeFromRight(100).reduced(2));
         }
         bounds.removeFromTop(6);
+        graph->setBounds(bounds);
         if (graph->usesFullPanel())
         {
-            graph->setBounds(bounds);
-            groupFrames.clear();
+            controlsOverlay.setVisible(false);
+            controlsOverlay.setFrames({});
             return;
         }
-        graph->setBounds(bounds.removeFromTop(
-            juce::jlimit(170, 270, bounds.getHeight() * 44 / 100)));
-        bounds.removeFromTop(8);
-        groupFrames.clear();
+        controlsOverlay.setVisible(true);
 
         std::vector<int> mainControls;
         std::vector<std::pair<juce::String, std::vector<int>>> secondaryGroups;
@@ -1211,31 +997,271 @@ public:
             && mainControls[0] == 2 && mainControls[1] == 4)
             std::swap(mainControls[0], mainControls[1]);
 
-        const auto mainHeight = juce::jmax(92, bounds.getHeight() / 2);
-        auto mainBounds = bounds.removeFromTop(mainHeight).reduced(1);
-        groupFrames.push_back({ "Main", mainBounds, true });
-        layoutGroup(mainBounds.reduced(8, 10), mainControls);
-        bounds.removeFromTop(5);
-
-        auto secondaryBounds = bounds;
+        const auto overlayHeight = juce::jlimit(
+            112, 146, bounds.getHeight() * 56 / 100);
+        const auto overlayBounds =
+            bounds.removeFromBottom(overlayHeight).reduced(8, 5);
+        controlsOverlay.setBounds(overlayBounds);
+        auto overlayArea = controlsOverlay.getLocalBounds().reduced(1);
+        std::vector<ControlGroupFrame> frames;
         const auto groupCount = static_cast<int>(secondaryGroups.size());
+        const auto mainWidth = groupCount == 0
+            ? overlayArea.getWidth()
+            : juce::jlimit(
+                  260, 420, overlayArea.getWidth() * 42 / 100);
+        auto mainBounds =
+            overlayArea.removeFromLeft(mainWidth).reduced(1);
+        frames.push_back({ "Main", mainBounds, true });
+        layoutGroup(
+            mainBounds.translated(
+                overlayBounds.getX(), overlayBounds.getY())
+                .reduced(8, 10),
+            mainControls);
+
+        if (groupCount > 0)
+            overlayArea.removeFromLeft(5);
+        auto secondaryBounds = overlayArea;
         for (int groupIndex = 0; groupIndex < groupCount; ++groupIndex)
         {
             const auto groupsLeft = groupCount - groupIndex;
             auto groupBounds = secondaryBounds.removeFromLeft(
                 secondaryBounds.getWidth() / groupsLeft).reduced(2, 1);
-            groupFrames.push_back({
+            frames.push_back({
                 secondaryGroups[static_cast<size_t>(groupIndex)].first,
                 groupBounds, false
             });
             layoutGroup(
-                groupBounds.reduced(7, 10),
+                groupBounds.translated(
+                    overlayBounds.getX(), overlayBounds.getY())
+                    .reduced(7, 10),
                 secondaryGroups[static_cast<size_t>(groupIndex)].second);
         }
+        controlsOverlay.setFrames(std::move(frames));
+    }
+
+    void setSelected(bool shouldBeSelected)
+    {
+        const auto changed = selected != shouldBeSelected;
+        selected = shouldBeSelected;
+        setEditorVisible(editor.isShowing());
+        if (!graph->usesFullPanel())
+            startTimerHz(selected ? 10 : 2);
+        if (changed)
+            repaint();
+    }
+
+    void setEditorVisible(bool editorVisible)
+    {
+        const auto active = selected && editorVisible;
+        graph->setVisualizationActive(active);
+        for (auto& slider : sliders)
+            slider.setMeterActive(active);
+    }
+
+    void syncBypassState()
+    {
+        const auto isBypassed = processor.isSlotBypassed(slot);
+        bypass.setButtonText(isBypassed ? "BYP" : "ON");
+        bypass.setToggleState(isBypassed, juce::dontSendNotification);
+        bypass.setTooltip(
+            isBypassed ? "BYP - module is bypassed"
+                       : "ON - module is processing");
+    }
+
+#if defined(MEGADSP_TESTS)
+    void clickCloseButtonForTesting() { remove.onClick(); }
+    void simulateDescendantFocusForTesting()
+    {
+        globalFocusChanged(graph.get());
+    }
+    void simulateHoverExitForTesting()
+    {
+        editor.restoreFocusedCardAfterHover();
+    }
+    bool isVisualizationActiveForTesting() const
+    {
+        return graph->isVisualizationActive();
+    }
+    bool childrenFitForTesting() const
+    {
+        for (const auto* child : getChildren())
+            if (child->isVisible()
+                && !getLocalBounds().contains(child->getBounds()))
+                return false;
+        return true;
+    }
+    bool acceptsAssetDropForTesting(const juce::String& path) const
+    {
+        return acceptsAssetFile(juce::File(path));
+    }
+#endif
+
+    bool isInterestedInFileDrag(
+        const juce::StringArray& files) override
+    {
+        return std::any_of(
+            files.begin(), files.end(),
+            [this](const auto& path)
+            {
+                return acceptsAssetFile(juce::File(path));
+            });
+    }
+
+    void filesDropped(
+        const juce::StringArray& files, int, int) override
+    {
+        editor.selectSlot(slot);
+        const auto asset = std::find_if(
+            files.begin(), files.end(),
+            [this](const auto& path)
+            {
+                return acceptsAssetFile(juce::File(path));
+            });
+        if (asset != files.end())
+            loadAssetFile(juce::File(*asset));
+    }
+
+    void mouseEnter(const juce::MouseEvent&) override
+    {
+        editor.selectSlot(slot);
+    }
+
+    void mouseExit(const juce::MouseEvent& event) override
+    {
+        if (!getLocalBounds().toFloat().contains(
+                event.getEventRelativeTo(this).position))
+            editor.restoreFocusedCardAfterHover();
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        editor.selectSlot(slot);
+        const auto* source = event.originalComponent;
+        canStartDrag = source == this || source == &name;
+        dragStart = event.getEventRelativeTo(this).position;
+        if (source == this)
+            grabKeyboardFocus();
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        const auto position = event.getEventRelativeTo(this).position;
+        if (canStartDrag && position.getDistanceFrom(dragStart) > 5.0f
+            && !editor.isDragAndDropActive())
+            editor.startDragging(slot, this);
+    }
+
+    void focusGained(FocusChangeType) override
+    {
+        editor.focusSlot(slot);
+    }
+
+    void globalFocusChanged(juce::Component* focusedComponent) override
+    {
+        if (focusedComponent == this || isParentOf(focusedComponent))
+            editor.focusSlot(slot);
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        if (key.getKeyCode() == juce::KeyPress::upKey)
+            return selectAdjacent(-1);
+        if (key.getKeyCode() == juce::KeyPress::downKey)
+            return selectAdjacent(1);
+        if (key.getKeyCode() == juce::KeyPress::returnKey)
+        {
+            editor.selectSlot(slot);
+            return true;
+        }
+        if (key.getKeyCode() == juce::KeyPress::spaceKey
+            || key.getTextCharacter() == 'b'
+            || key.getTextCharacter() == 'B')
+        {
+            processor.toggleSlotBypass(slot);
+            syncBypassState();
+            return true;
+        }
+        return false;
+    }
+
+    bool isInterestedInDragSource(const SourceDetails& details) override
+    {
+        return static_cast<int>(details.description) != slot;
+    }
+
+    void itemDragEnter(const SourceDetails& details) override
+    {
+        updateDropPosition(details);
+        dragOver = true;
+        repaint();
+    }
+
+    void itemDragMove(const SourceDetails& details) override
+    {
+        updateDropPosition(details);
+    }
+
+    void itemDragExit(const SourceDetails&) override
+    {
+        dragOver = false;
+        repaint();
+    }
+
+    void itemDropped(const SourceDetails& details) override
+    {
+        dragOver = false;
+        const auto source = static_cast<int>(details.description);
+        auto destination = slot + (dropAfter ? 1 : 0);
+        if (source < destination)
+            --destination;
+        destination = juce::jlimit(
+            0, static_cast<int>(editor.cards.size()) - 1, destination);
+        editor.requestReorderSlot(source, destination);
     }
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    bool acceptsAssetFile(const juce::File& file) const
+    {
+        const auto extension = file.getFileExtension().toLowerCase();
+        if (supportsNamModel)
+            return extension == ".nam";
+        if (supportsImpulseResponse)
+            return extension == ".wav" || extension == ".aif"
+                   || extension == ".aiff" || extension == ".flac";
+        return false;
+    }
+
+    void loadAssetFile(const juce::File& file)
+    {
+        if (!acceptsAssetFile(file))
+            return;
+        editor.selectSlot(slot);
+        const auto result = supportsNamModel
+            ? processor.loadNamModel(slot, file)
+            : processor.loadImpulseResponse(slot, file);
+        if (result.failed())
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                supportsNamModel ? "Could not load NAM model"
+                                 : "Could not load impulse response",
+                result.getErrorMessage());
+        graph->repaint();
+    }
+
+    void loadAdjacentImpulseResponse(int direction)
+    {
+        editor.selectSlot(slot);
+        const auto result =
+            processor.loadAdjacentImpulseResponse(slot, direction);
+        if (result.failed())
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                "Could not browse impulse responses",
+                result.getErrorMessage());
+        graph->repaint();
+    }
+
     void updateToggle(int control, bool state)
     {
         auto& button = toggles[static_cast<size_t>(control)];
@@ -1325,6 +1351,38 @@ private:
 
     void timerCallback() override { updateContext(); }
 
+    bool selectAdjacent(int direction)
+    {
+        const auto target = juce::jlimit(
+            0, static_cast<int>(editor.cards.size()) - 1, slot + direction);
+        if (!juce::isPositiveAndBelow(
+                target, static_cast<int>(editor.cards.size())))
+            return false;
+        editor.selectSlot(target);
+        auto* card = editor.cards[static_cast<size_t>(target)].get();
+        card->grabKeyboardFocus();
+        const auto viewTop = editor.rackViewport.getViewPositionY();
+        const auto viewBottom = viewTop + editor.rackViewport.getViewHeight();
+        if (card->getY() < viewTop)
+            editor.rackViewport.setViewPosition(
+                editor.rackViewport.getViewPositionX(), card->getY());
+        else if (card->getBottom() > viewBottom)
+            editor.rackViewport.setViewPosition(
+                editor.rackViewport.getViewPositionX(),
+                card->getBottom() - editor.rackViewport.getViewHeight());
+        return true;
+    }
+
+    void updateDropPosition(const SourceDetails& details)
+    {
+        const auto after = details.localPosition.y > getHeight() / 2;
+        if (after != dropAfter)
+        {
+            dropAfter = after;
+            repaint();
+        }
+    }
+
     void layoutGroup(juce::Rectangle<int> area,
                      const std::vector<int>& controls)
     {
@@ -1372,27 +1430,27 @@ private:
         }
     }
 
+    MegaDSPAudioProcessorEditor& editor;
     MegaDSPAudioProcessor& processor;
     int slot;
     megadsp::ModuleType type;
+    juce::String moduleName;
     bool supportsImpulseResponse = false;
     bool supportsNamModel = false;
     juce::Label name;
+    juce::ToggleButton bypass;
     juce::TextButton reset;
+    juce::TextButton remove;
     juce::TextButton loadImpulse;
+    juce::TextButton previousImpulse;
+    juce::TextButton nextImpulse;
     juce::TextButton clearImpulse;
     std::unique_ptr<juce::FileChooser> impulseChooser;
     juce::TextButton loadNam;
     juce::TextButton clearNam;
     std::unique_ptr<juce::FileChooser> namChooser;
     std::unique_ptr<megadsp::ui::EffectGraph> graph;
-    struct GroupFrame
-    {
-        juce::String name;
-        juce::Rectangle<int> bounds;
-        bool main = false;
-    };
-    std::vector<GroupFrame> groupFrames;
+    ControlsOverlay controlsOverlay;
     std::array<MeteredSlider, megadsp::controlsPerSlot> sliders;
     std::array<juce::ComboBox, megadsp::controlsPerSlot> choices;
     std::array<SemanticToggleButton, megadsp::controlsPerSlot> toggles;
@@ -1406,6 +1464,11 @@ private:
                megadsp::controlsPerSlot> choiceAttachments;
     std::array<std::unique_ptr<ToggleParameterAttachment>,
                megadsp::controlsPerSlot> toggleAttachments;
+    juce::Point<float> dragStart;
+    bool selected = false;
+    bool dragOver = false;
+    bool dropAfter = false;
+    bool canStartDrag = false;
 };
 
 MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
@@ -1489,7 +1552,7 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
         factoryPresets.setSelectedItemIndex(
             -1, juce::dontSendNotification);
         selectSlot(0);
-        refreshTabs();
+        refreshCards();
         megadsp::Diagnostics::instance().log(
             "editor", "opened");
     };
@@ -1571,7 +1634,10 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
             if (shift)
                 audioProcessor.storeSnapshot(index, populated);
             else
+            {
                 audioProcessor.recallSnapshot(index);
+                refreshCards(true);
+            }
             refreshSnapshots();
         };
         snapshotsHost.addAndMakeVisible(*button);
@@ -1580,12 +1646,18 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     }
     refreshSnapshots();
 
-    addAndMakeVisible(tabHost);
-    addButton.setTooltip("Browse and add a module.");
+    addAndMakeVisible(rackViewport);
+    rackViewport.setViewedComponent(&rackContent, false);
+    rackViewport.setScrollBarsShown(true, false);
+    rackViewport.setWantsKeyboardFocus(false);
+    rackViewport.setTitle("Module rack");
+    rackViewport.setDescription(
+        "Modules process audio from top to bottom.");
+    addButton.setTooltip("Browse and add a module after the last card.");
     addButton.onClick = [this] { showModuleBrowser(); };
-    tabHost.addAndMakeVisible(addButton);
+    rackContent.addAndMakeVisible(addButton);
     selectedSlot = audioProcessor.getSelectedTab();
-    refreshTabs();
+    refreshCards();
 
     setResizable(true, true);
     setResizeLimits(
@@ -1606,7 +1678,7 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     audioProcessor.setBackgroundThemeIndex(0);
     audioProcessor.loadFactoryPreset(1);
     selectedSlot = 0;
-    refreshTabs();
+    refreshCards();
 #endif
     startTimerHz(15);
 }
@@ -1626,6 +1698,15 @@ void MegaDSPAudioProcessorEditor::paint(juce::Graphics& graphics)
     graphics.fillAll(theme);
     graphics.setColour(theme.brighter(0.22f));
     graphics.fillRect(0, 0, getWidth(), 92);
+}
+
+void MegaDSPAudioProcessorEditor::visibilityChanged()
+{
+    const auto showing = isShowing();
+    for (auto& card : cards)
+        card->setEditorVisible(showing);
+    if (!showing)
+        audioProcessor.getVisualizationData().setSelectedSlot(-1);
 }
 
 void MegaDSPAudioProcessorEditor::resized()
@@ -1677,28 +1758,38 @@ void MegaDSPAudioProcessorEditor::resized()
         button->setBounds(
             snapshotBounds.removeFromLeft(snapshotWidth).reduced(2));
 
-    tabHost.setBounds(bounds.removeFromTop(52).reduced(10, 5));
-    auto tabBounds = tabHost.getLocalBounds();
-    const auto active = static_cast<int>(tabs.size());
-    const auto tabLayout = megadsp::ui::calculateTabLayout(
-        tabBounds.getWidth(), active, active < megadsp::slotCount);
-    for (auto& tab : tabs)
-        tab->setBounds(
-            tabBounds.removeFromLeft(tabLayout.tabWidth).reduced(2));
-    if (tabLayout.addButtonWidth > 0)
+    rackViewport.setBounds(bounds.reduced(10, 6));
+    constexpr auto rackPadding = 8;
+    const auto showAddButton = addButton.isVisible();
+    const auto contentHeight = megadsp::ui::calculateRackContentHeight(
+        static_cast<int>(cards.size()), showAddButton)
+        + rackPadding * 2;
+    const auto targetHeight =
+        juce::jmax(rackViewport.getHeight(), contentHeight);
+    rackContent.setSize(juce::jmax(1, rackViewport.getWidth()), targetHeight);
+    rackContent.setSize(
+        juce::jmax(1, rackViewport.getMaximumVisibleWidth()), targetHeight);
+    auto cardBounds = rackContent.getLocalBounds().reduced(rackPadding, 0);
+    cardBounds.removeFromTop(rackPadding);
+    for (int index = 0; index < static_cast<int>(cards.size()); ++index)
+    {
+        auto& card = cards[static_cast<size_t>(index)];
+        card->setBounds(
+            cardBounds.removeFromTop(megadsp::ui::moduleCardHeight));
+        if (index + 1 < static_cast<int>(cards.size()) || showAddButton)
+            cardBounds.removeFromTop(megadsp::ui::moduleCardGap);
+    }
+    if (showAddButton)
         addButton.setBounds(
-            tabBounds.removeFromLeft(tabLayout.addButtonWidth).reduced(2));
-
-    if (modulePanel != nullptr)
-        modulePanel->setBounds(bounds.reduced(10, 6));
+            cardBounds.removeFromTop(megadsp::ui::addModuleCardHeight));
 }
 
 void MegaDSPAudioProcessorEditor::timerCallback()
 {
     headerMeter->setLevels(audioProcessor.getRack().inputMeterDb(),
                            audioProcessor.getRack().outputMeterDb());
-    for (auto& tab : tabs)
-        tab->syncBypassState();
+    for (auto& card : cards)
+        card->syncBypassState();
     refreshIdentityPresentation();
     if (knownSnapshotGeneration
         != audioProcessor.getSnapshotGeneration())
@@ -1706,7 +1797,9 @@ void MegaDSPAudioProcessorEditor::timerCallback()
     if (knownActiveSlots != audioProcessor.getRack().activeSlotCount()
         || knownTopologyGeneration
                != audioProcessor.getTopologyGeneration())
-        refreshTabs();
+        refreshCards(true);
+    else if (audioProcessor.getSelectedTab() != selectedSlot)
+        selectSlot(audioProcessor.getSelectedTab());
 #if defined(MEGADSP_CAPTURE_SCREENSHOTS)
     advanceScreenshotCapture();
 #endif
@@ -1769,71 +1862,184 @@ void MegaDSPAudioProcessorEditor::refreshSnapshots()
 
 void MegaDSPAudioProcessorEditor::selectSlot(int slot)
 {
-    if (refreshingTabs)
+    if (refreshingCards)
         return;
 
     const auto active = audioProcessor.getRack().activeSlotCount();
     if (active <= 0)
     {
         selectedSlot = 0;
-        modulePanel.reset();
         audioProcessor.getVisualizationData().setSelectedSlot(-1);
         return;
     }
     selectedSlot = juce::jlimit(0, active - 1, slot);
     audioProcessor.setSelectedTab(selectedSlot);
-    modulePanel = std::make_unique<ModulePanel>(audioProcessor, selectedSlot);
-    addAndMakeVisible(*modulePanel);
-    for (int index = 0; index < static_cast<int>(tabs.size()); ++index)
-        tabs[static_cast<size_t>(index)]->setSelected(index == selectedSlot);
-    resized();
+    for (int index = 0; index < static_cast<int>(cards.size()); ++index)
+        cards[static_cast<size_t>(index)]->setSelected(index == selectedSlot);
+    if (!isShowing())
+        audioProcessor.getVisualizationData().setSelectedSlot(-1);
 }
 
-void MegaDSPAudioProcessorEditor::refreshTabs()
+void MegaDSPAudioProcessorEditor::restoreFocusedCardAfterHover()
 {
-    if (refreshingTabs)
+    if (juce::isPositiveAndBelow(
+            focusedSlot, static_cast<int>(cards.size())))
+        selectSlot(focusedSlot);
+}
+
+void MegaDSPAudioProcessorEditor::focusSlot(int slot)
+{
+    focusedSlot = slot;
+    selectSlot(slot);
+}
+
+void MegaDSPAudioProcessorEditor::refreshCards(
+    bool followProcessorSelection)
+{
+    if (refreshingCards)
         return;
 
     const auto active = audioProcessor.getRack().activeSlotCount();
+    const auto hadRackFocus = std::any_of(
+        cards.begin(), cards.end(),
+        [](const auto& card)
+        {
+            return card->hasKeyboardFocus(true);
+        });
+    if (followProcessorSelection)
+        selectedSlot = audioProcessor.getSelectedTab();
+    focusedSlot = active > 0
+        ? juce::jlimit(0, active - 1,
+                       focusedSlot >= 0 ? focusedSlot : selectedSlot)
+        : -1;
     knownActiveSlots = active;
     knownTopologyGeneration = audioProcessor.getTopologyGeneration();
     {
         const juce::ScopedValueSetter<bool> refreshing(
-            refreshingTabs, true);
-        modulePanel.reset();
-        tabs.clear();
+            refreshingCards, true);
+        cards.clear();
         for (int slot = 0; slot < active; ++slot)
         {
-            auto tab = std::make_unique<ModuleTab>(
-                *this, slot, audioProcessor.getRack().moduleType(slot));
-            tabHost.addAndMakeVisible(*tab);
-            tabs.push_back(std::move(tab));
+            auto card = std::make_unique<ModuleCard>(*this, slot);
+            rackContent.addAndMakeVisible(*card);
+            cards.push_back(std::move(card));
         }
         addButton.setVisible(active < megadsp::slotCount);
     }
     selectSlot(juce::jmin(selectedSlot, juce::jmax(0, active - 1)));
     resized();
+    revealSelectedCard(hadRackFocus);
+}
+
+void MegaDSPAudioProcessorEditor::revealSelectedCard(bool focus)
+{
+    if (!juce::isPositiveAndBelow(
+            selectedSlot, static_cast<int>(cards.size())))
+        return;
+    auto* card = cards[static_cast<size_t>(selectedSlot)].get();
+    const auto viewTop = rackViewport.getViewPositionY();
+    const auto viewBottom = viewTop + rackViewport.getViewHeight();
+    if (card->getY() < viewTop)
+        rackViewport.setViewPosition(
+            rackViewport.getViewPositionX(), card->getY());
+    else if (card->getBottom() > viewBottom)
+        rackViewport.setViewPosition(
+            rackViewport.getViewPositionX(),
+            card->getBottom() - rackViewport.getViewHeight());
+    if (focus)
+        card->grabKeyboardFocus();
 }
 
 #if defined(MEGADSP_TESTS)
+int MegaDSPAudioProcessorEditor::activeVisualizationCardCountForTesting() const
+{
+    return static_cast<int>(std::count_if(
+        cards.begin(), cards.end(),
+        [](const auto& card)
+        {
+            return card->isVisualizationActiveForTesting();
+        }));
+}
+
+bool MegaDSPAudioProcessorEditor::cardChildrenFitForTesting() const
+{
+    return std::all_of(
+        cards.begin(), cards.end(),
+        [](const auto& card) { return card->childrenFitForTesting(); });
+}
+
+bool MegaDSPAudioProcessorEditor::cardHeightsAreUniformForTesting() const
+{
+    return std::all_of(
+        cards.begin(), cards.end(),
+        [](const auto& card)
+        {
+            return card->getHeight() == megadsp::ui::moduleCardHeight;
+        });
+}
+
+bool MegaDSPAudioProcessorEditor::rackOverflowsVerticallyForTesting() const
+{
+    return rackContent.getHeight() > rackViewport.getHeight();
+}
+
 void MegaDSPAudioProcessorEditor::clickCloseButtonForTesting(int slot)
 {
-    if (juce::isPositiveAndBelow(slot, static_cast<int>(tabs.size())))
+    if (juce::isPositiveAndBelow(slot, static_cast<int>(cards.size())))
     {
-        tabs[static_cast<size_t>(slot)]->grabKeyboardFocus();
-        tabs[static_cast<size_t>(slot)]->clickCloseButtonForTesting();
-        applyPendingTabMutation();
+        cards[static_cast<size_t>(slot)]->grabKeyboardFocus();
+        cards[static_cast<size_t>(slot)]->clickCloseButtonForTesting();
+        applyPendingCardMutation();
     }
+}
+
+void MegaDSPAudioProcessorEditor::simulateDescendantFocusForTesting(int slot)
+{
+    if (juce::isPositiveAndBelow(slot, static_cast<int>(cards.size())))
+        cards[static_cast<size_t>(slot)]
+            ->simulateDescendantFocusForTesting();
+}
+
+void MegaDSPAudioProcessorEditor::simulateCardHoverExitForTesting(int slot)
+{
+    if (juce::isPositiveAndBelow(slot, static_cast<int>(cards.size())))
+        cards[static_cast<size_t>(slot)]->simulateHoverExitForTesting();
+}
+
+void MegaDSPAudioProcessorEditor::simulateCardHoverForTesting(int slot)
+{
+    if (juce::isPositiveAndBelow(slot, static_cast<int>(cards.size())))
+        selectSlot(slot);
 }
 
 void MegaDSPAudioProcessorEditor::simulateFocusGainDuringRefreshForTesting(
     int slot)
 {
-    if (!juce::isPositiveAndBelow(slot, static_cast<int>(tabs.size())))
+    if (!juce::isPositiveAndBelow(slot, static_cast<int>(cards.size())))
         return;
-    const juce::ScopedValueSetter<bool> refreshing(refreshingTabs, true);
-    tabs[static_cast<size_t>(slot)]->focusGained(
+    const juce::ScopedValueSetter<bool> refreshing(refreshingCards, true);
+    cards[static_cast<size_t>(slot)]->focusGained(
         juce::Component::focusChangedDirectly);
+}
+
+void MegaDSPAudioProcessorEditor::reorderCardForTesting(
+    int source, int destination)
+{
+    requestReorderSlot(source, destination);
+    applyPendingCardMutation();
+}
+
+void MegaDSPAudioProcessorEditor::refreshCardsForTesting()
+{
+    refreshCards(true);
+}
+
+bool MegaDSPAudioProcessorEditor::cardAcceptsAssetDropForTesting(
+    int slot, const juce::String& path) const
+{
+    return juce::isPositiveAndBelow(slot, static_cast<int>(cards.size()))
+        && cards[static_cast<size_t>(slot)]
+               ->acceptsAssetDropForTesting(path);
 }
 #endif
 
@@ -1880,9 +2086,8 @@ void MegaDSPAudioProcessorEditor::showModuleBrowser()
                 return;
             safeThis->audioProcessor.addModule(
                 static_cast<megadsp::ModuleType>(stableType));
-            safeThis->selectedSlot =
-                safeThis->audioProcessor.getRack().activeSlotCount() - 1;
-            safeThis->refreshTabs();
+            safeThis->refreshCards(true);
+            safeThis->revealSelectedCard(true);
         });
 }
 
@@ -1901,9 +2106,8 @@ void MegaDSPAudioProcessorEditor::showModuleSearch()
                        >= megadsp::slotCount)
                 return;
             safeThis->audioProcessor.addModule(type);
-            safeThis->selectedSlot =
-                safeThis->audioProcessor.getRack().activeSlotCount() - 1;
-            safeThis->refreshTabs();
+            safeThis->refreshCards(true);
+            safeThis->revealSelectedCard(true);
         });
     auto* browserPointer = browser.get();
     auto& callout = juce::CallOutBox::launchAsynchronously(
@@ -2031,8 +2235,8 @@ void MegaDSPAudioProcessorEditor::refreshIdentityPresentation()
     {
         knownThemeIndex = themeIndex;
         repaint();
-        if (modulePanel != nullptr)
-            modulePanel->repaint();
+        for (auto& card : cards)
+            card->repaint();
     }
 }
 
@@ -2051,7 +2255,9 @@ void MegaDSPAudioProcessorEditor::captureScreenshot(
         ? screenshotOverlay->createComponentSnapshot(
               screenshotOverlay->getLocalBounds(), true, 1.0f)
         : createComponentSnapshot(getLocalBounds(), true, 1.0f);
-    auto stream = outputDirectory.getChildFile(fileName).createOutputStream();
+    const auto outputFile = outputDirectory.getChildFile(fileName);
+    outputFile.deleteFile();
+    auto stream = outputFile.createOutputStream();
     if (stream != nullptr)
         juce::PNGImageFormat().writeImageToStream(image, *stream);
 }
@@ -2067,6 +2273,7 @@ void MegaDSPAudioProcessorEditor::advanceScreenshotCapture()
         case 0:
             captureScreenshot("rack-overview.png");
             selectSlot(1);
+            revealSelectedCard(false);
             break;
         case 1:
             captureScreenshot("visual-processing.png");
@@ -2074,7 +2281,7 @@ void MegaDSPAudioProcessorEditor::advanceScreenshotCapture()
             audioProcessor.setBackgroundThemeIndex(4);
             audioProcessor.loadFactoryPreset(4);
             selectedSlot = 1;
-            refreshTabs();
+            refreshCards();
             break;
         case 2:
             captureScreenshot("reverb-modulation.png");
@@ -2103,22 +2310,28 @@ void MegaDSPAudioProcessorEditor::advanceScreenshotCapture()
 
 void MegaDSPAudioProcessorEditor::removeSlot(int slot)
 {
+    const auto generation = audioProcessor.getTopologyGeneration();
     audioProcessor.removeSlot(slot);
+    if (audioProcessor.getTopologyGeneration() == generation)
+        return;
     selectedSlot = juce::jmin(slot,
         juce::jmax(0, audioProcessor.getRack().activeSlotCount() - 1));
-    refreshTabs();
+    refreshCards();
 }
 
 void MegaDSPAudioProcessorEditor::reorderSlot(int source, int destination)
 {
+    const auto generation = audioProcessor.getTopologyGeneration();
     audioProcessor.moveSlot(source, destination);
+    if (audioProcessor.getTopologyGeneration() == generation)
+        return;
     selectedSlot = destination;
-    refreshTabs();
+    refreshCards();
 }
 
 void MegaDSPAudioProcessorEditor::requestRemoveSlot(int slot)
 {
-    pendingTabMutation = PendingTabMutation::remove;
+    pendingCardMutation = PendingCardMutation::remove;
     pendingSourceSlot = slot;
     pendingDestinationSlot = -1;
     pendingTopologyGeneration = audioProcessor.getTopologyGeneration();
@@ -2130,14 +2343,14 @@ void MegaDSPAudioProcessorEditor::requestRemoveSlot(int slot)
         [safeThis]
         {
             if (safeThis != nullptr)
-                safeThis->applyPendingTabMutation();
+                safeThis->applyPendingCardMutation();
         });
 }
 
 void MegaDSPAudioProcessorEditor::requestReorderSlot(
     int source, int destination)
 {
-    pendingTabMutation = PendingTabMutation::reorder;
+    pendingCardMutation = PendingCardMutation::reorder;
     pendingSourceSlot = source;
     pendingDestinationSlot = destination;
     pendingTopologyGeneration = audioProcessor.getTopologyGeneration();
@@ -2149,26 +2362,26 @@ void MegaDSPAudioProcessorEditor::requestReorderSlot(
         [safeThis]
         {
             if (safeThis != nullptr)
-                safeThis->applyPendingTabMutation();
+                safeThis->applyPendingCardMutation();
         });
 }
 
-void MegaDSPAudioProcessorEditor::applyPendingTabMutation()
+void MegaDSPAudioProcessorEditor::applyPendingCardMutation()
 {
-    const auto mutation = pendingTabMutation;
+    const auto mutation = pendingCardMutation;
     const auto source = pendingSourceSlot;
     const auto destination = pendingDestinationSlot;
     const auto generation = pendingTopologyGeneration;
     const auto requestGeneration = pendingTopologyRequestGeneration;
-    pendingTabMutation = PendingTabMutation::none;
+    pendingCardMutation = PendingCardMutation::none;
     pendingSourceSlot = -1;
     pendingDestinationSlot = -1;
 
-    if (mutation == PendingTabMutation::none
+    if (mutation == PendingCardMutation::none
         || audioProcessor.getTopologyGeneration() != generation
         || audioProcessor.getTopologyRequestGeneration() != requestGeneration)
         return;
-    if (mutation == PendingTabMutation::remove)
+    if (mutation == PendingCardMutation::remove)
         removeSlot(source);
     else
         reorderSlot(source, destination);
@@ -2200,10 +2413,12 @@ void MegaDSPAudioProcessorEditor::choosePreset(bool save)
             return;
         if (save && !file.hasFileExtension("megadsp"))
             file = file.withFileExtension("megadsp");
-        safeThis->showResult(
-            save ? safeThis->audioProcessor.savePreset(file)
-                 : safeThis->audioProcessor.loadPreset(file));
-        safeThis->refreshTabs();
+        const auto result = save
+            ? safeThis->audioProcessor.savePreset(file)
+            : safeThis->audioProcessor.loadPreset(file);
+        safeThis->showResult(result);
+        if (!save && result.wasOk())
+            safeThis->refreshCards(true);
     });
 }
 

@@ -1738,10 +1738,87 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     }
 
     finishDataMutation();
+    parameters.state.setProperty(
+        "impulseResponseDirectory",
+        file.getParentDirectory().getFullPathName(), nullptr);
     publishSnapshotToParameters(getSelectedSnapshot());
     updateHostDisplay(
         ChangeDetails{}.withNonParameterStateChanged(true));
     return juce::Result::ok();
+}
+
+juce::File MegaDSPAudioProcessor::impulseResponseDirectory(int slot) const
+{
+    const auto currentPath = impulseResponsePath(slot);
+    if (currentPath.isNotEmpty())
+    {
+        const auto currentDirectory =
+            juce::File(currentPath).getParentDirectory();
+        if (currentDirectory.isDirectory())
+            return currentDirectory;
+    }
+
+    const auto persistedDirectory = juce::File(
+        parameters.state.getProperty(
+            "impulseResponseDirectory").toString());
+    if (persistedDirectory.isDirectory())
+        return persistedDirectory;
+    return juce::File::getSpecialLocation(juce::File::userMusicDirectory);
+}
+
+juce::Result MegaDSPAudioProcessor::loadAdjacentImpulseResponse(
+    int slot, int direction)
+{
+    if (direction == 0)
+        return juce::Result::fail(
+            "Choose either the previous or next impulse response.");
+
+    const auto directory = impulseResponseDirectory(slot);
+    juce::Array<juce::File> directoryFiles;
+    directory.findChildFiles(
+        directoryFiles, juce::File::findFiles, false);
+    std::vector<juce::File> impulseResponses;
+    impulseResponses.reserve(static_cast<size_t>(directoryFiles.size()));
+    for (const auto& file : directoryFiles)
+    {
+        const auto extension = file.getFileExtension().toLowerCase();
+        if (extension == ".wav" || extension == ".aif"
+            || extension == ".aiff" || extension == ".flac")
+            impulseResponses.push_back(file);
+    }
+    std::sort(
+        impulseResponses.begin(), impulseResponses.end(),
+        [](const juce::File& left, const juce::File& right)
+        {
+            const auto nameOrder = left.getFileName().compareIgnoreCase(
+                right.getFileName());
+            return nameOrder != 0
+                ? nameOrder < 0
+                : left.getFullPathName() < right.getFullPathName();
+        });
+    if (impulseResponses.empty())
+        return juce::Result::fail(
+            "The impulse response directory contains no WAV, AIFF, or FLAC "
+            "files.");
+
+    const auto currentFile = juce::File(impulseResponsePath(slot));
+    const auto current = std::find_if(
+        impulseResponses.begin(), impulseResponses.end(),
+        [&currentFile](const juce::File& candidate)
+        {
+            return candidate == currentFile;
+        });
+    int target = direction > 0
+        ? 0 : static_cast<int>(impulseResponses.size()) - 1;
+    if (current != impulseResponses.end())
+    {
+        const auto currentIndex =
+            static_cast<int>(std::distance(impulseResponses.begin(), current));
+        const auto count = static_cast<int>(impulseResponses.size());
+        target = (currentIndex + (direction > 0 ? 1 : count - 1)) % count;
+    }
+    return loadImpulseResponse(
+        slot, impulseResponses[static_cast<size_t>(target)]);
 }
 
 void MegaDSPAudioProcessor::clearImpulseResponse(int slot)

@@ -104,6 +104,17 @@ public:
         }
         expect(foundPrimary);
         expect(foundCloud);
+        juce::AudioBuffer<float> shortSignal(2, 128);
+        fillSignal(shortSignal, 3 * signal.getNumSamples());
+        diffusion.process(shortSignal, diffusionControls, capture);
+        expect(diffusion.readEventTelemetry(events));
+        expect(std::any_of(
+            events.events.begin(),
+            events.events.begin() + events.eventCount,
+            [](const auto& event)
+            {
+                return event.progress > 0.20f && event.progress < 0.35f;
+            }));
         const auto diffusionSequence = events.sequence;
         fillSignal(signal, 15000);
         diffusion.process(signal, diffusionControls, {});

@@ -11,6 +11,11 @@ namespace megadsp::ui
 {
 namespace
 {
+float movementHeight(juce::Rectangle<float> area)
+{
+    return juce::jlimit(28.0f, 46.0f, area.getHeight() * 0.32f);
+}
+
 class DelayModuleView final : public ModuleView
 {
 public:
@@ -39,14 +44,14 @@ void DelayModuleView::configureAccessibility(juce::Component& component) const
 juce::Rectangle<float> DelayModuleView::timelineBounds(
     juce::Rectangle<float> area)
 {
-    area.removeFromBottom(54.0f);
+    area.removeFromBottom(movementHeight(area) + 8.0f);
     return area;
 }
 
 juce::Rectangle<float> DelayModuleView::movementBounds(
     juce::Rectangle<float> area)
 {
-    return area.removeFromBottom(46.0f).reduced(5.0f, 2.0f);
+    return area.removeFromBottom(movementHeight(area)).reduced(5.0f, 2.0f);
 }
 
 void DelayModuleView::mouseDown(const juce::MouseEvent& event)
@@ -207,7 +212,7 @@ void DelayModuleView::paint(juce::Graphics& graphics, juce::Rectangle<float> are
     graphics.setColour(juce::Colours::white);
     graphics.fillEllipse(
         juce::Rectangle<float>(10.0f, 10.0f).withCentre(movementHandle));
-    graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+    graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
     graphics.drawText(
         "MOVEMENT  RATE "
             + megadsp::formatControlValue(type, 7, value(7))

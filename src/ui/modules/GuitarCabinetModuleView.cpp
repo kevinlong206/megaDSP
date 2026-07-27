@@ -13,6 +13,16 @@ namespace
 {
 constexpr std::array<int, 7> trackControls { 5, 6, 7, 8, 9, 10, 11 };
 
+float modelRowsHeight(juce::Rectangle<float> area)
+{
+    return juce::jlimit(60.0f, 87.0f, area.getHeight() * 0.27f);
+}
+
+float controlRowsHeight(juce::Rectangle<float> area)
+{
+    return juce::jlimit(76.0f, 108.0f, area.getHeight() * 0.34f);
+}
+
 class GuitarCabinetModuleView final : public ModuleView
 {
 public:
@@ -49,7 +59,7 @@ void GuitarCabinetModuleView::configureAccessibility(
 juce::Rectangle<float> GuitarCabinetModuleView::pillBounds(
     juce::Rectangle<float> area, int control, int option, int count)
 {
-    auto rows = area.removeFromTop(87.0f);
+    auto rows = area.removeFromTop(modelRowsHeight(area));
     const auto rowHeight = rows.getHeight() / 3.0f;
     auto row = juce::Rectangle<float>(
         rows.getX(), rows.getY() + rowHeight * static_cast<float>(control),
@@ -63,15 +73,17 @@ juce::Rectangle<float> GuitarCabinetModuleView::pillBounds(
 juce::Rectangle<float> GuitarCabinetModuleView::cabinetBounds(
     juce::Rectangle<float> area)
 {
-    area.removeFromTop(91.0f);
-    area.removeFromBottom(112.0f);
-    return area.reduced(10.0f, 3.0f);
+    const auto modelHeight = modelRowsHeight(area);
+    const auto controlsHeight = controlRowsHeight(area);
+    area.removeFromTop(modelHeight + 4.0f);
+    area.removeFromBottom(controlsHeight + 4.0f);
+    return area.reduced(8.0f, 2.0f);
 }
 
 juce::Rectangle<float> GuitarCabinetModuleView::trackBounds(
     juce::Rectangle<float> area, int control)
 {
-    auto tracks = area.removeFromBottom(108.0f);
+    auto tracks = area.removeFromBottom(controlRowsHeight(area));
     auto iterator = std::find(
         trackControls.begin(), trackControls.end(), control);
     if (iterator == trackControls.end())
@@ -86,7 +98,7 @@ juce::Rectangle<float> GuitarCabinetModuleView::trackBounds(
     return juce::Rectangle<float>(
         tracks.getX() + width * static_cast<float>(column),
         tracks.getY() + height * static_cast<float>(row),
-        width, height).reduced(7.0f, 5.0f);
+        width, height).reduced(6.0f, 3.0f);
 }
 
 juce::Point<float> GuitarCabinetModuleView::microphonePoint(
@@ -98,8 +110,9 @@ juce::Point<float> GuitarCabinetModuleView::microphonePoint(
     const auto speakerCentre = juce::Point<float>(
         cabinet.getCentreX(), cabinet.getY() + cabinet.getHeight() * 0.37f);
     const auto x = speakerCentre.x + value(3) * speakerRadius * 0.88f;
-    const auto y = speakerCentre.y + speakerRadius
-        + 13.0f + value(4) * juce::jmax(12.0f, cabinet.getHeight() * 0.25f);
+    const auto micGap = juce::jmin(13.0f, cabinet.getHeight() * 0.10f);
+    const auto y = speakerCentre.y + speakerRadius + micGap
+        + value(4) * juce::jmax(8.0f, cabinet.getHeight() * 0.18f);
     return { x, y };
 }
 
@@ -171,8 +184,9 @@ void GuitarCabinetModuleView::mouseDrag(const juce::MouseEvent& event)
                 / juce::jmax(1.0f, speakerRadius * 0.88f)));
         setValue(4, juce::jlimit(
             0.0f, 1.0f,
-            (event.position.y - speakerY - speakerRadius - 13.0f)
-                / juce::jmax(12.0f, cabinet.getHeight() * 0.25f)));
+            (event.position.y - speakerY - speakerRadius
+             - juce::jmin(13.0f, cabinet.getHeight() * 0.10f))
+                / juce::jmax(8.0f, cabinet.getHeight() * 0.18f)));
         dragReadout =
             "MIC  " + formatControlValue(type, 3, value(3))
             + "  -  " + formatControlValue(type, 4, value(4));
@@ -244,7 +258,7 @@ void GuitarCabinetModuleView::paint(
                 selected ? juce::Colour(0xff101820)
                          : juce::Colours::white.withAlpha(0.82f));
             graphics.setFont(juce::FontOptions(
-                control == 1 ? 10.5f : 11.0f,
+                control == 1 ? 9.5f : 10.0f,
                 selected ? juce::Font::bold : juce::Font::plain));
             graphics.drawText(
                 formatControlValue(

@@ -109,7 +109,7 @@ The codebase is a standard JUCE plugin project. Key layers:
 | `src/EffectRack.*` | Slot ownership, serial routing, bypass interpolation, latency alignment, visualization capture, and tail aggregation |
 | `src/Diagnostics.*` | Default-on rotating logs, lock-free realtime event capture, and chained fatal crash markers |
 | `src/PluginProcessor.*` | Host buses, state, presets, latency reporting, and rack topology operations |
-| `src/PluginEditor.*` | Tabbed rack shell and semantic module controls |
+| `src/PluginEditor.*` | Vertically scrolling card rack and semantic module controls |
 | `src/ui/*` | Reusable effect graph shell, module view interface, and view factory |
 | `src/ui/modules/*` | Module-specific graph rendering and interactions |
 | `tests/DspModuleTests.cpp` | Focused DSP module tests |
@@ -184,7 +184,7 @@ Screenshots live under `docs/images/`. The intended filenames are:
 
 | File | Contents |
 |---|---|
-| `docs/images/rack-overview.png` | Full plugin window with multiple tabs populated |
+| `docs/images/rack-overview.png` | Full plugin window with multiple processor cards populated |
 | `docs/images/module-browser.png` | Module browser open, showing categorized results |
 | `docs/images/visual-processing.png` | Several interactive graphs — e.g. EQ editor, compressor history, delay timeline |
 | `docs/images/reverb-modulation.png` | Algorithmic and/or convolution reverb graph with controls visible |

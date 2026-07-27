@@ -38,7 +38,7 @@ graphs, realtime analysis, and controls that match the musical quantities they
 edit. The long-term vision is a community-built library spanning dozens—and
 eventually perhaps hundreds—of useful effects in one consistent rack.
 
-![Eight processor tabs in signal-flow order with the header output meter](docs/images/rack-overview.png)
+![Processor cards in top-to-bottom signal-flow order with the header output meter](docs/images/rack-overview.png)
 
 ## Built in the open
 
@@ -110,13 +110,21 @@ megaDSP.clap → ~/.clap
 ## First-rack workflow
 
 1. Load megaDSP on a track in your DAW.
-2. Click the **+** tab and choose a module from the standard category submenus. **Search Modules…** at the top opens a separate searchable list; **↑↓** and **Enter** work there.
-3. Select a tab to see its interactive graph and controls.
-4. Drag tabs left or right to reorder the signal chain.
-5. **Double-click** a tab (or press **Space / Return / B**) to bypass it — the tab is greyed and labeled **BYPASSED**. After its short click-safe fade, the module DSP and live visualization are suspended; only latency-preserving dry routing remains.
-6. Click the **×** icon on a tab to remove it.
+2. Click **Add Module** after the last card and choose a processor from the standard category submenus. **Search Modules…** at the top opens a separate searchable list; **↑↓** and **Enter** work there.
+3. Every loaded module appears as a uniform-height horizontal card, with its graph, direct controls, bypass, reset, remove, and any IR/NAM asset actions visible together. Vertically scroll the rack to follow the signal path from top to bottom.
+4. Drag a card header up or down to reorder the signal chain.
+5. Use a card's explicit **ON / BYP** control (or focus it and press **Space / B**) to bypass it. After its short click-safe fade, the module DSP and live visualization are suspended; only latency-preserving dry routing remains.
+6. Use a card's **Remove** action to delete it from the rack.
 7. Use the header **Output Trim** and peak meter to manage the final output level. The meter shows peak hold, near-clip colour zones, and a resettable **CLIP** indicator.
-8. Use **Snapshots 1-8** above the module tabs to keep alternate complete racks. Click recalls without copying the current rack; an unused slot opens as a fresh blank rack. Shift-click saves to an empty slot or overwrites a populated one. Drag one populated snapshot onto another slot to copy it. Program Change 0-7 recalls populated snapshots over MIDI.
+8. Use **Snapshots 1-8** above the module rack to keep alternate complete racks. Click recalls without copying the current rack; an unused slot opens as a fresh blank rack. Shift-click saves to an empty slot or overwrites a populated one. Drag one populated snapshot onto another slot to copy it. Program Change 0-7 recalls populated snapshots over MIDI.
+
+Continuous and spectral DSP telemetry remains focused on one card, while
+bounded module event snapshots continue to feed their associated animations.
+Every card repaints its animation at the full 30 Hz rate regardless of focus;
+hidden editors suspend continuous telemetry capture.
+
+Compact control groups float over the lower part of each response, leaving the
+full card body available to its graph, timeline, or measured visualization.
 
 Snapshot recall never waits for modules or external files to load: populated
 snapshots remain prepared while inactive. Each snapshot keeps its native DSP
@@ -188,9 +196,9 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | Module | What it does |
 |---|---|
 | **Delay** | Editable tap timeline plus a 2D Rate/Depth Movement field; Sync toggles between free Time and synced Division |
-| **Diffusion Delay** | Tempo-aware echoes with DSP-synchronized primary/cloud activity, energy, progress, and stereo placement |
+| **Diffusion Delay** | Full-width Time/Division and Cloud Density field with DSP-synchronized primary/cloud activity, energy, progress, and stereo placement |
 | **Algorithmic Reverb** | 16-line Hall, Chamber, and Plate network with input high-pass/low-pass filtering, smooth wet ducking, Decay, Room Scale, and independent Dry/Wet |
-| **Convolution Reverb** | WAV/AIFF/FLAC IR loading, waveform preview, draggable wet high-pass/low-pass filtering, smooth ducking, and independent Dry/Wet rails |
+| **Convolution Reverb** | Unobstructed WAV/AIFF/FLAC waveform preview, persisted IR directory with previous/next browsing, dedicated wet-passband strip, and adjacent Dry/Wet/Ducking/Output rails |
 | **Resonant Matrix** | Tuned resonators routed through evolving signed feedback patterns for pitched, metallic spaces |
 | **Pitch Bloom** | Musical interval shifting with actual repeat-event arcs for interval, progress, energy, pan, and spread |
 | **Spectral Delay Canvas** | Frequency-dependent low, mid, and high spectral delay with diffusion, feedback, and freeze |
@@ -203,7 +211,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 |---|---|
 | **Tremolo** | Amplitude, Harmonic, and Vibrato algorithms; Rate syncs to host divisions; Vibrato shows depth in cents |
 | **Vintage Chorus** | Four distinct topologies (Vintage BBD, Dimension, Tri-Chorus, String Ensemble), animated voice-trajectory field, and six-tap Density |
-| **Rotary Speaker** | Dual-rotor Doppler model with Brake/Chorale/Tremolo speeds, virtual microphone distance and spread, Cabinet Color, and Drive |
+| **Rotary Speaker** | Dual-rotor Doppler model with one Brake/Chorale/Tremolo selector, consolidated left-side controls, and an unobstructed right-side rotor/microphone animation |
 | **Studio Phaser** | 2–12 stage all-pass sweeps with DSP-synchronized notch phases and topology crossfades |
 | **Studio Flanger** | Tape, Through-Zero, Jet, and BBD models with DSP-synchronized comb and model transitions |
 | **Chaos Field** | Deterministic attractor-driven filter, delay, pan, and stereo motion |
@@ -214,7 +222,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | Module | What it does |
 |---|---|
 | **Random Granulizer** | 6-second circular buffer, 16-voice pool, live grain-stream timeline, dual-handle MIN/MAX size window, and pitch-stable grains |
-| **Beat Permuter** | Rearranges recent tempo-locked slices into precise repeats, reverses, scatters, and rhythmic glitches |
+| **Beat Permuter** | Rearranges tempo-locked slices with a quiet eight-step source display and consolidated Sequence, Trigger, Transform, and Output bands |
 | **Spectral Prism** | Bends, shifts, smears, and freezes sound around a visual spectral pivot |
 | **Wavefold Garden** | Grows animated antialiased harmonics with envelope-responsive wavefolding |
 | **Harmonic Resonator** | Tuned Major, Minor, suspended, seventh, fifth, and octave-drone resonator fields with register, decay, tone, motion, and stereo spread |
