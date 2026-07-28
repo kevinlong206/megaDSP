@@ -107,9 +107,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force package/megaDSP, release
-          Copy-Item build/megaDSP_artefacts/Release/VST3 package/megaDSP/VST3 -Recurse
-          Copy-Item build/megaDSP_artefacts/Release/CLAP package/megaDSP/CLAP -Recurse
+          New-Item -ItemType Directory -Force package/megaDSP/VST3, package/megaDSP/CLAP, release
+          Copy-Item build/megaDSP_artefacts/Release/VST3/megaDSP.vst3 package/megaDSP/VST3/megaDSP.vst3 -Recurse
+          Copy-Item build/megaDSP_artefacts/Release/CLAP/megaDSP.clap package/megaDSP/CLAP/megaDSP.clap
           Compress-Archive -Path package/megaDSP -DestinationPath "release/megaDSP-$env:RELEASE_VERSION-Windows-x64.zip"
 
       - name: Upload release archive
