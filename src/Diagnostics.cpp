@@ -1,4 +1,5 @@
 #include "Diagnostics.h"
+#include "BuildInfo.h"
 #include "modules/ModuleRegistry.h"
 
 #include <algorithm>
@@ -64,6 +65,10 @@ void writeCrashMarker(const char* reason, int signalNumber) noexcept
     };
     append("fatal reason=");
     append(reason);
+    append(" version=");
+    append(MEGADSP_VERSION);
+    append(" commit=");
+    append(MEGADSP_COMMIT_HASH);
     append(" signal=");
     length = appendUnsigned(
         line, length, sizeof(line) - 1,
@@ -137,8 +142,10 @@ void writeCrashMarker(const char* reason, unsigned long exceptionCode) noexcept
     char line[192] {};
     const auto length = std::snprintf(
         line, sizeof(line),
-        "fatal reason=%s exception=%lu pid=%lu event=%ld instance=%ld value=%ld\n",
-        reason, exceptionCode, ::GetCurrentProcessId(),
+        "fatal reason=%s version=%s commit=%s exception=%lu pid=%lu "
+        "event=%ld instance=%ld value=%ld\n",
+        reason, MEGADSP_VERSION, MEGADSP_COMMIT_HASH,
+        exceptionCode, ::GetCurrentProcessId(),
         crashEvent, crashInstance, crashValue);
     DWORD written = 0;
     if (length > 0)
@@ -386,7 +393,14 @@ void Diagnostics::writeHeader()
         return;
     output->setPosition(appendPosition);
     output->writeText(
-        "\n=== megaDSP " + juce::String(MEGADSP_VERSION)
+        "\n=== megaDSP "
+            + juce::String::fromUTF8(
+                buildVersion.data(),
+                static_cast<int>(buildVersion.size()))
+            + " commit "
+            + juce::String::fromUTF8(
+                buildCommitHash.data(),
+                static_cast<int>(buildCommitHash.size()))
             + " diagnostics session " + juce::Time::getCurrentTime().toISO8601(true)
             + " ===\nOS: " + juce::SystemStats::getOperatingSystemName()
             + "\nJUCE: " + juce::SystemStats::getJUCEVersion()

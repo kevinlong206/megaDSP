@@ -1,4 +1,6 @@
 #include "PluginEditor.h"
+
+#include "BuildInfo.h"
 #include "Diagnostics.h"
 #include "ui/EffectGraph.h"
 #include "ui/GraphStyle.h"
@@ -1691,9 +1693,31 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     : AudioProcessorEditor(processorToUse), audioProcessor(processorToUse)
 {
     title.setText("megaDSP", juce::dontSendNotification);
-    title.setFont(juce::FontOptions(26.0f, juce::Font::bold));
+    title.setFont(juce::FontOptions(23.0f, juce::Font::bold));
     title.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(title);
+
+    commitHashButton.setButtonText(
+        juce::String::fromUTF8(
+            megadsp::buildCommitHash.data(),
+            static_cast<int>(megadsp::buildCommitHash.size())));
+    commitHashButton.setTitle("Build commit");
+    commitHashButton.setDescription(
+        "Copies this megaDSP build's Git commit hash.");
+    commitHashButton.setTooltip("Click to copy the build commit hash.");
+    commitHashButton.setColour(
+        juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    commitHashButton.setColour(
+        juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+    commitHashButton.setColour(
+        juce::TextButton::textColourOffId, juce::Colour(0xffa8b3c0));
+    commitHashButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    commitHashButton.onClick = [this]
+    {
+        juce::SystemClipboard::copyTextToClipboard(
+            commitHashButton.getButtonText());
+    };
+    addAndMakeVisible(commitHashButton);
 
     instanceLabel.setText("INSTANCE", juce::dontSendNotification);
     instanceLabel.setFont(juce::FontOptions(10.5f, juce::Font::bold));
@@ -1972,8 +1996,10 @@ void MegaDSPAudioProcessorEditor::resized()
     auto headerTop = header.removeFromTop(34);
     const auto identityLayout =
         megadsp::ui::calculateIdentityHeaderLayout(getWidth());
-    title.setBounds(
-        headerTop.removeFromLeft(identityLayout.titleWidth));
+    auto titleArea =
+        headerTop.removeFromLeft(identityLayout.titleWidth);
+    title.setBounds(titleArea.removeFromTop(24));
+    commitHashButton.setBounds(titleArea);
     instanceLabel.setBounds(
         headerTop.removeFromLeft(identityLayout.labelWidth));
     instanceName.setBounds(

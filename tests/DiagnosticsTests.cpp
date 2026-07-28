@@ -1,3 +1,4 @@
+#include "BuildInfo.h"
 #include "Diagnostics.h"
 #include "modules/ModuleRegistry.h"
 
@@ -40,6 +41,9 @@ public:
 
         const auto contents =
             folder.getChildFile("megaDSP.log").loadFileAsString();
+        expect(contents.contains(
+            "megaDSP " + juce::String(MEGADSP_VERSION)
+            + " commit " + juce::String(MEGADSP_COMMIT_HASH)));
         expect(contents.contains("test message"));
         expect(contents.contains(
             "audio-config instance=7 a=512 b=2"));

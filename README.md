@@ -33,7 +33,7 @@ DAW. Their transformed wet sound arrives after the analysis window as a natural
 pre-delay. Phase-critical correction, lookahead, and nonlinear processors still
 report and align the latency required for accurate processing.
 
-Today, megaDSP includes forty-seven purpose-built processors with interactive
+Today, megaDSP includes fifty-three purpose-built processors with interactive
 graphs, realtime analysis, and controls that match the musical quantities they
 edit. The long-term vision is a community-built library spanning dozens—and
 eventually perhaps hundreds—of useful effects in one consistent rack.
@@ -118,6 +118,10 @@ megaDSP.clap → ~/.clap
 7. Use the header **Output Trim** and peak meter to manage the final output level. The meter shows peak hold, near-clip colour zones, and a resettable **CLIP** indicator.
 8. Use **Snapshots 1-8** above the module rack to keep alternate complete racks. Click recalls without copying the current rack; an unused slot opens as a fresh blank rack. Shift-click saves to an empty slot or overwrites a populated one. Drag one populated snapshot onto another slot to copy it. Program Change 0-7 recalls populated snapshots over MIDI.
 
+The seven-character Git commit shown beneath the **megaDSP** title identifies
+the exact source used for the build. Click the hash to copy it when reporting a
+problem.
+
 Continuous and spectral DSP telemetry remains focused on one card, while
 bounded module event snapshots continue to feed their associated animations.
 Every card repaints its animation at the full 30 Hz rate regardless of focus;
@@ -148,6 +152,8 @@ bounded rotating local logs of plugin lifecycle, audio configuration, topology,
 state rejection, latency, and file-loading errors. It also installs fatal crash
 and uncaught-exception handlers in the DAW process and writes a minimal crash
 marker before allowing the existing host/OS crash handling to continue.
+Every diagnostics session header and crash marker includes the semantic version
+and seven-character build commit shown in the plugin header.
 
 Logs stay on your computer and never contain audio. Before attaching them to a
 [GitHub issue](https://github.com/kevinlong206/megaDSP/issues), review

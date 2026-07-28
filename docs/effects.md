@@ -1,6 +1,6 @@
 # Effects reference
 
-Detailed control and interaction notes for each of megaDSP's forty-seven
+Detailed control and interaction notes for each of megaDSP's fifty-three
 modules. For installation and a quick overview see the [README](../README.md).
 
 Runtime-specific graphs show **DSP telemetry waiting** until the selected slot
@@ -92,6 +92,34 @@ The **Threshold** control is a live input-level meter: signal fills the track be
 
 ---
 
+## Opto Leveler
+
+A feedback optical leveler with a dual-memory cell: fast illumination catches
+level changes while slower release memory produces program-dependent recovery.
+Peak Reduction drives the optical cell, Emphasis shapes the detector, and
+Speed moves between slower leveling and faster control without turning the
+processor into a feed-forward compressor.
+
+Stereo detection is linked so gain movement cannot pull the image sideways.
+The fixed nonlinear path remains latency-aligned at Mix zero. The graph shows
+measured input/output levels, optical memory, and gain reduction only while its
+slot is selected for capture.
+
+---
+
+## FET Limiter
+
+A fast feedback FET compressor with calibrated sub-millisecond attack, stepped
+4:1, 8:1, 12:1, and 20:1 ratios, plus a distinct **ALL** mode rather than an
+alias for the highest ratio. Input drives the gain-reduction stage; Output,
+Attack, Release, detector filtering, Mix, and final trim shape the result.
+
+Stereo-linked detection preserves image stability. Parallel Mix uses the same
+fixed nonlinear latency on dry and wet paths, and the graph reports measured
+level and reduction from the selected DSP slot.
+
+---
+
 ## Saturator
 
 Displays a transfer curve with overlaid input and output waveforms. **Drive** is automatically level-compensated by comparing latency-aligned dry and nonlinear signal energy: harder drive adds density and harmonics without a large loudness jump. Compensation only attenuates excess wet gain; **Output** remains an independent final trim.
@@ -116,6 +144,20 @@ control **Speaker Drive**, **Cone Breakup**, **Cabinet Resonance**, **Damping**,
 The animated cone, compression color, breakup ring, and room field come from
 capture-gated DSP telemetry. Model changes crossfade without clearing the
 active speaker state, and all choices share one fixed reported latency.
+
+---
+
+## Program Equalizer
+
+Models the interacting passive networks of a classic program equalizer rather
+than summing unrelated digital bells. Low Boost and Low Attenuation remain
+separate controls around a shared stepped frequency, so simultaneous settings
+produce the characteristic dip-and-lift contour. A broad proportional-Q high
+boost and stepped high attenuation complete the passive section.
+
+Stepped frequency changes crossfade prepared filter states. One fixed-latency,
+bounded makeup stage restores passive loss, and the graph displays the actual
+combined response of every interacting section.
 
 ---
 
@@ -164,6 +206,20 @@ identifies the missing filename.
 
 Mono IRs use a centered wet send, even for asymmetric stereo input. Stereo IRs
 retain their captured left/right acoustic differences.
+
+---
+
+## Studio Plate
+
+A physically informed plate field with immediate Dry and zero host delay
+compensation. A prepared modal onset feeds a dense frequency-dependent FDN
+tail; Decay, Damping, Size, Diffusion, modulation, and pickup geometry shape
+the plate without replacing active state during structural changes.
+
+Wet ducking acts only on the completed plate field and releases into the tail.
+The synthetic pickup side component cancels on mono fold-down. The graph uses
+capture-gated modal, diffusion, and pickup telemetry rather than editor-clock
+animation.
 
 ---
 
@@ -519,6 +575,20 @@ age without runtime allocation.
 The reel graphic follows captured DSP transport phase and reports actual
 wow/flutter offset, dropout gain, and signal envelope rather than advancing on
 the editor timer.
+
+---
+
+## Vinyl Simulator
+
+Builds record wear from deterministic dust, crackle, scratches, surface noise,
+rumble, groove wear, wow, and flutter rather than replaying a texture sample.
+The transport uses one fixed latency-aligned delay for wow and flutter, so Mix
+zero remains aligned while the modulation controls move.
+
+Synthetic stereo texture exists only in the side domain and cancels on mono
+fold-down. Noise events remain bounded and resettable, and the spinning record
+view follows capture-gated measured dust, scratch, wear, transport, and signal
+activity.
 
 ---
 

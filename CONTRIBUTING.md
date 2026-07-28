@@ -102,14 +102,15 @@ The codebase is a standard JUCE plugin project. Key layers:
 
 | Source | Role |
 |---|---|
-| `src/Parameters.*` | Fixed host parameter layout, descriptors from the registry, and state migration (schemas 2–9) |
+| `src/Parameters.*` | Fixed host parameter layout, descriptors from the registry, and state migration (schemas 2–11) |
 | `src/modules/ModuleRegistry.*` | Stable module enum, presentation metadata, control labels, defaults, formatting/parsing, contextual predicates, factories, and capabilities |
 | `src/modules/*` | Per-module DSP declarations, implementations, and shared DSP helpers |
 | `src/DspModules.h` | Compatibility umbrella for all DSP module declarations |
 | `src/EffectRack.*` | Slot ownership, serial routing, bypass interpolation, latency alignment, visualization capture, and tail aggregation |
+| `src/SnapshotState.*` | Independent prepared rack states for eight snapshots, including external asset references and schema serialization |
 | `src/Diagnostics.*` | Default-on rotating logs, lock-free realtime event capture, and chained fatal crash markers |
-| `src/PluginProcessor.*` | Host buses, state, presets, latency reporting, and rack topology operations |
-| `src/PluginEditor.*` | Vertically scrolling card rack and semantic module controls |
+| `src/PluginProcessor.*` | Host buses, state, presets, latency reporting, rack topology operations, and sample-accurate snapshot recall/spill |
+| `src/PluginEditor.*` | Header identity, snapshots, sticky chain navigator, vertically scrolling card rack, and semantic module controls |
 | `src/ui/*` | Reusable effect graph shell, module view interface, and view factory |
 | `src/ui/modules/*` | Module-specific graph rendering and interactions |
 | `tests/DspModuleTests.cpp` | Focused DSP module tests |
@@ -140,7 +141,7 @@ These constraints are non-negotiable:
 
 - The host parameter topology is **fixed**: eight slots, twelve controls per slot. Parameter IDs must not change.
 - `ModuleType` integer values are **stable**. Existing values must not be reassigned; new values are always appended.
-- State migration must remain compatible with schemas 2 through the current schema (9). All past migration paths must continue to work.
+- State migration must remain compatible with schemas 2 through the current schema (11). All past migration paths must continue to work.
 - Module-type parameters are not automatable; saved integer values must restore exactly.
 - Host automation is tied to **rack slot numbers**, not module identity. Reordering modules moves settings between slots; existing automation stays with its original slot number.
 
@@ -160,7 +161,8 @@ Smooth every audible continuous parameter. Structural changes (mode switches, IR
 Realtime diagnostics must use `Diagnostics::logRealtime`; never call the
 string/file logging path from audio processing. Crash handlers may use only
 async-signal-safe operations and must chain and restore handlers owned by the
-host.
+host. Build metadata must keep the semantic version and configured short Git
+commit consistent across the editor, rotating log headers, and crash markers.
 
 ---
 

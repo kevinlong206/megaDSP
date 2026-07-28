@@ -221,6 +221,9 @@ public:
             auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
                 *editorProcessor, 1100, 720);
             expectEquals(editor->tabCountForTesting(), 2);
+            expectEquals(
+                editor->commitHashForTesting(),
+                juce::String(MEGADSP_COMMIT_HASH));
             expect(editor->cardChildrenFitForTesting());
             expectEquals(
                 editor->activeVisualizationCardCountForTesting(), 0);

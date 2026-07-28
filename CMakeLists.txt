@@ -9,6 +9,26 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 option(MEGADSP_CAPTURE_SCREENSHOTS
        "Capture documentation images from the Standalone editor" OFF)
 
+find_package(Git QUIET)
+set(MEGADSP_COMMIT_HASH "unknown")
+if(Git_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --short=7 HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        RESULT_VARIABLE MEGADSP_GIT_RESULT
+        OUTPUT_VARIABLE MEGADSP_GIT_OUTPUT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    string(LENGTH "${MEGADSP_GIT_OUTPUT}" MEGADSP_GIT_OUTPUT_LENGTH)
+    if(MEGADSP_GIT_RESULT EQUAL 0
+       AND MEGADSP_GIT_OUTPUT_LENGTH EQUAL 7
+       AND MEGADSP_GIT_OUTPUT MATCHES "^[0-9a-fA-F]+$")
+        string(TOLOWER "${MEGADSP_GIT_OUTPUT}" MEGADSP_COMMIT_HASH)
+    endif()
+endif()
+message(STATUS
+    "megaDSP build identity: ${PROJECT_VERSION} (${MEGADSP_COMMIT_HASH})")
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -293,6 +313,7 @@ target_sources(megaDSP PRIVATE
     ${MEGADSP_UI_SOURCES}
     src/Diagnostics.cpp
     src/Diagnostics.h
+    src/BuildInfo.h
     src/EffectRack.cpp
     src/EffectRack.h
     src/Parameters.cpp
@@ -312,7 +333,8 @@ target_compile_definitions(megaDSP
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_USE_CURL=0
         JUCE_WEB_BROWSER=0
-        MEGADSP_VERSION="${PROJECT_VERSION}")
+        MEGADSP_VERSION="${PROJECT_VERSION}"
+        MEGADSP_COMMIT_HASH="${MEGADSP_COMMIT_HASH}")
 if(MEGADSP_CAPTURE_SCREENSHOTS)
     target_compile_definitions(megaDSP PRIVATE
         MEGADSP_CAPTURE_SCREENSHOTS=1)
@@ -396,6 +418,7 @@ target_compile_definitions(megaDSPTests PRIVATE
     JUCE_USE_CURL=0
     JUCE_WEB_BROWSER=0
     MEGADSP_VERSION="${PROJECT_VERSION}"
+    MEGADSP_COMMIT_HASH="${MEGADSP_COMMIT_HASH}"
     JucePlugin_Name="megaDSP")
 target_link_libraries(megaDSPTests PRIVATE
     juce::juce_audio_utils

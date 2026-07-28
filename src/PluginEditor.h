@@ -43,6 +43,10 @@ public:
     bool cardChildrenFitForTesting() const;
     bool cardHeightsAreUniformForTesting() const;
     bool rackOverflowsVerticallyForTesting() const;
+    juce::String commitHashForTesting() const
+    {
+        return commitHashButton.getButtonText();
+    }
     int tabCountForTesting() const { return cardCountForTesting(); }
 #endif
 
@@ -81,6 +85,7 @@ private:
 
     MegaDSPAudioProcessor& audioProcessor;
     juce::Label title;
+    juce::TextButton commitHashButton;
     juce::Label instanceLabel;
     juce::TextEditor instanceName;
     juce::TextButton themeButton { "COLOR" };

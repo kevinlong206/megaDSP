@@ -45,7 +45,8 @@ serial slots and twelve fixed generic controls per slot.
   snapshots, including external asset references and schema serialization.
 - `src/PluginProcessor.*`: host buses, state, presets, latency reporting, and
   rack topology operations plus sample-accurate snapshot recall and spill.
-- `src/PluginEditor.*`: tabbed rack shell and semantic module controls.
+- `src/PluginEditor.*`: header identity, snapshots, sticky chain navigator,
+  vertically scrolling card rack, and semantic module controls.
 - `src/ui/*`: reusable effect graph shell, module view interface, and factory.
 - `src/ui/modules/*`: module-specific graph rendering and interactions.
 - `tests/DspModuleTests.cpp`: focused DSP module tests.
@@ -345,3 +346,5 @@ values rather than assertions derived only from mutable constants.
 - Update `README.md` when user-visible processors, controls, compatibility, or
   build instructions change.
 - Do not commit generated build artifacts or installed plugin bundles.
+- Keep the configured semantic version and short Git commit consistent in the
+  editor build label, rotating diagnostics headers, and fatal crash markers.
