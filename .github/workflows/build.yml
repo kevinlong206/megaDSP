@@ -61,7 +61,7 @@ jobs:
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
-          -DMEGADSP_ADHOC_SIGN=OFF
+          -DMEGADSP_ADHOC_SIGN=ON
 
       - name: Configure (Linux)
         if: runner.os == 'Linux'
