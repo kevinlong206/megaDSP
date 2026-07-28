@@ -258,6 +258,12 @@ public:
                 *rackProcessor, 820, 620);
 
             expectEquals(editor->cardCountForTesting(), megadsp::slotCount);
+            expectEquals(
+                editor->chainNavigatorButtonCountForTesting(),
+                megadsp::slotCount);
+            expectEquals(
+                editor->chainInsertButtonCountForTesting(),
+                megadsp::slotCount + 1);
             expect(editor->cardHeightsAreUniformForTesting());
             expect(editor->cardChildrenFitForTesting());
             expect(editor->rackOverflowsVerticallyForTesting());
@@ -268,6 +274,79 @@ public:
             expectEquals(editor->cardCountForTesting(), megadsp::slotCount);
             expect(editor->cardHeightsAreUniformForTesting());
             expect(editor->rackOverflowsVerticallyForTesting());
+
+            editor->clickChainNavigatorForTesting(megadsp::slotCount - 1);
+            expectEquals(
+                editor->selectedCardForTesting(), megadsp::slotCount - 1);
+            expect(editor->selectedCardVisibleForTesting());
+            editor->clickChainNavigatorForTesting(0);
+            expectEquals(editor->selectedCardForTesting(), 0);
+            expect(editor->selectedCardVisibleForTesting());
+        }
+
+        beginTest("Chain navigator reorders and inserts at every boundary");
+        {
+            auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
+            rackProcessor->prepareToPlay(48000.0, 512);
+            rackProcessor->addModule(megadsp::ModuleType::equalizer);
+            rackProcessor->addModule(megadsp::ModuleType::compressor);
+            rackProcessor->addModule(megadsp::ModuleType::delay);
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
+                *rackProcessor, 1100, 720);
+
+            expectEquals(editor->chainInsertButtonCountForTesting(), 4);
+            editor->reorderChainNavigatorForTesting(0, 2, true);
+            expect(rackProcessor->getRack().moduleType(0)
+                   == megadsp::ModuleType::compressor);
+            expect(rackProcessor->getRack().moduleType(1)
+                   == megadsp::ModuleType::delay);
+            expect(rackProcessor->getRack().moduleType(2)
+                   == megadsp::ModuleType::equalizer);
+            expectEquals(editor->selectedCardForTesting(), 2);
+
+            editor->insertModuleFromChainForTesting(
+                megadsp::ModuleType::saturator, 0);
+            expect(rackProcessor->getRack().moduleType(0)
+                   == megadsp::ModuleType::saturator);
+            expect(rackProcessor->getRack().moduleType(1)
+                   == megadsp::ModuleType::compressor);
+            expectEquals(editor->selectedCardForTesting(), 0);
+            expectEquals(editor->chainInsertButtonCountForTesting(), 5);
+
+            editor->insertModuleFromChainForTesting(
+                megadsp::ModuleType::limiter, 2);
+            expect(rackProcessor->getRack().moduleType(2)
+                   == megadsp::ModuleType::limiter);
+            expect(rackProcessor->getRack().moduleType(3)
+                   == megadsp::ModuleType::delay);
+            expect(rackProcessor->getRack().moduleType(4)
+                   == megadsp::ModuleType::equalizer);
+            expectEquals(editor->selectedCardForTesting(), 2);
+            expectEquals(editor->chainInsertButtonCountForTesting(), 6);
+
+            expect(!rackProcessor->isSlotBypassed(2));
+            editor->doubleClickChainNavigatorForTesting(2);
+            expect(rackProcessor->isSlotBypassed(2));
+            editor->doubleClickChainNavigatorForTesting(2);
+            expect(!rackProcessor->isSlotBypassed(2));
+
+            editor->insertModuleFromChainForTesting(
+                megadsp::ModuleType::algorithmicReverb, 5);
+            expect(rackProcessor->getRack().moduleType(5)
+                   == megadsp::ModuleType::algorithmicReverb);
+            expectEquals(editor->selectedCardForTesting(), 5);
+            expectEquals(editor->chainInsertButtonCountForTesting(), 7);
+
+            editor->removeModuleFromChainForTesting(1);
+            expectEquals(editor->cardCountForTesting(), 5);
+            expect(rackProcessor->getRack().moduleType(0)
+                   == megadsp::ModuleType::saturator);
+            expect(rackProcessor->getRack().moduleType(1)
+                   == megadsp::ModuleType::limiter);
+            expect(rackProcessor->getRack().moduleType(2)
+                   == megadsp::ModuleType::delay);
+            expectEquals(editor->selectedCardForTesting(), 1);
+            expectEquals(editor->chainInsertButtonCountForTesting(), 6);
         }
 
         beginTest("Vertical rack follows topology, reorder, and saved selection");

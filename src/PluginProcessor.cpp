@@ -207,6 +207,11 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                          juce::MidiBuffer& midi)
 {
     const auto callbackStart = juce::Time::getHighResolutionTicks();
+    captureRealtimeProfile =
+        megadsp::Diagnostics::instance().isEnabled()
+        && (++diagnosticCallbackCount % 32u) == 0u;
+    if (captureRealtimeProfile)
+        realtimeProfile.reset();
     auto recalledSnapshot = false;
     audioStreamActive.store(true, std::memory_order_release);
     lastAudioBlockSamples.store(
@@ -314,21 +319,22 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             diagnosticInstanceId, lastDiagnosticBlockSize,
             lastDiagnosticChannelCount);
     }
+    const auto elapsedTicks =
+        juce::Time::getHighResolutionTicks() - callbackStart;
+    const auto elapsedMicros = static_cast<std::int64_t>(
+        juce::Time::highResolutionTicksToSeconds(elapsedTicks)
+        * 1000000.0);
     if (recalledSnapshot)
     {
-        const auto elapsedTicks =
-            juce::Time::getHighResolutionTicks() - callbackStart;
-        const auto micros = static_cast<std::int64_t>(
-            juce::Time::highResolutionTicksToSeconds(elapsedTicks)
-            * 1000000.0);
         snapshotRecallDurationMicros.store(
-            micros, std::memory_order_release);
+            elapsedMicros, std::memory_order_release);
         megadsp::Diagnostics::instance().logRealtime(
             megadsp::DiagnosticEvent::snapshotRecallWorkload,
-            diagnosticInstanceId, micros,
+            diagnosticInstanceId, elapsedMicros,
             processedSnapshotGraphCount.load(
                 std::memory_order_relaxed));
     }
+    recordRealtimeDiagnostics(elapsedMicros, main.getNumSamples());
 }
 
 void MegaDSPAudioProcessor::processBlockBypassed(
@@ -396,6 +402,156 @@ void MegaDSPAudioProcessor::processBlockBypassed(
         if (++hostBypassWritePosition >= latency)
             hostBypassWritePosition = 0;
     }
+}
+
+void MegaDSPAudioProcessor::recordRealtimeDiagnostics(
+    std::int64_t elapsedMicros, int blockSamples) noexcept
+{
+    auto& diagnostics = megadsp::Diagnostics::instance();
+    if (!diagnostics.isEnabled() || blockSamples <= 0
+        || preparedSampleRate <= 0.0)
+    {
+        diagnosticWindowSamples = 0;
+        diagnosticWindowCallbacks = 0;
+        diagnosticTotalCallbackMicros = 0;
+        diagnosticMaximumCallbackMicros = 0;
+        diagnosticMinimumDeadlineMicros = 0;
+        diagnosticOverrunCount = 0;
+        diagnosticMaximumGraphCount = 0;
+        accumulatedRealtimeProfile.reset();
+        return;
+    }
+
+    const auto deadlineMicros = juce::jmax<std::int64_t>(
+        1, static_cast<std::int64_t>(juce::roundToInt(
+               1000000.0 * static_cast<double>(blockSamples)
+               / preparedSampleRate)));
+    diagnosticWindowSamples += blockSamples;
+    ++diagnosticWindowCallbacks;
+    diagnosticTotalCallbackMicros += elapsedMicros;
+    diagnosticMaximumCallbackMicros = juce::jmax(
+        diagnosticMaximumCallbackMicros, elapsedMicros);
+    diagnosticMinimumDeadlineMicros =
+        diagnosticMinimumDeadlineMicros == 0
+        ? deadlineMicros
+        : juce::jmin(diagnosticMinimumDeadlineMicros, deadlineMicros);
+    if (elapsedMicros > deadlineMicros)
+        ++diagnosticOverrunCount;
+    diagnosticMaximumGraphCount = juce::jmax(
+        diagnosticMaximumGraphCount,
+        processedSnapshotGraphCount.load(std::memory_order_relaxed));
+    if (captureRealtimeProfile)
+        accumulatedRealtimeProfile.add(realtimeProfile);
+
+    if (diagnosticWindowSamples
+        < static_cast<std::int64_t>(
+            juce::roundToInt(preparedSampleRate)))
+        return;
+
+    const auto averageMicros =
+        diagnosticWindowCallbacks > 0
+        ? diagnosticTotalCallbackMicros / diagnosticWindowCallbacks : 0;
+    const auto packedOverrunsAndGraphs = static_cast<std::int64_t>(
+        (static_cast<std::uint64_t>(
+             static_cast<std::uint32_t>(diagnosticOverrunCount)) << 32)
+        | static_cast<std::uint32_t>(diagnosticMaximumGraphCount));
+    diagnostics.logRealtime(
+        megadsp::DiagnosticEvent::audioCallbackWorkload,
+        diagnosticInstanceId, averageMicros,
+        diagnosticMaximumCallbackMicros,
+        diagnosticMinimumDeadlineMicros,
+        packedOverrunsAndGraphs);
+
+    const auto ticksToMicros = [](std::uint64_t ticks)
+    {
+        return static_cast<std::int64_t>(
+            juce::Time::highResolutionTicksToSeconds(
+                static_cast<juce::int64>(ticks))
+            * 1000000.0);
+    };
+    std::array<bool, megadsp::moduleTypeCount> reportedModules {};
+    for (int rank = 0; rank < 4; ++rank)
+    {
+        size_t hottest = reportedModules.size();
+        for (size_t index = 0; index < reportedModules.size(); ++index)
+            if (!reportedModules[index]
+                && accumulatedRealtimeProfile.moduleTicks[index] > 0
+                && (hottest == reportedModules.size()
+                    || accumulatedRealtimeProfile.moduleTicks[index]
+                        > accumulatedRealtimeProfile.moduleTicks[hottest]))
+                hottest = index;
+        if (hottest == reportedModules.size())
+            break;
+        reportedModules[hottest] = true;
+        const auto calls =
+            accumulatedRealtimeProfile.moduleCalls[hottest];
+        diagnostics.logRealtime(
+            megadsp::DiagnosticEvent::moduleWorkload,
+            diagnosticInstanceId, static_cast<std::int64_t>(hottest),
+            calls > 0
+                ? ticksToMicros(
+                      accumulatedRealtimeProfile.moduleTicks[hottest])
+                      / calls
+                : 0,
+            ticksToMicros(
+                accumulatedRealtimeProfile.moduleMaximumTicks[hottest]),
+            calls);
+    }
+
+    std::array<bool, megadsp::snapshotCount> reportedGraphs {};
+    for (int rank = 0; rank < 4; ++rank)
+    {
+        size_t hottest = reportedGraphs.size();
+        for (size_t index = 0; index < reportedGraphs.size(); ++index)
+            if (!reportedGraphs[index]
+                && accumulatedRealtimeProfile.graphTicks[index] > 0
+                && (hottest == reportedGraphs.size()
+                    || accumulatedRealtimeProfile.graphTicks[index]
+                        > accumulatedRealtimeProfile.graphTicks[hottest]))
+                hottest = index;
+        if (hottest == reportedGraphs.size())
+            break;
+        reportedGraphs[hottest] = true;
+        const auto calls =
+            accumulatedRealtimeProfile.graphCalls[hottest];
+        diagnostics.logRealtime(
+            megadsp::DiagnosticEvent::snapshotGraphWorkload,
+            diagnosticInstanceId, static_cast<std::int64_t>(hottest),
+            calls > 0
+                ? ticksToMicros(
+                      accumulatedRealtimeProfile.graphTicks[hottest])
+                      / calls
+                : 0,
+            ticksToMicros(
+                accumulatedRealtimeProfile.graphMaximumTicks[hottest]),
+            calls);
+    }
+
+    diagnosticWindowSamples = 0;
+    diagnosticWindowCallbacks = 0;
+    diagnosticTotalCallbackMicros = 0;
+    diagnosticMaximumCallbackMicros = 0;
+    diagnosticMinimumDeadlineMicros = 0;
+    diagnosticOverrunCount = 0;
+    diagnosticMaximumGraphCount = 0;
+    accumulatedRealtimeProfile.reset();
+}
+
+void MegaDSPAudioProcessor::processProfiledRack(
+    int snapshot,
+    juce::AudioBuffer<float>& main,
+    const juce::AudioBuffer<float>* sidechain,
+    double bpm)
+{
+    auto* profile = captureRealtimeProfile ? &realtimeProfile : nullptr;
+    const auto start = profile != nullptr
+        ? juce::Time::getHighResolutionTicks() : 0;
+    snapshotRacks[static_cast<size_t>(snapshot)]->process(
+        main, sidechain, bpm, profile);
+    if (profile != nullptr)
+        profile->recordGraph(
+            snapshot, static_cast<std::uint64_t>(
+                juce::Time::getHighResolutionTicks() - start));
 }
 
 void MegaDSPAudioProcessor::updateHostBypassLatency(
@@ -926,8 +1082,7 @@ void MegaDSPAudioProcessor::processSpillSnapshots(
                 snapshotZero.getWritePointer(channel);
         juce::AudioBuffer<float> tail(
             pointers.data(), main.getNumChannels(), main.getNumSamples());
-        snapshotRacks[static_cast<size_t>(spill.snapshot)]
-            ->process(tail, nullptr, bpm);
+        processProfiledRack(spill.snapshot, tail, nullptr, bpm);
 
         applySnapshotSpillFade(
             tail, spill.samplesRemaining,
@@ -1077,8 +1232,8 @@ void MegaDSPAudioProcessor::processLiveSafeSnapshotRange(
             output.clear();
         }
 
-        snapshotRacks[static_cast<size_t>(index)]->process(
-            output, receivesLiveInput ? sidechain : nullptr, bpm);
+        processProfiledRack(
+            index, output, receivesLiveInput ? sidechain : nullptr, bpm);
         if (incoming && snapshotTransition.fadeIncomingOutput)
             applySnapshotTransitionWeight(
                 output, start, end, true);
@@ -1218,7 +1373,9 @@ void MegaDSPAudioProcessor::processSnapshotRange(
         std::memory_order_release);
     if (snapshotTransition.outgoing < 0)
     {
-        getAudioRack().process(main, sidechain, bpm);
+        processProfiledRack(
+            activeAudioSnapshot.load(std::memory_order_relaxed),
+            main, sidechain, bpm);
         processSpillSnapshots(main, sidechain, bpm);
         return;
     }
@@ -1245,10 +1402,10 @@ void MegaDSPAudioProcessor::processSnapshotRange(
     applySnapshotTransitionWeight(outgoing, start, end, false);
     if (!snapshotTransition.fadeIncomingOutput)
         applySnapshotTransitionWeight(main, start, end, true);
-    snapshotRacks[static_cast<size_t>(snapshotTransition.outgoing)]
-        ->process(outgoing, sidechain, bpm);
-    snapshotRacks[static_cast<size_t>(snapshotTransition.incoming)]
-        ->process(main, sidechain, bpm);
+    processProfiledRack(
+        snapshotTransition.outgoing, outgoing, sidechain, bpm);
+    processProfiledRack(
+        snapshotTransition.incoming, main, sidechain, bpm);
     if (snapshotTransition.fadeIncomingOutput)
         applySnapshotTransitionWeight(main, start, end, true);
     for (int channel = 0; channel < main.getNumChannels(); ++channel)

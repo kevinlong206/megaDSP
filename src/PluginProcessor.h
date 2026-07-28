@@ -259,6 +259,13 @@ private:
         juce::AudioBuffer<float>& main,
         const juce::AudioBuffer<float>* sidechain,
         double bpm);
+    void processProfiledRack(
+        int snapshot,
+        juce::AudioBuffer<float>& main,
+        const juce::AudioBuffer<float>* sidechain,
+        double bpm);
+    void recordRealtimeDiagnostics(
+        std::int64_t elapsedMicros, int blockSamples) noexcept;
     void mixLiveSafeSpills(juce::AudioBuffer<float>& main);
     void addSpillSnapshot(int index) noexcept;
     void processSpillSnapshots(
@@ -338,6 +345,17 @@ private:
     std::uint32_t diagnosticInstanceId = 0;
     int lastDiagnosticBlockSize = 0;
     int lastDiagnosticChannelCount = 0;
+    std::uint64_t diagnosticCallbackCount = 0;
+    std::int64_t diagnosticWindowSamples = 0;
+    std::int64_t diagnosticTotalCallbackMicros = 0;
+    std::int64_t diagnosticMaximumCallbackMicros = 0;
+    std::int64_t diagnosticMinimumDeadlineMicros = 0;
+    int diagnosticWindowCallbacks = 0;
+    int diagnosticOverrunCount = 0;
+    int diagnosticMaximumGraphCount = 0;
+    bool captureRealtimeProfile = false;
+    megadsp::RealtimeProcessProfile realtimeProfile;
+    megadsp::RealtimeProcessProfile accumulatedRealtimeProfile;
     int selectedTab = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MegaDSPAudioProcessor)
 };

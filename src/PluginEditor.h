@@ -24,11 +24,21 @@ public:
     void simulateCardHoverForTesting(int slot);
     void simulateCardHoverExitForTesting(int slot);
     void reorderCardForTesting(int source, int destination);
+    void reorderChainNavigatorForTesting(
+        int source, int target, bool dropAfter);
+    void insertModuleFromChainForTesting(
+        megadsp::ModuleType, int position);
+    void doubleClickChainNavigatorForTesting(int slot);
+    void removeModuleFromChainForTesting(int slot);
+    void clickChainNavigatorForTesting(int slot);
     void refreshCardsForTesting();
     bool cardAcceptsAssetDropForTesting(
         int slot, const juce::String& path) const;
     int cardCountForTesting() const { return static_cast<int>(cards.size()); }
     int selectedCardForTesting() const { return selectedSlot; }
+    int chainNavigatorButtonCountForTesting() const;
+    int chainInsertButtonCountForTesting() const;
+    bool selectedCardVisibleForTesting() const;
     int activeVisualizationCardCountForTesting() const;
     bool cardChildrenFitForTesting() const;
     bool cardHeightsAreUniformForTesting() const;
@@ -39,15 +49,19 @@ public:
 private:
     class ModuleCard;
     class HeaderMeter;
+    class ChainIconButton;
+    class ChainSlotButton;
 
     void timerCallback() override;
     void selectSlot(int slot);
     void focusSlot(int slot);
     void restoreFocusedCardAfterHover();
     void refreshCards(bool followProcessorSelection = false);
+    void refreshChainNavigator();
     void revealSelectedCard(bool focus);
-    void showModuleBrowser();
-    void showModuleSearch();
+    void addModuleAt(megadsp::ModuleType, int position);
+    void showModuleBrowser(int insertPosition = -1);
+    void showModuleSearch(int insertPosition = -1);
     void removeSlot(int slot);
     void reorderSlot(int source, int destination);
     void requestRemoveSlot(int slot);
@@ -88,6 +102,12 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> inputAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputAttachment;
     juce::Viewport rackViewport;
+    juce::Component chainNavigatorHost;
+    juce::Label chainNavigatorLabel;
+    std::array<std::unique_ptr<ChainSlotButton>,
+               megadsp::slotCount> chainNavigatorButtons;
+    std::array<std::unique_ptr<ChainIconButton>,
+               megadsp::slotCount + 1> chainInsertButtons;
     juce::Component rackContent;
     std::vector<std::unique_ptr<ModuleCard>> cards;
     juce::TextButton addButton { "+ ADD MODULE" };

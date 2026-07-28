@@ -15,7 +15,10 @@ enum class DiagnosticEvent : std::uint32_t
     topologyChanged,
     stateRejected,
     impulseResponseFailed,
-    snapshotRecallWorkload
+    snapshotRecallWorkload,
+    audioCallbackWorkload,
+    snapshotGraphWorkload,
+    moduleWorkload
 };
 
 class Diagnostics final : private juce::Thread
@@ -36,7 +39,8 @@ public:
     void log(const char* category, const juce::String& message);
     void logRealtime(
         DiagnosticEvent, std::uint32_t instanceId,
-        std::int64_t valueA = 0, std::int64_t valueB = 0) noexcept;
+        std::int64_t valueA = 0, std::int64_t valueB = 0,
+        std::int64_t valueC = 0, std::int64_t valueD = 0) noexcept;
     void updateCrashContext(
         DiagnosticEvent, std::uint32_t instanceId,
         std::int64_t valueA = 0) noexcept;
@@ -53,6 +57,8 @@ private:
         std::uint32_t instanceId = 0;
         std::int64_t valueA = 0;
         std::int64_t valueB = 0;
+        std::int64_t valueC = 0;
+        std::int64_t valueD = 0;
         std::array<char, 192> text {};
     };
 
@@ -60,6 +66,7 @@ private:
     bool enqueue(
         std::uint32_t event, std::uint32_t instanceId,
         std::int64_t valueA, std::int64_t valueB,
+        std::int64_t valueC, std::int64_t valueD,
         const char* text) noexcept;
     void drain();
     void writeHeader();

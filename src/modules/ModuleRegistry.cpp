@@ -1058,6 +1058,123 @@ constexpr Metadata stageVocalMetadata {{
     { "Output", ControlKind::level, true, "Output",
       "Adjusts final level after the complete vocal strip." }
 }};
+constexpr Metadata vinylSimulatorMetadata {{
+    { "Condition", ControlKind::horizontal, true, "Record",
+      "Moves from a clean pressing to worn grooves, softer transients, and darker playback." },
+    { "Crackle", ControlKind::horizontal, true, "Surface",
+      "Sets the level of larger groove clicks and pops." },
+    { "Dust", ControlKind::horizontal, true, "Surface",
+      "Sets the density of fine dust ticks." },
+    { "Scratches", ControlKind::horizontal, true, "Surface",
+      "Sets the likelihood and level of short repeating scratch bursts." },
+    { "Surface Noise", ControlKind::level, false, "Noise Floor",
+      "Sets the continuous shaped groove hiss from -90 to -34 dB." },
+    { "Rumble", ControlKind::level, false, "Mechanics",
+      "Sets low-frequency platter and bearing noise from -90 to -36 dB." },
+    { "Wow", ControlKind::horizontal, true, "Transport",
+      "Sets slow platter-speed pitch movement up to 3.8 ms." },
+    { "Flutter", ControlKind::horizontal, true, "Transport",
+      "Sets faster stylus and motor pitch movement up to 0.65 ms." },
+    { "Tone", ControlKind::horizontal, true, "Playback",
+      "Sets the playback bandwidth from dark vintage to full range." },
+    { "Stereo Spread", ControlKind::horizontal, true, "Stereo",
+      "Spreads synthetic surface texture while preserving mono fold-down." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned clean and vinyl playback paths." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after the complete vinyl simulation." }
+}};
+constexpr Metadata optoLevelerMetadata {{
+    { "Peak Reduction", ControlKind::level, true, "Leveling",
+      "Sets how deeply the program-dependent optical cell reduces level." },
+    { "Gain", ControlKind::level, true, "Output",
+      "Sets the optical leveler's makeup amplifier gain." },
+    { "Mode", ControlKind::choice, true, "Leveling",
+      "Selects the gentler Compress curve or firmer Limit curve." },
+    { "HF Emphasis", ControlKind::horizontal, false, "Detector",
+      "Makes high-frequency peaks drive the optical detector more strongly." },
+    { "Sidechain Low Cut", ControlKind::horizontal, false, "Detector",
+      "Reduces low-frequency influence on gain reduction." },
+    { "Cell Age", ControlKind::horizontal, false, "Optical Cell",
+      "Moves from a fresh cell to slower, more persistent optical memory." },
+    { "Stereo Link", ControlKind::horizontal, true, "Stereo",
+      "Links channel detection to preserve the stereo image." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned dry and leveled signals." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts final level after the analog output stage." },
+    unused, unused, unused
+}};
+constexpr Metadata fetLimiterMetadata {{
+    { "Input", ControlKind::level, true, "Gain",
+      "Drives the signal into the feedback FET gain-reduction circuit." },
+    { "Output", ControlKind::level, true, "Gain",
+      "Sets output-amplifier gain before the final trim." },
+    { "Attack", ControlKind::horizontal, true, "Timing",
+      "Sets the FET detector attack from 20 to 800 microseconds." },
+    { "Release", ControlKind::horizontal, true, "Timing",
+      "Sets gain-reduction recovery from 50 to 1100 milliseconds." },
+    { "Ratio", ControlKind::choice, true, "Compression",
+      "Selects 4:1, 8:1, 12:1, 20:1, or the aggressive ALL mode." },
+    { "Detector Low Cut", ControlKind::horizontal, false, "Detector",
+      "Reduces low-frequency influence on the feedback detector." },
+    { "Stereo Link", ControlKind::horizontal, true, "Stereo",
+      "Links channel detection to preserve the stereo image." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends latency-aligned dry and limited signals." },
+    { "Output Trim", ControlKind::level, true, "Output",
+      "Adjusts final level after the modeled transformer." },
+    unused, unused, unused
+}};
+constexpr Metadata programEqualizerMetadata {{
+    { "Low Frequency", ControlKind::choice, true, "Low Band",
+      "Selects the passive low boost and attenuation frequency." },
+    { "Low Boost", ControlKind::level, true, "Low Band",
+      "Boosts the selected low frequency through the passive network." },
+    { "Low Attenuation", ControlKind::level, true, "Low Band",
+      "Attenuates around the selected low frequency with a different curve." },
+    { "High Boost Frequency", ControlKind::choice, true, "High Boost",
+      "Selects the center frequency of the broad high boost." },
+    { "High Boost", ControlKind::level, true, "High Boost",
+      "Boosts the selected high-frequency region." },
+    { "Bandwidth", ControlKind::horizontal, true, "High Boost",
+      "Moves the high boost from broad to sharp." },
+    { "High Attenuation Frequency", ControlKind::choice, true, "High Cut",
+      "Selects the passive high-attenuation turnover." },
+    { "High Attenuation", ControlKind::level, true, "High Cut",
+      "Attenuates high frequencies above the selected turnover." },
+    { "Drive", ControlKind::level, true, "Amplifier",
+      "Drives the makeup amplifier and transformer coloration." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts final level after the makeup amplifier." },
+    unused, unused
+}};
+constexpr Metadata studioPlateMetadata {{
+    { "Plate Size", ControlKind::choice, true, "Plate",
+      "Selects Compact, Standard, or Large plate geometry." },
+    { "Decay", ControlKind::horizontal, true, "Plate",
+      "Sets the mid-band reverberation time." },
+    { "Damping", ControlKind::horizontal, true, "Plate",
+      "Shortens high-frequency decay as the plate loses energy." },
+    { "Pre-Delay", ControlKind::horizontal, false, "Excitation",
+      "Delays plate excitation while leaving Dry immediate." },
+    { "Low Cut", ControlKind::horizontal, false, "Excitation",
+      "Removes low frequencies before they excite the plate." },
+    { "High Cut", ControlKind::horizontal, false, "Excitation",
+      "Limits high frequencies before they excite the plate." },
+    { "Pickup Spread", ControlKind::horizontal, true, "Stereo Pickups",
+      "Moves the virtual left and right pickups apart across the plate." },
+    { "Width", ControlKind::horizontal, true, "Stereo Pickups",
+      "Scales only the mono-cancelling wet side field." },
+    { "Ducking", ControlKind::level, false, "Wet Field",
+      "Attenuates only the completed wet field while input is active." },
+    { "Dry", ControlKind::level, true, "Output",
+      "Sets immediate dry level independently." },
+    { "Wet", ControlKind::level, true, "Output",
+      "Sets completed plate level independently." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts final level after the dry and wet paths." }
+}};
 constexpr Metadata midnightCurrentMetadata {{
     { "Filter Center", ControlKind::horizontal, true, "Submerged Filter",
       "Sets the center of the dark resonant filter and phase network." },
@@ -1326,6 +1443,28 @@ constexpr Names stageVocalNames {
     "Low Cut", "Expander Threshold", "Expander Range",
     "De-Ess Frequency", "De-Ess Amount", "Compressor Threshold",
     "Ratio", "Attack", "Release", "Presence", "Air", "Output"
+};
+constexpr Names vinylSimulatorNames {
+    "Condition", "Crackle", "Dust", "Scratches", "Surface Noise", "Rumble",
+    "Wow", "Flutter", "Tone", "Stereo Spread", "Mix", "Output"
+};
+constexpr Names optoLevelerNames {
+    "Peak Reduction", "Gain", "Mode", "HF Emphasis", "Sidechain Low Cut",
+    "Cell Age", "Stereo Link", "Mix", "Output", "-", "-", "-"
+};
+constexpr Names fetLimiterNames {
+    "Input", "Output", "Attack", "Release", "Ratio", "Detector Low Cut",
+    "Stereo Link", "Mix", "Output Trim", "-", "-", "-"
+};
+constexpr Names programEqualizerNames {
+    "Low Frequency", "Low Boost", "Low Attenuation",
+    "High Boost Frequency", "High Boost", "Bandwidth",
+    "High Attenuation Frequency", "High Attenuation", "Drive", "Output",
+    "-", "-"
+};
+constexpr Names studioPlateNames {
+    "Plate Size", "Decay", "Damping", "Pre-Delay", "Low Cut", "High Cut",
+    "Pickup Spread", "Width", "Ducking", "Dry", "Wet", "Output"
 };
 constexpr Names midnightCurrentNames {
     "Filter Center", "Filter Sweep", "Motion Rate", "Phase Depth",
@@ -1636,6 +1775,19 @@ ControlOptions optionsFor(ModuleType type, int control)
         return { { "Low Pass", "Band Pass", "Peak", "Classic Wah" }, 4 };
     if (type == ModuleType::resonantSculpture && control == 0)
         return { { "String", "Glass", "Metal", "Membrane" }, 4 };
+    if (type == ModuleType::optoLeveler && control == 2)
+        return { { "Compress", "Limit" }, 2 };
+    if (type == ModuleType::fetLimiter && control == 4)
+        return { { "4:1", "8:1", "12:1", "20:1", "ALL" }, 5 };
+    if (type == ModuleType::programEqualizer && control == 0)
+        return { { "20 Hz", "30 Hz", "60 Hz", "100 Hz" }, 4 };
+    if (type == ModuleType::programEqualizer && control == 3)
+        return { { "3 kHz", "4 kHz", "5 kHz", "8 kHz",
+                   "10 kHz", "12 kHz", "16 kHz" }, 7 };
+    if (type == ModuleType::programEqualizer && control == 6)
+        return { { "5 kHz", "10 kHz", "20 kHz" }, 3 };
+    if (type == ModuleType::studioPlate && control == 0)
+        return { { "Compact", "Standard", "Large" }, 3 };
     return {};
 }
 
@@ -2103,6 +2255,67 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 exponentialNormalized(30.0f, 800.0f, 120.0f),
                 linearNormalized(-6.0f, 6.0f, 1.0f),
                 linearNormalized(-6.0f, 6.0f, 1.5f),
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::vinylSimulator:
+            values = {
+                0.35f, 0.32f, 0.28f, 0.08f,
+                linearNormalized(-90.0f, -34.0f, -62.0f),
+                linearNormalized(-90.0f, -36.0f, -72.0f),
+                0.12f, 0.10f, 0.78f, 0.55f, 1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::optoLeveler:
+            values = {
+                0.40f, linearNormalized(-12.0f, 24.0f, 0.0f),
+                discreteValue(0, 2), 0.35f,
+                exponentialNormalized(20.0f, 300.0f, 60.0f),
+                0.35f, 1.0f, 1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.0f, 0.0f, 0.0f
+            };
+            break;
+        case ModuleType::fetLimiter:
+            values = {
+                linearNormalized(-24.0f, 24.0f, 0.0f),
+                linearNormalized(-24.0f, 24.0f, 0.0f),
+                exponentialNormalized(20.0f, 800.0f, 200.0f),
+                exponentialNormalized(50.0f, 1100.0f, 300.0f),
+                discreteValue(0, 5),
+                exponentialNormalized(20.0f, 300.0f, 60.0f),
+                1.0f, 1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.0f, 0.0f, 0.0f
+            };
+            break;
+        case ModuleType::programEqualizer:
+            values = {
+                discreteValue(1, 4),
+                linearNormalized(0.0f, 14.0f, 0.0f),
+                linearNormalized(0.0f, 18.0f, 0.0f),
+                discreteValue(3, 7),
+                linearNormalized(0.0f, 18.0f, 0.0f),
+                0.45f,
+                discreteValue(1, 3),
+                linearNormalized(0.0f, 18.0f, 0.0f),
+                linearNormalized(-12.0f, 18.0f, 0.0f),
+                linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.0f, 0.0f
+            };
+            break;
+        case ModuleType::studioPlate:
+            values = {
+                discreteValue(1, 3),
+                exponentialNormalized(0.5f, 8.0f, 2.4f),
+                0.45f,
+                exponentialNormalized(1.0f, 200.0f, 20.0f),
+                exponentialNormalized(20.0f, 800.0f, 80.0f),
+                exponentialNormalized(2000.0f, 20000.0f, 12000.0f),
+                0.65f, 0.75f,
+                linearNormalized(0.0f, 18.0f, 0.0f),
+                1.0f, 0.18f,
                 linearNormalized(-18.0f, 12.0f, 0.0f)
             };
             break;
@@ -2800,6 +3013,82 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 11)
                 return juce::String(linear(-18.0f, 12.0f, value), 1)
                     + " dB";
+            break;
+        case ModuleType::vinylSimulator:
+            if (control >= 0 && control <= 3)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 4)
+                return juce::String(linear(-90.0f, -34.0f, value), 1)
+                    + " dB";
+            if (control == 5)
+                return juce::String(linear(-90.0f, -36.0f, value), 1)
+                    + " dB";
+            if (control == 6)
+                return juce::String(value * 3.8f, 2) + " ms";
+            if (control == 7)
+                return juce::String(value * 0.65f, 2) + " ms";
+            if (control >= 8 && control <= 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1)
+                    + " dB";
+            break;
+        case ModuleType::optoLeveler:
+            if (control == 0 || control == 3 || control == 5
+                || control == 6 || control == 7)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 1)
+                return juce::String(linear(-12.0f, 24.0f, value), 1) + " dB";
+            if (control == 4)
+                return formatFrequency(exponential(20.0f, 300.0f, value));
+            if (control == 8)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::fetLimiter:
+            if (control == 0 || control == 1)
+                return juce::String(linear(-24.0f, 24.0f, value), 1) + " dB";
+            if (control == 2)
+                return juce::String(exponential(20.0f, 800.0f, value), 0)
+                    + " us";
+            if (control == 3)
+                return juce::String(exponential(50.0f, 1100.0f, value), 0)
+                    + " ms";
+            if (control == 5)
+                return formatFrequency(exponential(20.0f, 300.0f, value));
+            if (control == 6 || control == 7)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 8)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::programEqualizer:
+            if (control == 1)
+                return juce::String(linear(0.0f, 14.0f, value), 1) + " dB";
+            if (control == 2 || control == 4 || control == 7)
+                return juce::String(linear(0.0f, 18.0f, value), 1) + " dB";
+            if (control == 5)
+                return juce::String(value * 100.0f, 0) + "% sharp";
+            if (control == 8)
+                return juce::String(linear(-12.0f, 18.0f, value), 1) + " dB";
+            if (control == 9)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::studioPlate:
+            if (control == 1)
+                return juce::String(exponential(0.5f, 8.0f, value), 2) + " s";
+            if (control == 2 || control == 6 || control == 7
+                || control == 9 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 3)
+                return juce::String(exponential(1.0f, 200.0f, value), 1)
+                    + " ms";
+            if (control == 4)
+                return formatFrequency(exponential(20.0f, 800.0f, value));
+            if (control == 5)
+                return formatFrequency(exponential(2000.0f, 20000.0f, value));
+            if (control == 8)
+                return juce::String(linear(0.0f, 18.0f, value), 1) + " dB";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::midnightCurrent:
             if (control == 0)
@@ -3521,6 +3810,81 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 11)
                 return linearNormalized(-18.0f, 12.0f, value);
             break;
+        case ModuleType::vinylSimulator:
+            if ((control >= 0 && control <= 3)
+                || (control >= 8 && control <= 10))
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 4)
+                return linearNormalized(-90.0f, -34.0f, value);
+            if (control == 5)
+                return linearNormalized(-90.0f, -36.0f, value);
+            if (control == 6)
+                return juce::jlimit(0.0f, 1.0f, value / 3.8f);
+            if (control == 7)
+                return juce::jlimit(0.0f, 1.0f, value / 0.65f);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::optoLeveler:
+            if (control == 0 || control == 3 || control == 5
+                || control == 6 || control == 7)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 1)
+                return linearNormalized(-12.0f, 24.0f, value);
+            if (control == 4)
+                return exponentialNormalized(
+                    20.0f, 300.0f, parsedFrequency(text, value));
+            if (control == 8)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::fetLimiter:
+            if (control == 0 || control == 1)
+                return linearNormalized(-24.0f, 24.0f, value);
+            if (control == 2)
+                return exponentialNormalized(20.0f, 800.0f, value);
+            if (control == 3)
+                return exponentialNormalized(
+                    50.0f, 1100.0f, parsedMilliseconds(text, value));
+            if (control == 5)
+                return exponentialNormalized(
+                    20.0f, 300.0f, parsedFrequency(text, value));
+            if (control == 6 || control == 7)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 8)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::programEqualizer:
+            if (control == 1)
+                return linearNormalized(0.0f, 14.0f, value);
+            if (control == 2 || control == 4 || control == 7)
+                return linearNormalized(0.0f, 18.0f, value);
+            if (control == 5)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 8)
+                return linearNormalized(-12.0f, 18.0f, value);
+            if (control == 9)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::studioPlate:
+            if (control == 1)
+                return exponentialNormalized(0.5f, 8.0f, value);
+            if (control == 2 || control == 6 || control == 7
+                || control == 9 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 3)
+                return exponentialNormalized(
+                    1.0f, 200.0f, parsedMilliseconds(text, value));
+            if (control == 4)
+                return exponentialNormalized(
+                    20.0f, 800.0f, parsedFrequency(text, value));
+            if (control == 5)
+                return exponentialNormalized(
+                    2000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 8)
+                return linearNormalized(0.0f, 18.0f, value);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
         case ModuleType::midnightCurrent:
             if (control == 0)
                 return exponentialNormalized(
@@ -3651,7 +4015,12 @@ bool isControlContextuallyVisible(
                 return values[2] >= 0.5f;
             break;
         case ModuleType::neuralAmpModeler:
-        case ModuleType::stageVocal: break;
+        case ModuleType::stageVocal:
+        case ModuleType::vinylSimulator:
+        case ModuleType::optoLeveler:
+        case ModuleType::fetLimiter:
+        case ModuleType::programEqualizer:
+        case ModuleType::studioPlate: break;
         case ModuleType::empty:
         case ModuleType::equalizer:
         case ModuleType::saturator:
@@ -3823,7 +4192,8 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "convolution reverb impulse response ir room space ducking high pass",
             convolutionReverbNames, convolutionReverbMetadata,
             &makeModule<ConvolutionReverbModule>,
-            ModuleCapability::impulseResponse),
+            ModuleCapability::impulseResponse
+                | ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::dynamicEqualizer,
             ModulePresentation::dynamicEqualizer, "Dynamic EQ / De-Esser",
@@ -4128,6 +4498,52 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "stage live vocal microphone expander deesser compressor presence air strip",
             stageVocalNames, stageVocalMetadata,
             &makeModule<StageVocalModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::vinylSimulator,
+            ModulePresentation::vinylSimulator, "Vinyl Simulator",
+            ModuleCategory::saturationAndColor,
+            "Recreate worn record playback with deterministic groove noise, crackle, dust, scratches, rumble, and pitch drift.",
+            "vinyl record turntable phonograph crackle dust scratch surface noise "
+            "rumble wow flutter lofi",
+            vinylSimulatorNames, vinylSimulatorMetadata,
+            &makeModule<VinylSimulatorModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::optoLeveler,
+            ModulePresentation::optoLeveler, "Opto Leveler",
+            ModuleCategory::dynamics,
+            "Program-dependent optical leveling with a dual-memory cell and analog makeup stage.",
+            "classic studio optical leveler tube feedback compressor smooth vocal bass",
+            optoLevelerNames, optoLevelerMetadata,
+            &makeModule<OptoLevelerModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::fetLimiter,
+            ModulePresentation::fetLimiter, "FET Limiter",
+            ModuleCategory::dynamics,
+            "Fast feedback FET limiting with stepped ratios and an aggressive ALL mode.",
+            "classic studio fet limiter feedback compressor all ratio fast drums vocal",
+            fetLimiterNames, fetLimiterMetadata,
+            &makeModule<FetLimiterModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::programEqualizer,
+            ModulePresentation::programEqualizer, "Program Equalizer",
+            ModuleCategory::eqAndFilters,
+            "Interacting passive low boost and attenuation with broad high-frequency shaping.",
+            "classic studio passive program equalizer tube broad boost attenuation",
+            programEqualizerNames, programEqualizerMetadata,
+            &makeModule<ProgramEqualizerModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::studioPlate,
+            ModulePresentation::studioPlate, "Studio Plate",
+            ModuleCategory::reverbAndSpace,
+            "Physically informed electromechanical plate reverb with stereo pickup geometry.",
+            "classic studio plate reverb electromechanical modal dense metal pickup",
+            studioPlateNames, studioPlateMetadata,
+            &makeModule<StudioPlateModule>,
             ModuleCapability::continuousTelemetry)
     }};
     return definitions;

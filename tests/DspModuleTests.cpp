@@ -943,22 +943,27 @@ public:
         controls = moduleDefaults(ModuleType::convolutionReverb);
         controls[2] = 1.0f;
         controls[4] = 0.0f;
+        auto telemetryEnvironment = environment;
+        telemetryEnvironment.captureTelemetry = true;
         juce::AudioBuffer<float> convolutionBlock(2, 512);
         for (int block = 0; block < 4; ++block)
         {
             convolutionBlock.clear();
-            convolution.process(convolutionBlock, controls, environment);
+            convolution.process(
+                convolutionBlock, controls, telemetryEnvironment);
         }
         convolutionBlock.clear();
         convolutionBlock.setSample(0, 0, 1.0f);
         convolutionBlock.setSample(1, 0, 1.0f);
-        convolution.process(convolutionBlock, controls, environment);
+        convolution.process(
+            convolutionBlock, controls, telemetryEnvironment);
         const auto wetOnlyDirect = convolutionBlock.getSample(0, 0);
         float tailPeak = 0.0f;
         for (int block = 0; block < 8; ++block)
         {
             convolutionBlock.clear();
-            convolution.process(convolutionBlock, controls, environment);
+            convolution.process(
+                convolutionBlock, controls, telemetryEnvironment);
             tailPeak = juce::jmax(
                 tailPeak, convolutionBlock.getMagnitude(
                     0, convolutionBlock.getNumSamples()));
@@ -972,6 +977,86 @@ public:
         expect(tailPeak > 0.0001f,
                "Loaded IR did not produce its delayed reflection; peak="
                    + juce::String(tailPeak, 6));
+        ContinuousTelemetrySnapshot convolutionTelemetry;
+        expect(convolution.readContinuousTelemetry(convolutionTelemetry));
+        expect(convolutionTelemetry.sequence > 0);
+        expectEquals(
+            static_cast<int>(convolutionTelemetry.valueCount),
+            static_cast<int>(
+                ConvolutionReverbModule::telemetryValueCount));
+        expectEquals(
+            static_cast<int>(convolutionTelemetry.historyValueCount),
+            static_cast<int>(
+                ConvolutionReverbModule::telemetryHistoryCount));
+        expect(convolutionTelemetry.historyCount >= 2);
+        auto stereoDifferenceSeen = false;
+        for (std::uint32_t point = 0;
+             point < convolutionTelemetry.historyCount; ++point)
+        {
+            stereoDifferenceSeen = stereoDifferenceSeen
+                || std::abs(
+                       continuousTelemetryHistoryValue(
+                           convolutionTelemetry,
+                           ConvolutionReverbModule::leftWetHistory, point)
+                       - continuousTelemetryHistoryValue(
+                           convolutionTelemetry,
+                           ConvolutionReverbModule::rightWetHistory, point))
+                       > 0.000001f;
+            for (const auto lane : {
+                     ConvolutionReverbModule::leftBrightnessHistory,
+                     ConvolutionReverbModule::rightBrightnessHistory })
+            {
+                const auto brightness = continuousTelemetryHistoryValue(
+                    convolutionTelemetry, lane, point);
+                expect(std::isfinite(brightness));
+                expect(brightness >= 0.0f && brightness <= 1.0f);
+            }
+        }
+        expect(stereoDifferenceSeen);
+        auto spectrumEnergySeen = false;
+        for (int band = 0;
+             band < ConvolutionReverbModule::spectrumBandCount; ++band)
+        {
+            const auto magnitude = convolutionTelemetry.values[
+                static_cast<size_t>(
+                    ConvolutionReverbModule::spectrumBandStart + band)];
+            expect(std::isfinite(magnitude));
+            expect(magnitude >= 0.0f);
+            spectrumEnergySeen = spectrumEnergySeen || magnitude > 0.0f;
+        }
+        expect(spectrumEnergySeen);
+
+        beginTest("Convolution telemetry is independent of Wet level");
+        controls[2] = 0.0f;
+        telemetryEnvironment.captureTelemetry = false;
+        for (int block = 0; block < 4; ++block)
+        {
+            convolutionBlock.clear();
+            convolution.process(
+                convolutionBlock, controls, telemetryEnvironment);
+        }
+        telemetryEnvironment.captureTelemetry = true;
+        auto zeroWetTelemetryEnergy = 0.0f;
+        for (int block = 0; block < 9; ++block)
+        {
+            convolutionBlock.clear();
+            if (block == 0)
+            {
+                convolutionBlock.setSample(0, 0, 1.0f);
+                convolutionBlock.setSample(1, 0, 1.0f);
+            }
+            convolution.process(
+                convolutionBlock, controls, telemetryEnvironment);
+            ContinuousTelemetrySnapshot snapshot;
+            expect(convolution.readContinuousTelemetry(snapshot));
+            for (int band = 0;
+                 band < ConvolutionReverbModule::spectrumBandCount; ++band)
+                zeroWetTelemetryEnergy = juce::jmax(
+                    zeroWetTelemetryEnergy,
+                    snapshot.values[static_cast<size_t>(
+                        ConvolutionReverbModule::spectrumBandStart + band)]);
+        }
+        expect(zeroWetTelemetryEnergy > 0.000001f);
 
         beginTest("Mono IR wet output stays centered for asymmetric input");
         const auto monoImpulseFile =

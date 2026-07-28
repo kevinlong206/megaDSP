@@ -74,7 +74,12 @@ constexpr std::array<ViewCreator,
         &createAutoWahView,
         &createResonantSculptureView,
         &createNeuralAmpModelerView,
-        &createStageVocalView
+        &createStageVocalView,
+        &createVinylSimulatorView,
+        &createOptoLevelerView,
+        &createFetLimiterView,
+        &createProgramEqualizerView,
+        &createStudioPlateView
     };
 
 static_assert([]

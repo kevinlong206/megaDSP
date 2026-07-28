@@ -10,6 +10,21 @@
 
 namespace megadsp
 {
+struct RealtimeProcessProfile
+{
+    std::array<std::uint64_t, moduleTypeCount> moduleTicks {};
+    std::array<std::uint64_t, moduleTypeCount> moduleMaximumTicks {};
+    std::array<std::uint32_t, moduleTypeCount> moduleCalls {};
+    std::array<std::uint64_t, snapshotCount> graphTicks {};
+    std::array<std::uint64_t, snapshotCount> graphMaximumTicks {};
+    std::array<std::uint32_t, snapshotCount> graphCalls {};
+
+    void reset() noexcept { *this = {}; }
+    void add(const RealtimeProcessProfile& other) noexcept;
+    void recordModule(ModuleType type, std::uint64_t ticks) noexcept;
+    void recordGraph(int snapshot, std::uint64_t ticks) noexcept;
+};
+
 class EffectRack
 {
 public:
@@ -40,7 +55,8 @@ public:
     void reset();
     void process(juce::AudioBuffer<float>& main,
                  const juce::AudioBuffer<float>* sidechain,
-                 double bpm);
+                 double bpm,
+                 RealtimeProcessProfile* profile = nullptr);
 
     ModuleType moduleType(int slot) const;
     ModuleType activeModuleType(int slot) const;
@@ -133,7 +149,8 @@ private:
 
     void processChunk(juce::AudioBuffer<float>& main,
                       const juce::AudioBuffer<float>* sidechain,
-                      double bpm);
+                      double bpm,
+                      RealtimeProcessProfile* profile);
     ModuleType requestedType(const Slot&) const;
     DspModule* selectedModule(Slot&);
     const DspModule* selectedModule(const Slot&) const;

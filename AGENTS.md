@@ -17,7 +17,8 @@ serial slots and twelve fixed generic controls per slot.
   Spectral Delay Canvas 35, Formant Forge 36, Harmonic Mirage 37, Chaos Field
   38, Time Mosaic 39, Guitar Cabinet 40, Chord Loom 41, Volume Swell 42,
   Spectral Nebula 43, Midnight Current 44, Auto Wah 45, Resonant Sculpture 46,
-  Neural Amp Modeler 47, and Stage Vocal 48.
+  Neural Amp Modeler 47, Stage Vocal 48, Vinyl Simulator 49, Opto Leveler 50,
+  FET Limiter 51, Program Equalizer 52, and Studio Plate 53.
 - Preserve the eight-slot, twelve-control host parameter topology and existing
   parameter IDs.
 - Keep state migration compatible with schema 2 through current schema 11.
@@ -161,6 +162,22 @@ parsing/formatting, and tests.
   hiss stays energy-gated, feedback-free wear remains bounded, and the reel,
   modulation, dropout, and signal visuals use capture-gated DSP telemetry rather
   than editor-clock animation.
+- Vinyl Simulator uses deterministic dust, crackle, scratch, surface-noise, and
+  rumble generators plus one fixed latency-aligned transport delay for wow and
+  flutter. Synthetic stereo texture cancels on fold-down, Mix zero remains
+  latency-aligned dry, and the record view uses capture-gated measured activity.
+- Opto Leveler uses a feedback detector and dual-memory optical cell with
+  program-dependent recovery. FET Limiter uses a feedback topology with
+  calibrated sub-millisecond attack and a distinct ALL-ratio mode. Both keep
+  their fixed nonlinear latency aligned at Mix zero, link stereo detection, and
+  publish only capture-gated measured dynamics telemetry.
+- Program Equalizer models low boost and attenuation as separate interacting
+  passive networks followed by one fixed-latency bounded makeup stage. Stepped
+  frequency changes crossfade, and its graph shows the actual combined response.
+- Studio Plate keeps immediate Dry and zero host PDC while a prepared modal/FDN
+  wet field supplies plate onset and dense frequency-dependent decay. Structural
+  changes preserve the tail, completed-wet ducking does not affect Dry, and its
+  synthetic pickup side field cancels on mono fold-down.
 - Resonance Tamer and Spectral Balance share only the prepared fixed-latency
   STFT foundation; their detection, smoothing, targets, and correction behavior
   remain module-specific. Amount-zero or Mix-zero paths stay latency-aligned,
@@ -232,6 +249,11 @@ ctest --test-dir build --output-on-failure
 
 On non-Apple platforms, omit `megaDSP_AU`. Use the existing build and test
 tooling; do not introduce a new framework for a local change.
+
+After every code change, rebuild `megaDSP_VST3` and reinstall the freshly built
+bundle in the platform's local VST3 plugin directory. Never leave the installed
+development copy stale. Do not launch REAPER; if it was already running, ask
+for a full restart after installation.
 
 Before installing a release:
 

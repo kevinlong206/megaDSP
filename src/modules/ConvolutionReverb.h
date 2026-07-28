@@ -6,9 +6,32 @@ namespace megadsp
 {
 class ConvolutionReverbModule final
     : public DspModule,
-      public ImpulseResponseCapability
+      public ImpulseResponseCapability,
+      public ContinuousTelemetryCapability
 {
 public:
+    static constexpr int spectrumBandCount = 12;
+
+    enum TelemetryValue
+    {
+        leftWetLevel,
+        rightWetLevel,
+        outputChannelCount,
+        spectrumBandStart,
+        telemetryValueCount = spectrumBandStart + spectrumBandCount
+    };
+
+    enum TelemetryHistory
+    {
+        leftWetHistory,
+        rightWetHistory,
+        leftBrightnessHistory,
+        rightBrightnessHistory,
+        telemetryHistoryCount
+    };
+    static_assert(
+        telemetryValueCount <= continuousTelemetryValueCapacity);
+
     ConvolutionReverbModule();
     ~ConvolutionReverbModule() override;
     void prepare(const juce::dsp::ProcessSpec& spec) override;
@@ -58,6 +81,12 @@ public:
     {
         return this;
     }
+    bool readContinuousTelemetry(
+        ContinuousTelemetrySnapshot&) const noexcept override;
+    ContinuousTelemetryCapability*
+        continuousTelemetryCapability() noexcept override { return this; }
+    const ContinuousTelemetryCapability*
+        continuousTelemetryCapability() const noexcept override { return this; }
 
 private:
     struct Engine;
@@ -86,6 +115,20 @@ private:
     std::atomic<double> impulseLengthSeconds { 0.0 };
     float duckEnvelope = 0.0f;
     float duckGainDb = 0.0f;
+    ContinuousTelemetrySnapshot telemetryState;
+    FixedAtomicSnapshot<ContinuousTelemetrySnapshot> telemetry;
+    std::array<double, 2> telemetryEnergy {};
+    std::array<std::array<double, spectrumBandCount>, 2>
+        telemetrySpectrumEnergy {};
+    std::array<
+        std::array<float, spectrumBandCount - 1>, 2>
+        telemetrySpectrumLowpass {};
+    std::array<float, spectrumBandCount - 1>
+        telemetrySpectrumCoefficients {};
+    int telemetrySampleCount = 0;
+    int telemetryCountdown = 1;
+    int telemetryInterval = 1;
+    bool telemetryWasCapturing = false;
     mutable juce::CriticalSection metadataLock;
     juce::String loadedImpulseName;
     ImpulseResponsePreview preview {};

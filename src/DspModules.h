@@ -49,3 +49,8 @@
 #include "modules/ResonantSculpture.h"
 #include "modules/NeuralAmpModeler.h"
 #include "modules/StageVocal.h"
+#include "modules/VinylSimulator.h"
+#include "modules/OptoLeveler.h"
+#include "modules/FetLimiter.h"
+#include "modules/ProgramEqualizer.h"
+#include "modules/StudioPlate.h"

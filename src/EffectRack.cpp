@@ -3,6 +3,49 @@
 
 namespace megadsp
 {
+void RealtimeProcessProfile::add(
+    const RealtimeProcessProfile& other) noexcept
+{
+    for (size_t index = 0; index < moduleTicks.size(); ++index)
+    {
+        moduleTicks[index] += other.moduleTicks[index];
+        moduleMaximumTicks[index] = juce::jmax(
+            moduleMaximumTicks[index], other.moduleMaximumTicks[index]);
+        moduleCalls[index] += other.moduleCalls[index];
+    }
+    for (size_t index = 0; index < graphTicks.size(); ++index)
+    {
+        graphTicks[index] += other.graphTicks[index];
+        graphMaximumTicks[index] = juce::jmax(
+            graphMaximumTicks[index], other.graphMaximumTicks[index]);
+        graphCalls[index] += other.graphCalls[index];
+    }
+}
+
+void RealtimeProcessProfile::recordModule(
+    ModuleType type, std::uint64_t ticks) noexcept
+{
+    const auto index = static_cast<size_t>(type);
+    if (index >= moduleTicks.size())
+        return;
+    moduleTicks[index] += ticks;
+    moduleMaximumTicks[index] = juce::jmax(
+        moduleMaximumTicks[index], ticks);
+    ++moduleCalls[index];
+}
+
+void RealtimeProcessProfile::recordGraph(
+    int snapshot, std::uint64_t ticks) noexcept
+{
+    if (!juce::isPositiveAndBelow(snapshot, snapshotCount))
+        return;
+    const auto index = static_cast<size_t>(snapshot);
+    graphTicks[index] += ticks;
+    graphMaximumTicks[index] = juce::jmax(
+        graphMaximumTicks[index], ticks);
+    ++graphCalls[index];
+}
+
 namespace
 {
 void retainPeak(std::atomic<float>& destination, float value)
@@ -338,11 +381,12 @@ void EffectRack::reset()
 
 void EffectRack::process(juce::AudioBuffer<float>& main,
                          const juce::AudioBuffer<float>* sidechain,
-                         double bpm)
+                         double bpm,
+                         RealtimeProcessProfile* profile)
 {
     if (main.getNumSamples() <= maximumBlockSize)
     {
-        processChunk(main, sidechain, bpm);
+        processChunk(main, sidechain, bpm, profile);
         return;
     }
 
@@ -367,13 +411,15 @@ void EffectRack::process(juce::AudioBuffer<float>& main,
                                    sidechain->getNumChannels(), samples);
         }
         processChunk(mainChunk,
-                     sidechainChunk.has_value() ? &*sidechainChunk : nullptr, bpm);
+                     sidechainChunk.has_value() ? &*sidechainChunk : nullptr,
+                     bpm, profile);
     }
 }
 
 void EffectRack::processChunk(juce::AudioBuffer<float>& main,
                               const juce::AudioBuffer<float>* sidechain,
-                              double bpm)
+                              double bpm,
+                              RealtimeProcessProfile* profile)
 {
     juce::ScopedNoDenormals noDenormals;
     inputGainLinear.setTargetValue(juce::Decibels::decibelsToGain(inputGain->load()));
@@ -464,7 +510,14 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
                 slot.wet.setTargetValue(1.0f);
         }
         const auto controlValues = slot.values();
+        const auto profileStart = profile != nullptr
+            ? juce::Time::getHighResolutionTicks() : 0;
         module->process(main, controlValues, environment);
+        if (profile != nullptr)
+            profile->recordModule(
+                slot.activeType,
+                static_cast<std::uint64_t>(
+                    juce::Time::getHighResolutionTicks() - profileStart));
         if (captureVisualization)
         {
             visualization.captureOutput(slotIndex, main);

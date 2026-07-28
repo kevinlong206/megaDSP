@@ -51,7 +51,7 @@ public:
         beginTest("Category matching supports multiple tokens");
         const auto colorModules = flatten(
             megadsp::ui::filterAndGroupModules("SATURATION & color"));
-        expectEquals(static_cast<int>(colorModules.size()), 5);
+        expectEquals(static_cast<int>(colorModules.size()), 6);
         expect(std::find(colorModules.begin(), colorModules.end(),
                          megadsp::ModuleType::saturator)
                != colorModules.end());
@@ -66,6 +66,9 @@ public:
                != colorModules.end());
         expect(std::find(colorModules.begin(), colorModules.end(),
                         megadsp::ModuleType::guitarCabinet)
+               != colorModules.end());
+        expect(std::find(colorModules.begin(), colorModules.end(),
+                         megadsp::ModuleType::vinylSimulator)
                != colorModules.end());
 
         beginTest("Description matching finds module copy");
@@ -97,6 +100,21 @@ public:
         expectOnly(
             "stage microphone deesser",
             megadsp::ModuleType::stageVocal);
+        expectOnly(
+            "turntable phonograph crackle",
+            megadsp::ModuleType::vinylSimulator);
+        expectOnly(
+            "optical leveler tube feedback",
+            megadsp::ModuleType::optoLeveler);
+        expectOnly(
+            "fet limiter all ratio",
+            megadsp::ModuleType::fetLimiter);
+        expectOnly(
+            "passive program equalizer",
+            megadsp::ModuleType::programEqualizer);
+        expectOnly(
+            "electromechanical plate pickup",
+            megadsp::ModuleType::studioPlate);
 
         beginTest("Next-ten search identities are unique");
         const std::array nextTenSearches {
@@ -189,8 +207,8 @@ public:
         {
             const auto& eqGroup = allGroups.front();
             expect(eqGroup.category == megadsp::ModuleCategory::eqAndFilters);
-            expectEquals(static_cast<int>(eqGroup.modules.size()), 5);
-            if (eqGroup.modules.size() == 5)
+            expectEquals(static_cast<int>(eqGroup.modules.size()), 6);
+            if (eqGroup.modules.size() == 6)
             {
                 expect(eqGroup.modules[0] == megadsp::ModuleType::equalizer);
                 expect(eqGroup.modules[1]
@@ -201,6 +219,8 @@ public:
                        == megadsp::ModuleType::spectralBalance);
                 expect(eqGroup.modules[4]
                        == megadsp::ModuleType::autoWah);
+                expect(eqGroup.modules[5]
+                       == megadsp::ModuleType::programEqualizer);
             }
         }
 

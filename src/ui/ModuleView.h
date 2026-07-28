@@ -15,6 +15,10 @@ public:
 
     virtual void configureAccessibility(juce::Component&) const {}
     virtual bool usesFullPanel() const { return false; }
+    virtual bool showsSharedControlReadout() const
+    {
+        return !usesFullPanel();
+    }
     virtual bool usesSpectrum() const { return false; }
     virtual void paint(juce::Graphics&, juce::Rectangle<float>) = 0;
     virtual void mouseDown(const juce::MouseEvent&) {}

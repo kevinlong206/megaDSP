@@ -1471,6 +1471,221 @@ private:
     bool canStartDrag = false;
 };
 
+class MegaDSPAudioProcessorEditor::ChainIconButton final
+    : public juce::Button
+{
+public:
+    enum class Icon
+    {
+        add,
+        remove
+    };
+
+    explicit ChainIconButton(Icon iconToUse)
+        : juce::Button(iconToUse == Icon::add ? "Insert" : "Remove"),
+          icon(iconToUse)
+    {
+    }
+
+    void paintButton(
+        juce::Graphics& graphics, bool highlighted, bool down) override
+    {
+        const auto enabled = isEnabled();
+        const auto base = icon == Icon::add
+            ? juce::Colour(0xff222c38)
+            : juce::Colour(0xff33404e);
+        graphics.setColour(
+            enabled
+                ? base.brighter(down ? 0.22f : highlighted ? 0.12f : 0.0f)
+                : base.withAlpha(0.35f));
+        graphics.fillRoundedRectangle(
+            getLocalBounds().toFloat(), icon == Icon::add ? 4.0f : 3.0f);
+
+        auto iconBounds = getLocalBounds().toFloat().reduced(
+            icon == Icon::add ? 5.0f : 4.0f);
+        const auto centre = iconBounds.getCentre();
+        const auto radius = 0.5f * juce::jmin(
+            iconBounds.getWidth(), iconBounds.getHeight());
+        juce::Path path;
+        path.startNewSubPath(centre.x - radius, centre.y);
+        path.lineTo(centre.x + radius, centre.y);
+        if (icon == Icon::add)
+        {
+            path.startNewSubPath(centre.x, centre.y - radius);
+            path.lineTo(centre.x, centre.y + radius);
+        }
+        else
+        {
+            path.clear();
+            path.startNewSubPath(
+                centre.x - radius, centre.y - radius);
+            path.lineTo(
+                centre.x + radius, centre.y + radius);
+            path.startNewSubPath(
+                centre.x + radius, centre.y - radius);
+            path.lineTo(
+                centre.x - radius, centre.y + radius);
+        }
+        graphics.setColour(
+            juce::Colours::white.withAlpha(enabled ? 0.9f : 0.35f));
+        graphics.strokePath(
+            path, juce::PathStrokeType(
+                      1.6f, juce::PathStrokeType::curved,
+                      juce::PathStrokeType::rounded));
+    }
+
+private:
+    Icon icon;
+};
+
+class MegaDSPAudioProcessorEditor::ChainSlotButton final
+    : public juce::TextButton,
+      public juce::DragAndDropTarget
+{
+public:
+    ChainSlotButton(
+        MegaDSPAudioProcessorEditor& editorToUse, int slotToUse)
+        : editor(editorToUse), slot(slotToUse)
+    {
+        removeButton.setTitle(
+            "Remove processor from slot " + juce::String(slot + 1));
+        removeButton.setDescription(
+            "Removes this processor and closes the gap in the signal chain.");
+        removeButton.setTooltip(
+            "Remove this processor from the signal chain.");
+        removeButton.onClick = [this]
+        {
+            editor.requestRemoveSlot(slot);
+        };
+        addAndMakeVisible(removeButton);
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        dragStart = event.position;
+        editor.selectSlot(slot);
+        juce::TextButton::mouseDown(event);
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (event.position.getDistanceFrom(dragStart) > 5.0f
+            && !editor.isDragAndDropActive())
+            editor.startDragging(slot, this);
+    }
+
+    void mouseDoubleClick(const juce::MouseEvent& event) override
+    {
+        if (event.mods.isLeftButtonDown())
+        {
+            editor.audioProcessor.toggleSlotBypass(slot);
+            editor.refreshChainNavigator();
+        }
+    }
+
+    void resized() override
+    {
+        removeButton.setBounds(
+            getLocalBounds().removeFromRight(18).reduced(1, 3));
+    }
+
+    void setDisplayText(
+        const juce::String& text, bool isBypassed)
+    {
+        bypassed = isBypassed;
+        setButtonText(text + (bypassed ? "  BYP" : ""));
+        repaint();
+    }
+
+    bool isInterestedInDragSource(
+        const SourceDetails& details) override
+    {
+        const auto* source = details.sourceComponent.get();
+        const auto fromRack =
+            dynamic_cast<const ModuleCard*>(source) != nullptr;
+        const auto fromChain =
+            dynamic_cast<const ChainSlotButton*>(source) != nullptr;
+        const auto sourceSlot = static_cast<int>(details.description);
+        return (fromRack || fromChain)
+            && juce::isPositiveAndBelow(
+                sourceSlot, static_cast<int>(editor.cards.size()))
+            && sourceSlot != slot;
+    }
+
+    void itemDragEnter(const SourceDetails& details) override
+    {
+        dragOver = true;
+        updateDropPosition(details);
+        repaint();
+    }
+
+    void itemDragMove(const SourceDetails& details) override
+    {
+        updateDropPosition(details);
+    }
+
+    void itemDragExit(const SourceDetails&) override
+    {
+        dragOver = false;
+        repaint();
+    }
+
+    void itemDropped(const SourceDetails& details) override
+    {
+        dragOver = false;
+        repaint();
+        reorderFrom(
+            static_cast<int>(details.description), dropAfter);
+    }
+
+    void paintButton(
+        juce::Graphics& graphics, bool highlighted, bool down) override
+    {
+        juce::TextButton::paintButton(graphics, highlighted, down);
+        if (bypassed)
+        {
+            graphics.setColour(juce::Colours::black.withAlpha(0.24f));
+            graphics.fillRect(getLocalBounds().withTrimmedRight(19));
+        }
+        if (!dragOver)
+            return;
+        graphics.setColour(accent);
+        const auto markerX = dropAfter ? getWidth() - 2 : 0;
+        graphics.fillRect(markerX, 1, 3, juce::jmax(1, getHeight() - 2));
+    }
+
+    void reorderFrom(int source, bool after)
+    {
+        auto destination = slot + (after ? 1 : 0);
+        if (source < destination)
+            --destination;
+        destination = juce::jlimit(
+            0, static_cast<int>(editor.cards.size()) - 1, destination);
+        editor.requestReorderSlot(source, destination);
+    }
+
+private:
+    void updateDropPosition(const SourceDetails& details)
+    {
+        const auto newDropAfter =
+            static_cast<float>(details.localPosition.x)
+                >= static_cast<float>(getWidth()) * 0.5f;
+        if (dropAfter != newDropAfter)
+        {
+            dropAfter = newDropAfter;
+            repaint();
+        }
+    }
+
+    MegaDSPAudioProcessorEditor& editor;
+    int slot = 0;
+    ChainIconButton removeButton { ChainIconButton::Icon::remove };
+    juce::Point<float> dragStart;
+    bool bypassed = false;
+    bool dragOver = false;
+    bool dropAfter = false;
+};
+
 MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     MegaDSPAudioProcessor& processorToUse, int width, int height)
     : AudioProcessorEditor(processorToUse), audioProcessor(processorToUse)
@@ -1646,6 +1861,45 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     }
     refreshSnapshots();
 
+    chainNavigatorLabel.setText("CHAIN", juce::dontSendNotification);
+    chainNavigatorLabel.setFont(
+        juce::FontOptions(10.5f, juce::Font::bold));
+    chainNavigatorLabel.setColour(
+        juce::Label::textColourId, juce::Colour(0xffa8b3c0));
+    chainNavigatorLabel.setJustificationType(
+        juce::Justification::centredLeft);
+    addAndMakeVisible(chainNavigatorHost);
+    chainNavigatorHost.addAndMakeVisible(chainNavigatorLabel);
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        auto button = std::make_unique<ChainSlotButton>(*this, slot);
+        button->setClickingTogglesState(false);
+        button->setTitle("Signal chain slot " + juce::String(slot + 1));
+        button->onClick = [this, slot]
+        {
+            selectSlot(slot);
+            revealSelectedCard(true);
+        };
+        chainNavigatorHost.addAndMakeVisible(*button);
+        chainNavigatorButtons[static_cast<size_t>(slot)] =
+            std::move(button);
+    }
+    for (int position = 0; position <= megadsp::slotCount; ++position)
+    {
+        auto button = std::make_unique<ChainIconButton>(
+            ChainIconButton::Icon::add);
+        button->setTitle(
+            "Insert processor at signal-flow position "
+            + juce::String(position + 1));
+        button->onClick = [this, position]
+        {
+            showModuleBrowser(position);
+        };
+        chainNavigatorHost.addAndMakeVisible(*button);
+        chainInsertButtons[static_cast<size_t>(position)] =
+            std::move(button);
+    }
+
     addAndMakeVisible(rackViewport);
     rackViewport.setViewedComponent(&rackContent, false);
     rackViewport.setScrollBarsShown(true, false);
@@ -1758,6 +2012,34 @@ void MegaDSPAudioProcessorEditor::resized()
         button->setBounds(
             snapshotBounds.removeFromLeft(snapshotWidth).reduced(2));
 
+    if (chainNavigatorHost.isVisible())
+        chainNavigatorHost.setBounds(
+            bounds.removeFromTop(40).reduced(10, 3));
+    else
+        chainNavigatorHost.setBounds({});
+    auto navigatorBounds = chainNavigatorHost.getLocalBounds();
+    chainNavigatorLabel.setBounds(navigatorBounds.removeFromLeft(58));
+    const auto active = static_cast<int>(cards.size());
+    constexpr auto insertWidth = 24;
+    const auto tabWidth = active > 0
+        ? juce::jmax(
+              1, (navigatorBounds.getWidth()
+                  - insertWidth * (active + 1)) / active)
+        : 0;
+    for (int position = 0; position <= active; ++position)
+    {
+        chainInsertButtons[static_cast<size_t>(position)]->setBounds(
+            navigatorBounds.removeFromLeft(insertWidth).reduced(2));
+        if (position < active)
+            chainNavigatorButtons[static_cast<size_t>(position)]->setBounds(
+                navigatorBounds.removeFromLeft(tabWidth).reduced(2));
+    }
+    for (int slot = active; slot < megadsp::slotCount; ++slot)
+        chainNavigatorButtons[static_cast<size_t>(slot)]->setBounds({});
+    for (int position = active + 1;
+         position <= megadsp::slotCount; ++position)
+        chainInsertButtons[static_cast<size_t>(position)]->setBounds({});
+
     rackViewport.setBounds(bounds.reduced(10, 6));
     constexpr auto rackPadding = 8;
     const auto showAddButton = addButton.isVisible();
@@ -1790,6 +2072,7 @@ void MegaDSPAudioProcessorEditor::timerCallback()
                            audioProcessor.getRack().outputMeterDb());
     for (auto& card : cards)
         card->syncBypassState();
+    refreshChainNavigator();
     refreshIdentityPresentation();
     if (knownSnapshotGeneration
         != audioProcessor.getSnapshotGeneration())
@@ -1876,6 +2159,9 @@ void MegaDSPAudioProcessorEditor::selectSlot(int slot)
     audioProcessor.setSelectedTab(selectedSlot);
     for (int index = 0; index < static_cast<int>(cards.size()); ++index)
         cards[static_cast<size_t>(index)]->setSelected(index == selectedSlot);
+    for (int index = 0; index < megadsp::slotCount; ++index)
+        chainNavigatorButtons[static_cast<size_t>(index)]->setToggleState(
+            index == selectedSlot, juce::dontSendNotification);
     if (!isShowing())
         audioProcessor.getVisualizationData().setSelectedSlot(-1);
 }
@@ -1926,9 +2212,66 @@ void MegaDSPAudioProcessorEditor::refreshCards(
         }
         addButton.setVisible(active < megadsp::slotCount);
     }
+    refreshChainNavigator();
     selectSlot(juce::jmin(selectedSlot, juce::jmax(0, active - 1)));
     resized();
     revealSelectedCard(hadRackFocus);
+}
+
+void MegaDSPAudioProcessorEditor::refreshChainNavigator()
+{
+    const auto active = static_cast<int>(cards.size());
+    const auto canInsert = active < megadsp::slotCount;
+    chainNavigatorHost.setVisible(active > 0 || canInsert);
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        auto& button =
+            chainNavigatorButtons[static_cast<size_t>(slot)];
+        const auto visible = slot < active;
+        button->setVisible(visible);
+        if (!visible)
+            continue;
+        const auto type = audioProcessor.getRack().moduleType(slot);
+        const auto name = megadsp::ui::compactTabName(type);
+        const auto bypassed = audioProcessor.isSlotBypassed(slot);
+        button->setDisplayText(
+            juce::String(slot + 1) + "  " + name, bypassed);
+        button->setDescription(
+            "Jump to slot " + juce::String(slot + 1) + ", "
+            + juce::String(megadsp::moduleDefinition(type).displayName)
+            + (bypassed ? ", bypassed. " : ", active. ")
+            + "Drag to rearrange signal flow; double-click to toggle bypass.");
+        button->setTooltip(
+            "Jump to slot " + juce::String(slot + 1) + ": "
+            + juce::String(megadsp::moduleDefinition(type).displayName)
+            + (bypassed ? " (BYPASSED). " : ". ")
+            + "Drag to rearrange; double-click to toggle bypass.");
+    }
+    for (int position = 0; position <= megadsp::slotCount; ++position)
+    {
+        auto& button =
+            chainInsertButtons[static_cast<size_t>(position)];
+        const auto visible = position <= active;
+        button->setVisible(visible);
+        button->setEnabled(canInsert);
+        if (!visible)
+            continue;
+        const auto location = active == 0
+            ? juce::String("as the first processor")
+            : position == active
+                ? juce::String("at the end of the chain")
+                : position == 0
+                    ? juce::String("at the beginning of the chain")
+                    : juce::String("between slots ")
+                          + juce::String(position) + " and "
+                          + juce::String(position + 1);
+        button->setDescription(
+            canInsert ? "Insert a processor " + location + "."
+                      : "The eight-slot chain is full.");
+        button->setTooltip(
+            canInsert ? "Insert a processor " + location + "."
+                      : "The eight-slot chain is full.");
+    }
 }
 
 void MegaDSPAudioProcessorEditor::revealSelectedCard(bool focus)
@@ -1951,6 +2294,73 @@ void MegaDSPAudioProcessorEditor::revealSelectedCard(bool focus)
 }
 
 #if defined(MEGADSP_TESTS)
+void MegaDSPAudioProcessorEditor::clickChainNavigatorForTesting(int slot)
+{
+    if (juce::isPositiveAndBelow(slot, static_cast<int>(cards.size())))
+    {
+        selectSlot(slot);
+        revealSelectedCard(false);
+    }
+}
+
+void MegaDSPAudioProcessorEditor::reorderChainNavigatorForTesting(
+    int source, int target, bool dropAfter)
+{
+    if (juce::isPositiveAndBelow(
+            target, static_cast<int>(cards.size())))
+        chainNavigatorButtons[static_cast<size_t>(target)]
+            ->reorderFrom(source, dropAfter);
+    applyPendingCardMutation();
+}
+
+void MegaDSPAudioProcessorEditor::insertModuleFromChainForTesting(
+    megadsp::ModuleType type, int position)
+{
+    addModuleAt(type, position);
+}
+
+void MegaDSPAudioProcessorEditor::doubleClickChainNavigatorForTesting(
+    int slot)
+{
+    if (!juce::isPositiveAndBelow(slot, static_cast<int>(cards.size())))
+        return;
+    audioProcessor.toggleSlotBypass(slot);
+    refreshChainNavigator();
+}
+
+void MegaDSPAudioProcessorEditor::removeModuleFromChainForTesting(int slot)
+{
+    if (!juce::isPositiveAndBelow(slot, static_cast<int>(cards.size())))
+        return;
+    requestRemoveSlot(slot);
+    applyPendingCardMutation();
+}
+
+int MegaDSPAudioProcessorEditor::chainNavigatorButtonCountForTesting() const
+{
+    return static_cast<int>(std::count_if(
+        chainNavigatorButtons.begin(), chainNavigatorButtons.end(),
+        [](const auto& button) { return button->isVisible(); }));
+}
+
+int MegaDSPAudioProcessorEditor::chainInsertButtonCountForTesting() const
+{
+    return static_cast<int>(std::count_if(
+        chainInsertButtons.begin(), chainInsertButtons.end(),
+        [](const auto& button) { return button->isVisible(); }));
+}
+
+bool MegaDSPAudioProcessorEditor::selectedCardVisibleForTesting() const
+{
+    if (!juce::isPositiveAndBelow(
+            selectedSlot, static_cast<int>(cards.size())))
+        return false;
+    const auto* card = cards[static_cast<size_t>(selectedSlot)].get();
+    const auto viewTop = rackViewport.getViewPositionY();
+    const auto viewBottom = viewTop + rackViewport.getViewHeight();
+    return card->getY() >= viewTop && card->getBottom() <= viewBottom;
+}
+
 int MegaDSPAudioProcessorEditor::activeVisualizationCardCountForTesting() const
 {
     return static_cast<int>(std::count_if(
@@ -2043,10 +2453,30 @@ bool MegaDSPAudioProcessorEditor::cardAcceptsAssetDropForTesting(
 }
 #endif
 
-void MegaDSPAudioProcessorEditor::showModuleBrowser()
+void MegaDSPAudioProcessorEditor::addModuleAt(
+    megadsp::ModuleType type, int position)
 {
-    if (audioProcessor.getRack().activeSlotCount() >= megadsp::slotCount)
+    const auto active = audioProcessor.getRack().activeSlotCount();
+    if (active >= megadsp::slotCount)
         return;
+    const auto insertion = juce::jlimit(0, active, position);
+    audioProcessor.addModule(type);
+    if (audioProcessor.getRack().activeSlotCount() != active + 1)
+        return;
+    if (insertion < active)
+        audioProcessor.moveSlot(active, insertion);
+    selectedSlot = insertion;
+    refreshCards();
+    revealSelectedCard(true);
+}
+
+void MegaDSPAudioProcessorEditor::showModuleBrowser(int insertPosition)
+{
+    const auto active = audioProcessor.getRack().activeSlotCount();
+    if (active >= megadsp::slotCount)
+        return;
+    const auto insertion = juce::jlimit(
+        0, active, insertPosition < 0 ? active : insertPosition);
 
     constexpr int searchCommand = 1;
     constexpr int moduleCommandBase = 100;
@@ -2065,15 +2495,19 @@ void MegaDSPAudioProcessorEditor::showModuleBrowser()
     }
 
     juce::Component::SafePointer<MegaDSPAudioProcessorEditor> safeThis(this);
+    auto* target = insertPosition < 0
+        ? static_cast<juce::Component*>(&addButton)
+        : static_cast<juce::Component*>(
+              chainInsertButtons[static_cast<size_t>(insertion)].get());
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(&addButton),
-        [safeThis](int result)
+        juce::PopupMenu::Options().withTargetComponent(target),
+        [safeThis, insertion](int result)
         {
             if (safeThis == nullptr || result == 0)
                 return;
             if (result == searchCommand)
             {
-                safeThis->showModuleSearch();
+                safeThis->showModuleSearch(insertion);
                 return;
             }
             if (result < moduleCommandBase)
@@ -2084,34 +2518,37 @@ void MegaDSPAudioProcessorEditor::showModuleBrowser()
                 || safeThis->audioProcessor.getRack().activeSlotCount()
                        >= megadsp::slotCount)
                 return;
-            safeThis->audioProcessor.addModule(
-                static_cast<megadsp::ModuleType>(stableType));
-            safeThis->refreshCards(true);
-            safeThis->revealSelectedCard(true);
+            safeThis->addModuleAt(
+                static_cast<megadsp::ModuleType>(stableType), insertion);
         });
 }
 
-void MegaDSPAudioProcessorEditor::showModuleSearch()
+void MegaDSPAudioProcessorEditor::showModuleSearch(int insertPosition)
 {
-    if (audioProcessor.getRack().activeSlotCount() >= megadsp::slotCount)
+    const auto active = audioProcessor.getRack().activeSlotCount();
+    if (active >= megadsp::slotCount)
         return;
+    const auto insertion = juce::jlimit(
+        0, active, insertPosition < 0 ? active : insertPosition);
 
     juce::Component::SafePointer<MegaDSPAudioProcessorEditor> safeThis(this);
     auto browser = std::make_unique<megadsp::ui::ModuleBrowser>(
         backgroundColour(audioProcessor.getBackgroundThemeIndex()),
-        [safeThis](megadsp::ModuleType type)
+        [safeThis, insertion](megadsp::ModuleType type)
         {
             if (safeThis == nullptr
                 || safeThis->audioProcessor.getRack().activeSlotCount()
                        >= megadsp::slotCount)
                 return;
-            safeThis->audioProcessor.addModule(type);
-            safeThis->refreshCards(true);
-            safeThis->revealSelectedCard(true);
+            safeThis->addModuleAt(type, insertion);
         });
     auto* browserPointer = browser.get();
+    auto* target = insertPosition < 0
+        ? static_cast<juce::Component*>(&addButton)
+        : static_cast<juce::Component*>(
+              chainInsertButtons[static_cast<size_t>(insertion)].get());
     auto& callout = juce::CallOutBox::launchAsynchronously(
-        std::move(browser), getLocalArea(&addButton, addButton.getLocalBounds()),
+        std::move(browser), getLocalArea(target, target->getLocalBounds()),
         this);
     callout.setDismissalMouseClicksAreAlwaysConsumed(true);
     browserPointer->focusSearch();

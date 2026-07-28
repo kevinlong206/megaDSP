@@ -55,4 +55,9 @@ std::unique_ptr<ModuleView> createAutoWahView(EffectGraph&);
 std::unique_ptr<ModuleView> createResonantSculptureView(EffectGraph&);
 std::unique_ptr<ModuleView> createNeuralAmpModelerView(EffectGraph&);
 std::unique_ptr<ModuleView> createStageVocalView(EffectGraph&);
+std::unique_ptr<ModuleView> createVinylSimulatorView(EffectGraph&);
+std::unique_ptr<ModuleView> createOptoLevelerView(EffectGraph&);
+std::unique_ptr<ModuleView> createFetLimiterView(EffectGraph&);
+std::unique_ptr<ModuleView> createProgramEqualizerView(EffectGraph&);
+std::unique_ptr<ModuleView> createStudioPlateView(EffectGraph&);
 } // namespace megadsp::ui

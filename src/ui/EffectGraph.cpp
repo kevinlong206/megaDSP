@@ -220,11 +220,13 @@ void EffectGraph::paint(juce::Graphics& graphics)
             "BYPASSED - DSP SUSPENDED", label.toNearestInt(),
             juce::Justification::centred);
     }
+    const auto showSharedReadout =
+        moduleView == nullptr || moduleView->showsSharedControlReadout();
     const auto keyboardReadout =
-        hasKeyboardFocus(false) ? focusedControlReadout()
-                                : juce::String {};
+        showSharedReadout && hasKeyboardFocus(false)
+            ? focusedControlReadout() : juce::String {};
     const auto readout =
-        dragPrimary >= 0 && dragReadout.isNotEmpty()
+        showSharedReadout && dragPrimary >= 0 && dragReadout.isNotEmpty()
             ? dragReadout : keyboardReadout;
     if (readout.isNotEmpty())
     {

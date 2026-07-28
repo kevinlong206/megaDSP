@@ -151,7 +151,12 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/HarmonicMirage.cpp
     src/modules/ChaosField.cpp
     src/modules/NeuralAmpModeler.cpp
-    src/modules/StageVocal.cpp)
+    src/modules/StageVocal.cpp
+    src/modules/VinylSimulator.cpp
+    src/modules/OptoLeveler.cpp
+    src/modules/FetLimiter.cpp
+    src/modules/ProgramEqualizer.cpp
+    src/modules/StudioPlate.cpp)
 
 set(MEGADSP_MODULE_HEADERS
     src/DspModules.h
@@ -208,7 +213,12 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/HarmonicMirage.h
     src/modules/ChaosField.h
     src/modules/NeuralAmpModeler.h
-    src/modules/StageVocal.h)
+    src/modules/StageVocal.h
+    src/modules/VinylSimulator.h
+    src/modules/OptoLeveler.h
+    src/modules/FetLimiter.h
+    src/modules/ProgramEqualizer.h
+    src/modules/StudioPlate.h)
 
 set(MEGADSP_UI_SOURCES
     src/ui/EffectGraph.cpp
@@ -270,7 +280,12 @@ set(MEGADSP_UI_SOURCES
     src/ui/modules/WavefoldGardenModuleView.cpp
     src/ui/modules/HarmonicMirageModuleView.cpp
     src/ui/modules/NeuralAmpModelerModuleView.cpp
-    src/ui/modules/StageVocalModuleView.cpp)
+    src/ui/modules/StageVocalModuleView.cpp
+    src/ui/modules/VinylSimulatorModuleView.cpp
+    src/ui/modules/OptoLevelerModuleView.cpp
+    src/ui/modules/FetLimiterModuleView.cpp
+    src/ui/modules/ProgramEqualizerModuleView.cpp
+    src/ui/modules/StudioPlateModuleView.cpp)
 
 target_sources(megaDSP PRIVATE
     ${MEGADSP_MODULE_SOURCES}
@@ -351,6 +366,11 @@ target_sources(megaDSPTests PRIVATE
     tests/AutoWahTests.cpp
     tests/ResonantSculptureTests.cpp
     tests/StageVocalTests.cpp
+    tests/VinylSimulatorTests.cpp
+    tests/OptoLevelerTests.cpp
+    tests/FetLimiterTests.cpp
+    tests/ProgramEqualizerTests.cpp
+    tests/StudioPlateTests.cpp
     tests/ModuleBrowserTests.cpp
     tests/NextTenUtilityTests.cpp
     tests/ProcessorTests.cpp

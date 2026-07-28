@@ -13,7 +13,7 @@ namespace megadsp
 constexpr int slotCount = 8;
 constexpr int controlsPerSlot = 12;
 constexpr int stateSchemaVersion = 11;
-constexpr int moduleTypeCount = 49;
+constexpr int moduleTypeCount = 54;
 
 enum class ModuleType
 {
@@ -65,7 +65,12 @@ enum class ModuleType
     autoWah = 45,
     resonantSculpture = 46,
     neuralAmpModeler = 47,
-    stageVocal = 48
+    stageVocal = 48,
+    vinylSimulator = 49,
+    optoLeveler = 50,
+    fetLimiter = 51,
+    programEqualizer = 52,
+    studioPlate = 53
 };
 
 enum class ModuleCategory
@@ -133,10 +138,16 @@ enum class ModulePresentation
     resonantSculpture,
     neuralAmpModeler,
     stageVocal,
+    vinylSimulator,
+    optoLeveler,
+    fetLimiter,
+    programEqualizer,
+    studioPlate,
     count
 };
 
-static_assert(static_cast<int>(ModuleType::stageVocal) + 1 == moduleTypeCount);
+static_assert(
+    static_cast<int>(ModuleType::studioPlate) + 1 == moduleTypeCount);
 static_assert(static_cast<int>(ModulePresentation::count) == moduleTypeCount);
 
 enum class ControlKind

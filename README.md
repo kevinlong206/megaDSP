@@ -111,7 +111,7 @@ megaDSP.clap → ~/.clap
 
 1. Load megaDSP on a track in your DAW.
 2. Click **Add Module** after the last card and choose a processor from the standard category submenus. **Search Modules…** at the top opens a separate searchable list; **↑↓** and **Enter** work there.
-3. Every loaded module appears as a uniform-height horizontal card, with its graph, direct controls, bypass, reset, remove, and any IR/NAM asset actions visible together. Vertically scroll the rack to follow the signal path from top to bottom.
+3. Every loaded module appears as a uniform-height horizontal card, with its graph, direct controls, bypass, reset, remove, and any IR/NAM asset actions visible together. In the sticky **CHAIN** row, click a processor to jump to it, drag processors to reorder signal flow, use the small `+` buttons to insert before, between, or after processors, double-click a processor to toggle bypass, or use its `x` to remove it. You can still vertically scroll the rack from top to bottom.
 4. Drag a card header up or down to reorder the signal chain.
 5. Use a card's explicit **ON / BYP** control (or focus it and press **Space / B**) to bypass it. After its short click-safe fade, the module DSP and live visualization are suspended; only latency-preserving dry routing remains.
 6. Use a card's **Remove** action to delete it from the rack.
@@ -170,6 +170,8 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Loudness Rider** | Long-term gated LUFS riding with bounded gain, lookahead, and crest preservation |
 | **Adaptive Clipper** | Transient-aware oversampled clipping with true-peak ceiling control and auto trim |
 | **Stage Vocal** | Zero-latency live vocal strip with rumble filtering, bounded expansion, frequency-selective de-essing, linked compression, Presence, Air, and Output trim |
+| **Opto Leveler** | Program-dependent optical leveling with dual-stage cell memory, detector emphasis, and a calibrated analog makeup stage |
+| **FET Limiter** | Fast feedback FET compression with stepped ratios, a distinct ALL mode, detector filtering, and parallel Mix |
 
 ### EQ & Filtering
 
@@ -179,6 +181,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Auto Wah** | Pick-responsive Low Pass, Band Pass, Peak, or Classic Wah filter with direct center/range editing and a visible sensitivity threshold |
 | **Resonance Tamer** | Adaptive narrow-resonance suppression with transient protection and live detected-reduction traces |
 | **Spectral Balance** | Long-term tonal balancing toward Natural, Warm, Clear, Vocal, or Flat target contours |
+| **Program Equalizer** | Interacting passive low boost and attenuation, broad proportional-Q high boost, high attenuation, and a colored makeup amplifier |
 
 ### Saturation
 
@@ -187,6 +190,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Saturator** | Transfer curve with input/output waveforms; level-compensated auto-gain keeps density and harmonics audible without loudness jumps |
 | **Signal Decay** | Measured degradation waveforms plus DSP-synchronized clock, stereo-wear, and dropout state |
 | **Analog Tape** | Four cassette/reel machines with level-compensated oversampled saturation, transient softening, bias, head bump, and optional wow/flutter, wear, and hiss |
+| **Vinyl Simulator** | Deterministic dust, crackle, scratches, surface noise, rumble, groove wear, wow, and flutter with a live spinning-record activity view |
 | **Harmonic Mirage** | Tracked partial resynthesis for harmonic, subharmonic, hollow, and metallic color |
 | **Guitar Cabinet** | Fully procedural speaker, enclosure, microphone, and room modeling with dynamic cone breakup, power compression, and direct mic placement |
 | **Neural Amp Modeler** | Loads standard, A2, and SlimmableContainer `.nam` models with Pre Gain, a familiar Bass/Mid/Treble guitar tone stack, and Post Gain |
@@ -198,7 +202,8 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Delay** | Editable tap timeline plus a 2D Rate/Depth Movement field; Sync toggles between free Time and synced Division |
 | **Diffusion Delay** | Full-width Time/Division and Cloud Density field with DSP-synchronized primary/cloud activity, energy, progress, and stereo placement |
 | **Algorithmic Reverb** | 16-line Hall, Chamber, and Plate network with input high-pass/low-pass filtering, smooth wet ducking, Decay, Room Scale, and independent Dry/Wet |
-| **Convolution Reverb** | Unobstructed WAV/AIFF/FLAC waveform preview, persisted IR directory with previous/next browsing, dedicated wet-passband strip, and adjacent Dry/Wet/Ducking/Output rails |
+| **Convolution Reverb** | Toggle among a live stereo reflection chamber, a +18 dB frequency-coloured EQ-style wet analyzer, and a rolling 12-band wet-only history; visualization measures the pre-level wet path independently of Wet and Output, with persisted WAV/AIFF/FLAC IR browsing, a dedicated wet-passband strip, and adjacent Dry/Wet/Ducking/Output rails |
+| **Studio Plate** | Physically informed modal onset and dense late plate field with stereo pickup geometry, frequency-dependent decay, and completed-wet ducking |
 | **Resonant Matrix** | Tuned resonators routed through evolving signed feedback patterns for pitched, metallic spaces |
 | **Pitch Bloom** | Musical interval shifting with actual repeat-event arcs for interval, progress, energy, pan, and spread |
 | **Spectral Delay Canvas** | Frequency-dependent low, mid, and high spectral delay with diffusion, feedback, and freeze |

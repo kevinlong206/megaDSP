@@ -1,4 +1,5 @@
 #include "Diagnostics.h"
+#include "modules/ModuleRegistry.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -180,6 +181,12 @@ juce::String eventName(std::uint32_t event)
         case DiagnosticEvent::impulseResponseFailed: return "ir-failed";
         case DiagnosticEvent::snapshotRecallWorkload:
             return "snapshot-recall";
+        case DiagnosticEvent::audioCallbackWorkload:
+            return "audio-workload";
+        case DiagnosticEvent::snapshotGraphWorkload:
+            return "snapshot-profile";
+        case DiagnosticEvent::moduleWorkload:
+            return "module-profile";
     }
     return "message";
 }
@@ -295,19 +302,20 @@ void Diagnostics::log(const char* category, const juce::String& message)
     if (!isEnabled())
         return;
     const auto text = juce::String(category) + " " + message;
-    enqueue(0, 0, 0, 0, text.toRawUTF8());
+    enqueue(0, 0, 0, 0, 0, 0, text.toRawUTF8());
 }
 
 void Diagnostics::logRealtime(
     DiagnosticEvent event, std::uint32_t instanceId,
-    std::int64_t valueA, std::int64_t valueB) noexcept
+    std::int64_t valueA, std::int64_t valueB,
+    std::int64_t valueC, std::int64_t valueD) noexcept
 {
     if (!isEnabled())
         return;
     updateCrashContext(event, instanceId, valueA);
     enqueue(
         static_cast<std::uint32_t>(event), instanceId,
-        valueA, valueB, nullptr);
+        valueA, valueB, valueC, valueD, nullptr);
 }
 
 void Diagnostics::updateCrashContext(
@@ -330,6 +338,7 @@ void Diagnostics::updateCrashContext(
 bool Diagnostics::enqueue(
     std::uint32_t event, std::uint32_t instanceId,
     std::int64_t valueA, std::int64_t valueB,
+    std::int64_t valueC, std::int64_t valueD,
     const char* text) noexcept
 {
     auto& entry = queue[static_cast<size_t>(
@@ -347,6 +356,8 @@ bool Diagnostics::enqueue(
     entry.instanceId = instanceId;
     entry.valueA = valueA;
     entry.valueB = valueB;
+    entry.valueC = valueC;
+    entry.valueD = valueD;
     entry.text.fill('\0');
     if (text != nullptr)
         std::strncpy(entry.text.data(), text, entry.text.size() - 1);
@@ -427,6 +438,52 @@ void Diagnostics::drain()
         juce::String line;
         if (entry.event == 0)
             line = entry.text.data();
+        else if (entry.event
+                 == static_cast<std::uint32_t>(
+                     DiagnosticEvent::audioCallbackWorkload))
+        {
+            const auto graphCount =
+                static_cast<std::uint32_t>(entry.valueD);
+            const auto overrunCount =
+                static_cast<std::uint32_t>(
+                    static_cast<std::uint64_t>(entry.valueD) >> 32);
+            const auto utilization = entry.valueC > 0
+                ? (100 * entry.valueB) / entry.valueC : 0;
+            line = eventName(entry.event)
+                + " instance=" + juce::String(entry.instanceId)
+                + " avg_us=" + juce::String(entry.valueA)
+                + " max_us=" + juce::String(entry.valueB)
+                + " deadline_us=" + juce::String(entry.valueC)
+                + " max_utilization_pct=" + juce::String(utilization)
+                + " overruns=" + juce::String(overrunCount)
+                + " graphs=" + juce::String(graphCount);
+        }
+        else if (entry.event
+                 == static_cast<std::uint32_t>(
+                     DiagnosticEvent::snapshotGraphWorkload))
+        {
+            line = eventName(entry.event)
+                + " instance=" + juce::String(entry.instanceId)
+                + " snapshot=" + juce::String(entry.valueA + 1)
+                + " avg_us=" + juce::String(entry.valueB)
+                + " max_us=" + juce::String(entry.valueC)
+                + " samples=" + juce::String(entry.valueD);
+        }
+        else if (entry.event
+                 == static_cast<std::uint32_t>(
+                     DiagnosticEvent::moduleWorkload))
+        {
+            const auto type = static_cast<ModuleType>(entry.valueA);
+            const auto* definition = findModuleDefinition(type);
+            line = eventName(entry.event)
+                + " instance=" + juce::String(entry.instanceId)
+                + " module=\"" + juce::String(
+                    definition != nullptr ? definition->displayName : "Unknown")
+                + "\" type=" + juce::String(entry.valueA)
+                + " avg_us=" + juce::String(entry.valueB)
+                + " max_us=" + juce::String(entry.valueC)
+                + " calls=" + juce::String(entry.valueD);
+        }
         else
             line = eventName(entry.event)
                 + " instance=" + juce::String(entry.instanceId)

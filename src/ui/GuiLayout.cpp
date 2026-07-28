@@ -194,6 +194,11 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::autoWah: return "Auto Wah";
         case ModuleType::resonantSculpture: return "Sculpture";
         case ModuleType::neuralAmpModeler: return "NAM";
+        case ModuleType::vinylSimulator: return "Vinyl";
+        case ModuleType::optoLeveler: return "Opto";
+        case ModuleType::fetLimiter: return "FET";
+        case ModuleType::programEqualizer: return "Prog EQ";
+        case ModuleType::studioPlate: return "Plate";
         case ModuleType::empty:
         case ModuleType::delay:
         case ModuleType::limiter:

@@ -62,6 +62,21 @@ void ConvolutionReverbModule::prepare(const juce::dsp::ProcessSpec& spec)
     drySmoothed.setCurrentAndTargetValue(1.0f);
     duckAmountSmoothed.setCurrentAndTargetValue(0.0f);
     outputSmoothed.setCurrentAndTargetValue(1.0f);
+    telemetryInterval = juce::jmax(1, juce::roundToInt(sampleRate / 30.0));
+    for (size_t cutoff = 0;
+         cutoff < telemetrySpectrumCoefficients.size(); ++cutoff)
+    {
+        const auto proportion = static_cast<float>(cutoff)
+            / static_cast<float>(
+                telemetrySpectrumCoefficients.size() - 1);
+        const auto frequency = 80.0f
+            * std::pow(12000.0f / 80.0f, proportion);
+        telemetrySpectrumCoefficients[cutoff] = 1.0f - std::exp(
+            -juce::MathConstants<float>::twoPi
+            * juce::jmin(
+                  frequency, static_cast<float>(sampleRate * 0.45))
+            / static_cast<float>(sampleRate));
+    }
     reset();
 }
 
@@ -73,14 +88,39 @@ void ConvolutionReverbModule::reset()
     wetBuffer.clear();
     duckEnvelope = 0.0f;
     duckGainDb = 0.0f;
+    telemetryState = {};
+    telemetry.clear();
+    telemetryEnergy = {};
+    telemetrySpectrumEnergy = {};
+    telemetrySpectrumLowpass = {};
+    telemetrySampleCount = 0;
+    telemetryCountdown = telemetryInterval;
+    telemetryWasCapturing = false;
+}
+
+bool ConvolutionReverbModule::readContinuousTelemetry(
+    ContinuousTelemetrySnapshot& snapshot) const noexcept
+{
+    return telemetry.read(snapshot);
 }
 
 void ConvolutionReverbModule::process(
     juce::AudioBuffer<float>& buffer, const ControlValues& controls,
-    const ProcessEnvironment&)
+    const ProcessEnvironment& environment)
 {
     if (buffer.getNumSamples() <= 0)
         return;
+
+    if (environment.captureTelemetry && !telemetryWasCapturing)
+    {
+        telemetryState = {};
+        telemetryEnergy = {};
+        telemetrySpectrumEnergy = {};
+        telemetrySpectrumLowpass = {};
+        telemetrySampleCount = 0;
+        telemetryCountdown = telemetryInterval;
+    }
+    telemetryWasCapturing = environment.captureTelemetry;
 
     jassert(buffer.getNumChannels() <= wetBuffer.getNumChannels());
     jassert(buffer.getNumSamples() <= wetBuffer.getNumSamples());
@@ -157,15 +197,112 @@ void ConvolutionReverbModule::process(
                      + (1.0f - duckCoefficient) * targetDuckGainDb;
         const auto duckGain =
             juce::Decibels::decibelsToGain(duckGainDb);
+        std::array<float, 2> telemetryWet {};
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        {
+            const auto wet = wetAvailable
+                ? wetBuffer.getSample(channel, sample)
+                      * duckGain
+                : 0.0f;
+            telemetryWet[static_cast<size_t>(juce::jmin(channel, 1))] = wet;
             buffer.setSample(
                 channel, sample,
                 (buffer.getSample(channel, sample) * dryGain
-                 + (wetAvailable
-                        ? wetBuffer.getSample(channel, sample)
-                              * wetGain * duckGain
-                        : 0.0f))
+                 + wet * wetGain)
                     * output);
+        }
+
+        if (environment.captureTelemetry)
+        {
+            if (buffer.getNumChannels() == 1)
+                telemetryWet[1] = telemetryWet[0];
+            for (size_t channel = 0; channel < telemetryEnergy.size(); ++channel)
+            {
+                telemetryEnergy[channel] +=
+                    static_cast<double>(telemetryWet[channel])
+                    * telemetryWet[channel];
+                auto previousLowpass = 0.0f;
+                for (size_t cutoff = 0;
+                     cutoff < telemetrySpectrumCoefficients.size(); ++cutoff)
+                {
+                    auto& lowpass =
+                        telemetrySpectrumLowpass[channel][cutoff];
+                    lowpass += telemetrySpectrumCoefficients[cutoff]
+                        * (telemetryWet[channel] - lowpass);
+                    const auto band = lowpass - previousLowpass;
+                    telemetrySpectrumEnergy[channel][cutoff] +=
+                        static_cast<double>(band) * band;
+                    previousLowpass = lowpass;
+                }
+                const auto highBand =
+                    telemetryWet[channel] - previousLowpass;
+                telemetrySpectrumEnergy[channel].back() +=
+                    static_cast<double>(highBand) * highBand;
+            }
+            ++telemetrySampleCount;
+            if (--telemetryCountdown <= 0)
+            {
+                const auto divisor =
+                    static_cast<double>(juce::jmax(1, telemetrySampleCount));
+                std::array<float, continuousTelemetryHistoryValueCapacity>
+                    levels {};
+                for (size_t channel = 0; channel < telemetryEnergy.size();
+                     ++channel)
+                {
+                    levels[channel] = static_cast<float>(
+                        std::sqrt(telemetryEnergy[channel] / divisor));
+                }
+                std::array<double, 2> totalSpectrumEnergy {};
+                std::array<double, 2> highSpectrumEnergy {};
+                for (size_t band = 0; band < spectrumBandCount; ++band)
+                {
+                    auto combinedEnergy = 0.0;
+                    for (size_t channel = 0;
+                         channel < telemetrySpectrumEnergy.size(); ++channel)
+                    {
+                        combinedEnergy +=
+                            telemetrySpectrumEnergy[channel][band];
+                        totalSpectrumEnergy[channel] +=
+                            telemetrySpectrumEnergy[channel][band];
+                        if (band >= spectrumBandCount * 2 / 3)
+                            highSpectrumEnergy[channel] +=
+                                telemetrySpectrumEnergy[channel][band];
+                    }
+                    const auto bandRms = static_cast<float>(std::sqrt(
+                        combinedEnergy
+                        / (divisor * static_cast<double>(
+                              telemetryEnergy.size()))));
+                    telemetryState.values[
+                        spectrumBandStart + band] = bandRms;
+                }
+                for (size_t channel = 0;
+                     channel < totalSpectrumEnergy.size(); ++channel)
+                    levels[channel + 2] =
+                        totalSpectrumEnergy[channel] > 1.0e-12
+                            ? juce::jlimit(
+                                  0.0f, 1.0f,
+                                  static_cast<float>(std::sqrt(
+                                      highSpectrumEnergy[channel]
+                                      / totalSpectrumEnergy[channel])))
+                            : 0.0f;
+                appendContinuousTelemetryHistory(
+                    telemetryState, levels, telemetryHistoryCount);
+                telemetryState.values[leftWetLevel] = levels[0];
+                telemetryState.values[rightWetLevel] = levels[1];
+                telemetryEnergy = {};
+                telemetrySpectrumEnergy = {};
+                telemetrySampleCount = 0;
+                telemetryCountdown = telemetryInterval;
+            }
+        }
+    }
+    if (environment.captureTelemetry)
+    {
+        telemetryState.sequence += 1;
+        telemetryState.valueCount = telemetryValueCount;
+        telemetryState.values[outputChannelCount] =
+            static_cast<float>(buffer.getNumChannels());
+        telemetry.publish(telemetryState);
     }
 }
 
