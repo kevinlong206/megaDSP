@@ -122,10 +122,9 @@ The seven-character Git commit shown beneath the **megaDSP** title identifies
 the exact source used for the build. Click the hash to copy it when reporting a
 problem.
 
-Continuous and spectral DSP telemetry remains focused on one card, while
-bounded module event snapshots continue to feed their associated animations.
-Every card repaints its animation at the full 30 Hz rate regardless of focus;
-hidden editors suspend continuous telemetry capture.
+Continuous and spectral DSP telemetry, meters, and animation remain focused on
+the selected card. Inactive cards do not keep visualization capture running,
+and hidden editors suspend it entirely.
 
 Compact control groups float over the lower part of each response, leaving the
 full card body available to its graph, timeline, or measured visualization.
@@ -145,9 +144,10 @@ normal mode leaves them idle to conserve CPU.
 
 ## Diagnostics and bug reports
 
-Click **DIAG ON** in the plugin header to disable global diagnostics or open the
-diagnostics folder. Diagnostics are enabled by default and remain disabled if
-you turn them off. While enabled, megaDSP keeps
+Click **DIAG ON** or **DIAG OFF** in the plugin header to open a menu where you
+can enable or disable global diagnostics and open the diagnostics folder.
+Diagnostics are enabled by default and remain disabled if you turn them off.
+While enabled, megaDSP keeps
 bounded rotating local logs of plugin lifecycle, audio configuration, topology,
 state rejection, latency, and file-loading errors. It also installs fatal crash
 and uncaught-exception handlers in the DAW process and writes a minimal crash
@@ -268,7 +268,7 @@ instances can use distinct names and colors in the same session.
 
 - [Effects reference](docs/effects.md) — detailed per-effect control descriptions
 - [Contributing](CONTRIBUTING.md) — prerequisites, build commands, architecture guide, and PR process
-- [Releases](https://github.com/kevinlong206/megaDSP/releases) — download pre-built binaries for v0.23.1-beta.1
+- [Releases](https://github.com/kevinlong206/megaDSP/releases) — download pre-built binaries for v0.30.0-beta.1
 
 ## License
 
