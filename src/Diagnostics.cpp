@@ -14,7 +14,6 @@
 #include <limits.h>
 #include <unistd.h>
 #elif JUCE_WINDOWS
-#define NOMINMAX
 #include <windows.h>
 #endif
 

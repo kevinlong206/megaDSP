@@ -8,6 +8,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 option(MEGADSP_CAPTURE_SCREENSHOTS
        "Capture documentation images from the Standalone editor" OFF)
+if(MSVC)
+    add_compile_definitions(NOMINMAX)
+endif()
 
 find_package(Git QUIET)
 set(MEGADSP_COMMIT_HASH "unknown")
