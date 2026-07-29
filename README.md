@@ -201,6 +201,8 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Guitar Cabinet** | Fully procedural speaker, enclosure, microphone, and room modeling with dynamic cone breakup, power compression, and direct mic placement |
 | **Neural Amp Modeler** | Loads standard, A2, and SlimmableContainer `.nam` models with Pre Gain, a familiar Bass/Mid/Treble guitar tone stack, and Post Gain |
 
+![Saturator transfer curve and drum-bus dynamics chain](docs/images/saturation-dynamics.png)
+
 ### Time-Based
 
 | Module | What it does |
@@ -215,6 +217,8 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Spectral Delay Canvas** | Frequency-dependent low, mid, and high spectral delay with diffusion, feedback, and freeze |
 | **Chord Loom** | Automatically captures each guitar strum and sustains it as a continuously woven pad, smoothly replacing the previous held chord |
 | **Spectral Nebula** | Continuously absorbs guitar or vocals into a drifting, shimmering spectral cloud with tonal/noise focus and freeze |
+
+![Tempo-synced Delay timeline with ping-pong routing and direct repeat controls](docs/images/delay-movement.png)
 
 ### Modulation
 
