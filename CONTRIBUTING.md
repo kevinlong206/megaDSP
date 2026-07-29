@@ -190,6 +190,8 @@ Screenshots live under `docs/images/`. The intended filenames are:
 | `docs/images/module-browser.png` | Module browser open, showing categorized results |
 | `docs/images/visual-processing.png` | Several interactive graphs — e.g. EQ editor, compressor history, delay timeline |
 | `docs/images/reverb-modulation.png` | Algorithmic and/or convolution reverb graph with controls visible |
+| `docs/images/delay-movement.png` | Synced Delay timeline and movement controls |
+| `docs/images/saturation-dynamics.png` | Saturator and drum-chain dynamics workflow |
 
 To regenerate the screenshots from the real Standalone editor:
 
@@ -201,9 +203,10 @@ MEGADSP_SCREENSHOT_DIR="$PWD/docs/images" \
   ./build-screenshots/megaDSP_artefacts/Release/Standalone/megaDSP.app/Contents/MacOS/megaDSP
 ```
 
-The opt-in capture mode seeds synthetic rack names and exits after writing all
-four PNG files; it is disabled in normal builds. Do not commit screenshots of
-private data, unlicensed third-party content, or work-in-progress UI states.
+The opt-in capture mode seeds synthetic rack names, renders all six PNG files at
+2x resolution, and exits; it is disabled in normal builds. Do not commit
+screenshots of private data, unlicensed third-party content, or work-in-progress
+UI states.
 
 ---
 

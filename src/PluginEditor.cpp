@@ -2716,8 +2716,8 @@ void MegaDSPAudioProcessorEditor::captureScreenshot(
     auto image = screenshotOverlay != nullptr
                      && fileName == "module-browser.png"
         ? screenshotOverlay->createComponentSnapshot(
-              screenshotOverlay->getLocalBounds(), true, 1.0f)
-        : createComponentSnapshot(getLocalBounds(), true, 1.0f);
+              screenshotOverlay->getLocalBounds(), true, 2.0f)
+        : createComponentSnapshot(getLocalBounds(), true, 2.0f);
     const auto outputFile = outputDirectory.getChildFile(fileName);
     outputFile.deleteFile();
     auto stream = outputFile.createOutputStream();
@@ -2748,6 +2748,22 @@ void MegaDSPAudioProcessorEditor::advanceScreenshotCapture()
             break;
         case 2:
             captureScreenshot("reverb-modulation.png");
+            audioProcessor.setInstanceName("Echo Space");
+            audioProcessor.setBackgroundThemeIndex(2);
+            audioProcessor.loadFactoryPreset(3);
+            selectedSlot = 1;
+            refreshCards();
+            break;
+        case 3:
+            captureScreenshot("delay-movement.png");
+            audioProcessor.setInstanceName("Drum Bus");
+            audioProcessor.setBackgroundThemeIndex(3);
+            audioProcessor.loadFactoryPreset(2);
+            selectedSlot = 0;
+            refreshCards();
+            break;
+        case 4:
+            captureScreenshot("saturation-dynamics.png");
             audioProcessor.setInstanceName("Creative Bus");
             audioProcessor.setBackgroundThemeIndex(5);
             refreshIdentityPresentation();
@@ -2762,7 +2778,7 @@ void MegaDSPAudioProcessorEditor::advanceScreenshotCapture()
             screenshotOverlay->toFront(false);
             captureScreenshot("module-browser.png");
             break;
-        case 3:
+        case 5:
             juce::JUCEApplicationBase::quit();
             break;
         default:
