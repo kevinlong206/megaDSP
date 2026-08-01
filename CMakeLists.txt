@@ -480,6 +480,10 @@ target_compile_definitions(megaDSPTests PRIVATE
     MEGADSP_VERSION="${PROJECT_VERSION}"
     MEGADSP_COMMIT_HASH="${MEGADSP_COMMIT_HASH}"
     JucePlugin_Name="megaDSP")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+    target_compile_definitions(megaDSPTests PRIVATE
+        WDL_ALLOW_UNSIGNED_DEFAULT_CHAR=1)
+endif()
 target_link_libraries(megaDSPTests PRIVATE
     juce::juce_audio_utils
     juce::juce_dsp

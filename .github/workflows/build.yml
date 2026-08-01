@@ -132,7 +132,13 @@ jobs:
         env:
           CC: gcc-10
           CXX: g++-10
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMEGADSP_ADHOC_SIGN=OFF
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_AR=/usr/bin/gcc-ar-10
+          -DCMAKE_NM=/usr/bin/gcc-nm-10
+          -DCMAKE_RANLIB=/usr/bin/gcc-ranlib-10
+          -DMEGADSP_ADHOC_SIGN=OFF
 
       - name: Build VST3, CLAP, and tests
         run: cmake --build build --config Release --target megaDSP_VST3 megaDSP_CLAP megaDSPTests --parallel 4
