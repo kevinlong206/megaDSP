@@ -1,7 +1,7 @@
-diff --git a/Dependencies/AudioDSPTools/dsp/ResamplingContainer/ResamplingContainer.h b/Dependencies/AudioDSPTools/dsp/ResamplingContainer/ResamplingContainer.h
-index f9be0fe..7c79e1c 100644
---- a/Dependencies/AudioDSPTools/dsp/ResamplingContainer/ResamplingContainer.h
-+++ b/Dependencies/AudioDSPTools/dsp/ResamplingContainer/ResamplingContainer.h
+diff --git a/dsp/ResamplingContainer/ResamplingContainer.h b/dsp/ResamplingContainer/ResamplingContainer.h
+index 3099e42..7d17928 100644
+--- a/dsp/ResamplingContainer/ResamplingContainer.h
++++ b/dsp/ResamplingContainer/ResamplingContainer.h
 @@ -89 +89 @@ public:
 -  using LanczosResampler = LanczosResampler<T, NCHANS, A>;
 +  using LanczosResampler = dsp::LanczosResampler<T, NCHANS, A>;

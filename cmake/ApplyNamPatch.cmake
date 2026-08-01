@@ -1,5 +1,5 @@
 execute_process(
-    COMMAND git apply --check "${PATCH_FILE}"
+    COMMAND git apply --unidiff-zero --check "${PATCH_FILE}"
     WORKING_DIRECTORY "${NAM_SOURCE_DIR}"
     RESULT_VARIABLE can_apply
     OUTPUT_QUIET
@@ -7,7 +7,7 @@ execute_process(
 
 if(can_apply EQUAL 0)
     execute_process(
-        COMMAND git apply --whitespace=nowarn "${PATCH_FILE}"
+        COMMAND git apply --unidiff-zero --whitespace=nowarn "${PATCH_FILE}"
         WORKING_DIRECTORY "${NAM_SOURCE_DIR}"
         RESULT_VARIABLE apply_result)
     if(NOT apply_result EQUAL 0)
@@ -17,7 +17,7 @@ if(can_apply EQUAL 0)
 endif()
 
 execute_process(
-    COMMAND git apply --reverse --check "${PATCH_FILE}"
+    COMMAND git apply --unidiff-zero --reverse --check "${PATCH_FILE}"
     WORKING_DIRECTORY "${NAM_SOURCE_DIR}"
     RESULT_VARIABLE already_applied
     OUTPUT_QUIET

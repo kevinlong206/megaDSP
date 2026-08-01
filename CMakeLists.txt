@@ -67,7 +67,7 @@ FetchContent_Declare(
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyNamPatch.cmake"
         COMMAND
         "${CMAKE_COMMAND}"
-        "-DNAM_SOURCE_DIR=<SOURCE_DIR>"
+        "-DNAM_SOURCE_DIR=<SOURCE_DIR>/Dependencies/AudioDSPTools"
         "-DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/neuralampmodelercore-resampler-portability.patch"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyNamPatch.cmake")
 FetchContent_MakeAvailable(NeuralAmpModelerCore)
