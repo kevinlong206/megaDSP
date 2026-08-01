@@ -108,6 +108,8 @@ jobs:
             binutils \
             ca-certificates \
             file \
+            gcc-10 \
+            g++-10 \
             git \
             libasound2-dev \
             libfontconfig1-dev \
@@ -127,6 +129,9 @@ jobs:
           python3 -m pip install --no-cache-dir "cmake==3.31.6"
 
       - name: Configure
+        env:
+          CC: gcc-10
+          CXX: g++-10
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMEGADSP_ADHOC_SIGN=OFF
 
       - name: Build VST3, CLAP, and tests
