@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(megaDSP VERSION 0.30.0 LANGUAGES C CXX)
+project(megaDSP VERSION 2026.8.1 LANGUAGES C CXX)
+
+set(MEGADSP_VERSION "2026.08.01-beta")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,7 +32,7 @@ if(Git_FOUND)
     endif()
 endif()
 message(STATUS
-    "megaDSP build identity: ${PROJECT_VERSION} (${MEGADSP_COMMIT_HASH})")
+    "megaDSP build identity: ${MEGADSP_VERSION} (${MEGADSP_COMMIT_HASH})")
 
 include(FetchContent)
 
@@ -383,7 +385,7 @@ target_compile_definitions(megaDSP
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_USE_CURL=0
         JUCE_WEB_BROWSER=0
-        MEGADSP_VERSION="${PROJECT_VERSION}"
+        MEGADSP_VERSION="${MEGADSP_VERSION}"
         MEGADSP_COMMIT_HASH="${MEGADSP_COMMIT_HASH}")
 if(MEGADSP_CAPTURE_SCREENSHOTS)
     target_compile_definitions(megaDSP PRIVATE
@@ -477,7 +479,7 @@ target_compile_definitions(megaDSPTests PRIVATE
     MEGADSP_TESTS=1
     JUCE_USE_CURL=0
     JUCE_WEB_BROWSER=0
-    MEGADSP_VERSION="${PROJECT_VERSION}"
+    MEGADSP_VERSION="${MEGADSP_VERSION}"
     MEGADSP_COMMIT_HASH="${MEGADSP_COMMIT_HASH}"
     JucePlugin_Name="megaDSP")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")

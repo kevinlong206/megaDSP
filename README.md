@@ -155,8 +155,8 @@ bounded rotating local logs of plugin lifecycle, audio configuration, topology,
 state rejection, latency, and file-loading errors. It also installs fatal crash
 and uncaught-exception handlers in the DAW process and writes a minimal crash
 marker before allowing the existing host/OS crash handling to continue.
-Every diagnostics session header and crash marker includes the semantic version
-and seven-character build commit shown in the plugin header.
+Every diagnostics session header and crash marker includes the date-based
+version and seven-character build commit shown in the plugin header.
 
 Logs stay on your computer and never contain audio. Before attaching them to a
 [GitHub issue](https://github.com/kevinlong206/megaDSP/issues), review
@@ -285,7 +285,7 @@ instances can use distinct names and colors in the same session.
 
 - [Effects reference](docs/effects.md) — detailed per-effect control descriptions
 - [Contributing](CONTRIBUTING.md) — prerequisites, build commands, architecture guide, and PR process
-- [Releases](https://github.com/kevinlong206/megaDSP/releases) — download pre-built binaries for v0.30.0-beta.1
+- [Releases](https://github.com/kevinlong206/megaDSP/releases) — download pre-built binaries for 2026.08.01-beta
 
 ## License
 
