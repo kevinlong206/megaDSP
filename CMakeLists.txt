@@ -64,6 +64,11 @@ FetchContent_Declare(
         "${CMAKE_COMMAND}"
         "-DNAM_SOURCE_DIR=<SOURCE_DIR>"
         "-DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/neuralampmodelercore-container-registration.patch"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyNamPatch.cmake"
+        COMMAND
+        "${CMAKE_COMMAND}"
+        "-DNAM_SOURCE_DIR=<SOURCE_DIR>"
+        "-DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/neuralampmodelercore-resampler-portability.patch"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyNamPatch.cmake")
 FetchContent_MakeAvailable(NeuralAmpModelerCore)
 
@@ -383,6 +388,10 @@ target_compile_definitions(megaDSP
 if(MEGADSP_CAPTURE_SCREENSHOTS)
     target_compile_definitions(megaDSP PRIVATE
         MEGADSP_CAPTURE_SCREENSHOTS=1)
+endif()
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+    target_compile_definitions(megaDSP PRIVATE
+        WDL_ALLOW_UNSIGNED_DEFAULT_CHAR=1)
 endif()
 
 target_link_libraries(megaDSP
