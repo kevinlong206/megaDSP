@@ -57,7 +57,7 @@ automated tests and review.
 |---|:---:|:---:|:---:|
 | macOS 12+ (universal arm64 + x86_64) | ✓ | ✓ | ✓ |
 | Windows 10+ (x64) | ✓ | — | ✓ |
-| Linux x64 | ✓ | — | ✓ |
+| Linux (x64 + arm64, glibc 2.31+) | ✓ | — | ✓ |
 
 ## Installation
 
@@ -98,7 +98,9 @@ megaDSP.clap → %LOCALAPPDATA%\Programs\Common\CLAP
 <details>
 <summary>Linux</summary>
 
-Extract `megaDSP-<version>-Linux-x64.tar.gz` and copy the bundles:
+Extract the `megaDSP-<version>-Linux-x64.tar.gz` or
+`megaDSP-<version>-Linux-arm64.tar.gz` archive for your system and copy the
+bundles:
 
 ```
 megaDSP.vst3 → ~/.vst3

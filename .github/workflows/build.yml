@@ -28,32 +28,10 @@ jobs:
           - name: Windows (VST3, CLAP)
             os: windows-2022
             artifact: Windows-x64
-          - name: Linux (VST3, CLAP)
-            os: ubuntu-24.04
-            artifact: Linux-x64
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends \
-            libasound2-dev \
-            libfontconfig1-dev \
-            libfreetype-dev \
-            libgl1-mesa-dev \
-            libx11-dev \
-            libxcomposite-dev \
-            libxcursor-dev \
-            libxext-dev \
-            libxinerama-dev \
-            libxrandr-dev \
-            libxrender-dev \
-            ninja-build \
-            xvfb
 
       - name: Configure (macOS universal)
         if: runner.os == 'macOS'
@@ -62,10 +40,6 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
           -DMEGADSP_ADHOC_SIGN=ON
-
-      - name: Configure (Linux)
-        if: runner.os == 'Linux'
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMEGADSP_ADHOC_SIGN=OFF
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
@@ -78,13 +52,8 @@ jobs:
         if: runner.os == 'macOS'
         run: cmake --build build --config Release --target megaDSP_AU --parallel 4
 
-      - name: Test (macOS and Windows)
-        if: runner.os != 'Linux'
+      - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
-
-      - name: Test (Linux)
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum ctest --test-dir build -C Release --output-on-failure
 
       - name: Package plugins (macOS)
         if: runner.os == 'macOS'
@@ -94,14 +63,6 @@ jobs:
           cp -R build/megaDSP_artefacts/Release/AU package/megaDSP/
           cp -R build/megaDSP_artefacts/Release/CLAP package/megaDSP/
           tar -czf "release/megaDSP-${RELEASE_VERSION}-macOS-universal.tar.gz" -C package megaDSP
-
-      - name: Package plugins (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p package/megaDSP release
-          cp -R build/megaDSP_artefacts/Release/VST3 package/megaDSP/
-          cp -R build/megaDSP_artefacts/Release/CLAP package/megaDSP/
-          tar -czf "release/megaDSP-${RELEASE_VERSION}-Linux-x64.tar.gz" -C package megaDSP
 
       - name: Package plugins (Windows)
         if: runner.os == 'Windows'
@@ -116,6 +77,105 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: megaDSP-${{ matrix.artifact }}
+          path: release/*
+          if-no-files-found: error
+          compression-level: 0
+
+  linux-plugins:
+    name: Linux ${{ matrix.arch }} (VST3, CLAP; glibc 2.31)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            os: ubuntu-24.04
+            elf_architecture: x86-64
+          - arch: arm64
+            os: ubuntu-24.04-arm
+            elf_architecture: ARM aarch64
+    runs-on: ${{ matrix.os }}
+    container: ubuntu:20.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y \
+            binutils \
+            ca-certificates \
+            file \
+            git \
+            libasound2-dev \
+            libfontconfig1-dev \
+            libfreetype-dev \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            ninja-build \
+            python3-pip \
+            xauth \
+            xvfb
+          python3 -m pip install --no-cache-dir "cmake==3.31.6"
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMEGADSP_ADHOC_SIGN=OFF
+
+      - name: Build VST3, CLAP, and tests
+        run: cmake --build build --config Release --target megaDSP_VST3 megaDSP_CLAP megaDSPTests --parallel 4
+
+      - name: Test
+        run: xvfb-run --auto-servernum ctest --test-dir build -C Release --output-on-failure
+
+      - name: Verify Linux binary compatibility
+        shell: bash
+        run: |
+          mapfile -t binaries < <(
+            find \
+              build/megaDSP_artefacts/Release/VST3 \
+              build/megaDSP_artefacts/Release/CLAP \
+              -type f -exec file {} \; |
+              awk -F: '/ELF .* shared object/ { print $1 }'
+          )
+          if [[ ${#binaries[@]} -ne 2 ]]; then
+            printf 'Expected two plugin binaries, found %s\n' "${#binaries[@]}" >&2
+            exit 1
+          fi
+
+          file "${binaries[@]}" | grep -F "${{ matrix.elf_architecture }}"
+          max_glibc=$(
+            objdump -T "${binaries[@]}" |
+              sed -n 's/.*GLIBC_\([0-9][0-9.]*\).*/\1/p' |
+              sort -V |
+              tail -1
+          )
+          if [[ -z "$max_glibc" ||
+                "$(printf '%s\n' "$max_glibc" "2.31" | sort -V | tail -1)" != "2.31" ]]; then
+            printf 'Plugin requires glibc %s; expected no newer than 2.31\n' "${max_glibc:-unknown}" >&2
+            exit 1
+          fi
+          printf 'Verified %s binaries with maximum glibc requirement %s\n' \
+            "${{ matrix.arch }}" "$max_glibc"
+
+      - name: Package plugins
+        run: |
+          mkdir -p package/megaDSP release
+          cp -R build/megaDSP_artefacts/Release/VST3 package/megaDSP/
+          cp -R build/megaDSP_artefacts/Release/CLAP package/megaDSP/
+          tar -czf "release/megaDSP-${RELEASE_VERSION}-Linux-${{ matrix.arch }}.tar.gz" -C package megaDSP
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: megaDSP-Linux-${{ matrix.arch }}
           path: release/*
           if-no-files-found: error
           compression-level: 0
