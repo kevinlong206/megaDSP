@@ -221,6 +221,13 @@ public:
 using PreparedImpulseResponsePtr =
     std::unique_ptr<PreparedImpulseResponse>;
 
+struct ImpulseResponseTransform
+{
+    float start = 0.0f;
+    float end = 1.0f;
+    bool reverse = false;
+};
+
 class ImpulseResponseCapability
 {
 public:
@@ -238,6 +245,55 @@ public:
     virtual juce::String impulseResponseName() const = 0;
     virtual ImpulseResponsePreview impulseResponsePreview() const = 0;
     virtual double currentImpulseResponseTailSeconds() const noexcept = 0;
+    virtual int builtInImpulseResponseCount() const noexcept { return 0; }
+    virtual juce::String builtInImpulseResponseName(int) const { return {}; }
+    virtual juce::Result prepareBuiltInImpulseResponse(
+        int, PreparedImpulseResponsePtr&)
+    {
+        return juce::Result::fail(
+            "The selected module has no built-in impulse responses.");
+    }
+    virtual int impulseResponseLaneCount() const noexcept { return 1; }
+    virtual ImpulseResponseTransform impulseResponseTransform(
+        const float*, int) const noexcept
+    {
+        return {};
+    }
+    virtual juce::Result prepareImpulseResponse(
+        int lane, const juce::File& file,
+        const ImpulseResponseTransform&, PreparedImpulseResponsePtr& prepared)
+    {
+        return lane == 0
+            ? prepareImpulseResponse(file, prepared)
+            : juce::Result::fail("Invalid impulse-response lane.");
+    }
+    virtual bool commitPreparedImpulseResponse(
+        int lane, PreparedImpulseResponsePtr& prepared)
+    {
+        return lane == 0 && commitPreparedImpulseResponse(prepared);
+    }
+    virtual void cancelPreparedImpulseResponse(
+        int lane, PreparedImpulseResponsePtr& prepared) noexcept
+    {
+        if (lane == 0)
+            cancelPreparedImpulseResponse(prepared);
+        else
+            prepared.reset();
+    }
+    virtual void clearImpulseResponse(int lane)
+    {
+        if (lane == 0)
+            clearImpulseResponse();
+    }
+    virtual juce::String impulseResponseName(int lane) const
+    {
+        return lane == 0 ? impulseResponseName() : juce::String {};
+    }
+    virtual ImpulseResponsePreview impulseResponsePreview(int lane) const
+    {
+        return lane == 0 ? impulseResponsePreview()
+                         : ImpulseResponsePreview {};
+    }
 };
 
 struct GrainVisualEvent

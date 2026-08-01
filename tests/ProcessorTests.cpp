@@ -127,7 +127,7 @@ public:
                != nullptr);
         expect(processor.getTopologyGeneration() > firstGeneration);
 
-        beginTest("Capture histories clear on topology, selection, and reset");
+        beginTest("Capture histories survive selection and clear on reset");
         std::array<float, 1> captured {};
         processor.getVisualizationData().slotData(0).input.push(0.75f);
         setType(processor, 0, megadsp::ModuleType::equalizer);
@@ -143,7 +143,8 @@ public:
         processor.setSelectedTab(1);
         expectEquals(static_cast<int>(
             processor.getVisualizationData().slotData(1)
-                .input.copyLatest(captured)), 0);
+                .input.copyLatest(captured)), 1);
+        expectEquals(captured[0], 0.5f);
 
         processor.getVisualizationData().slotData(1).input.push(0.25f);
         processor.resetModuleToDefaults(1);
@@ -225,25 +226,35 @@ public:
                 editor->commitHashForTesting(),
                 juce::String(MEGADSP_COMMIT_HASH));
             expect(editor->cardChildrenFitForTesting());
+            expect(editor->cardGraphsAvoidControlsForTesting());
             expectEquals(
                 editor->activeVisualizationCardCountForTesting(), 0);
             expectEquals(
-                editorProcessor->getVisualizationData().getSelectedSlot(), -1);
+                static_cast<int>(
+                    editorProcessor->getVisualizationData()
+                        .getActiveSlotMask()),
+                0);
+            editor->setCardsEditorVisibleForTesting(true);
+            expectEquals(
+                editor->activeVisualizationCardCountForTesting(), 2);
+            expect(editorProcessor->getVisualizationData().isSlotActive(0));
+            expect(editorProcessor->getVisualizationData().isSlotActive(1));
             editor->simulateDescendantFocusForTesting(1);
             expectEquals(editorProcessor->getSelectedTab(), 1);
             expectEquals(
-                editor->activeVisualizationCardCountForTesting(), 0);
+                editor->activeVisualizationCardCountForTesting(), 2);
             editor->simulateCardHoverForTesting(0);
             expectEquals(editorProcessor->getSelectedTab(), 0);
             expectEquals(
-                editor->activeVisualizationCardCountForTesting(), 0);
+                editor->activeVisualizationCardCountForTesting(), 2);
             editor->simulateCardHoverExitForTesting(0);
             expectEquals(editorProcessor->getSelectedTab(), 1);
             expectEquals(
-                editor->activeVisualizationCardCountForTesting(), 0);
+                editor->activeVisualizationCardCountForTesting(), 2);
             editorProcessor->setSelectedTab(0);
             editor->simulateFocusGainDuringRefreshForTesting(1);
             expectEquals(editorProcessor->getSelectedTab(), 0);
+            editor->setCardsEditorVisibleForTesting(false);
             editor->clickCloseButtonForTesting(0);
             expectEquals(editorProcessor->getRack().activeSlotCount(), 1);
             expectEquals(editor->tabCountForTesting(), 1);
@@ -269,6 +280,7 @@ public:
                 megadsp::slotCount + 1);
             expect(editor->cardHeightsAreUniformForTesting());
             expect(editor->cardChildrenFitForTesting());
+            expect(editor->cardGraphsAvoidControlsForTesting());
             expect(editor->rackOverflowsVerticallyForTesting());
             expectEquals(
                 editor->activeVisualizationCardCountForTesting(), 0);
@@ -456,28 +468,29 @@ public:
             expect(!image.isNull());
         }
 
-        beginTest("Only the active graph owns visualization capture");
+        beginTest("Every active graph owns visualization capture");
         {
             MegaDSPAudioProcessor graphProcessor;
             graphProcessor.prepareToPlay(48000.0, 512);
             setType(graphProcessor, 0, megadsp::ModuleType::equalizer);
             setType(graphProcessor, 1, megadsp::ModuleType::compressor);
             graphProcessor.flushPendingUpdatesForTesting();
-            graphProcessor.getVisualizationData().setSelectedSlot(0);
             megadsp::ui::EffectGraph first(
                 graphProcessor, 0, megadsp::ModuleType::equalizer);
             megadsp::ui::EffectGraph second(
                 graphProcessor, 1, megadsp::ModuleType::compressor);
-            expect(first.isVisualizationActive());
+            expect(!first.isVisualizationActive());
             expect(!second.isVisualizationActive());
 
+            first.setVisualizationActive(true);
             second.setVisualizationActive(true);
-            first.setVisualizationActive(false);
-            expectEquals(
-                graphProcessor.getVisualizationData().getSelectedSlot(), 1);
+            expect(first.isVisualizationActive());
+            expect(second.isVisualizationActive());
+            expect(graphProcessor.getVisualizationData().isSlotActive(0));
+            expect(graphProcessor.getVisualizationData().isSlotActive(1));
             second.setVisualizationActive(false);
-            expectEquals(
-                graphProcessor.getVisualizationData().getSelectedSlot(), -1);
+            expect(graphProcessor.getVisualizationData().isSlotActive(0));
+            expect(!graphProcessor.getVisualizationData().isSlotActive(1));
         }
 
         beginTest("Bypassed slots suspend DSP and visualization capture");
@@ -487,7 +500,7 @@ public:
             setType(
                 suspendedProcessor, 0, megadsp::ModuleType::equalizer);
             suspendedProcessor.flushPendingUpdatesForTesting();
-            suspendedProcessor.getVisualizationData().setSelectedSlot(0);
+            suspendedProcessor.getVisualizationData().setSlotActive(0, true);
             juce::MidiBuffer bypassMidi;
             juce::AudioBuffer<float> active(2, 512);
             for (int channel = 0; channel < active.getNumChannels(); ++channel)
@@ -1143,6 +1156,77 @@ public:
             static_cast<int>(snapshotState.getSize()));
         expect(liveSafeRestored.isLiveSafeSnapshotsEnabled());
 
+        beginTest("Schema 12 migrates Stage Vocal controls in snapshots");
+        MegaDSPAudioProcessor vocalMigrationSource;
+        vocalMigrationSource.prepareToPlay(48000.0, 512);
+        juce::MemoryBlock vocalMigrationData;
+        vocalMigrationSource.getStateInformation(vocalMigrationData);
+        auto vocalMigrationXml =
+            juce::AudioProcessor::getXmlFromBinary(
+                vocalMigrationData.getData(),
+                static_cast<int>(vocalMigrationData.getSize()));
+        expect(vocalMigrationXml != nullptr);
+        if (vocalMigrationXml != nullptr)
+        {
+            auto vocalMigrationTree =
+                juce::ValueTree::fromXml(*vocalMigrationXml);
+            vocalMigrationTree.setProperty(
+                "schemaVersion", 12, nullptr);
+            const auto snapshots =
+                vocalMigrationTree.getChildWithName("SNAPSHOTS");
+            for (auto snapshot : snapshots)
+            {
+                if (static_cast<int>(
+                        snapshot.getProperty("index", -1)) != 1)
+                    continue;
+                snapshot.setProperty("populated", true, nullptr);
+                for (auto slot : snapshot)
+                {
+                    if (static_cast<int>(
+                            slot.getProperty("index", -1)) != 0)
+                        continue;
+                    slot.setProperty(
+                        "type",
+                        static_cast<int>(
+                            megadsp::ModuleType::stageVocal),
+                        nullptr);
+                    for (int control = 0;
+                         control < megadsp::controlsPerSlot; ++control)
+                        slot.setProperty(
+                            "control" + juce::String(control + 1),
+                            0.03f + static_cast<float>(control) * 0.07f,
+                            nullptr);
+                }
+            }
+            auto migratedXml = vocalMigrationTree.createXml();
+            juce::MemoryBlock migratedData;
+            if (migratedXml != nullptr)
+                juce::AudioProcessor::copyXmlToBinary(
+                    *migratedXml, migratedData);
+            MegaDSPAudioProcessor restoredVocal;
+            restoredVocal.prepareToPlay(48000.0, 512);
+            restoredVocal.setStateInformation(
+                migratedData.getData(),
+                static_cast<int>(migratedData.getSize()));
+            restoredVocal.recallSnapshot(1);
+            restoredVocal.flushPendingUpdatesForTesting();
+            const auto defaults = megadsp::moduleDefaults(
+                megadsp::ModuleType::stageVocal);
+            auto* fastAmount = restoredVocal.parameters.getParameter(
+                megadsp::controlParameterId(0, 1));
+            auto* deEssFrequency =
+                restoredVocal.parameters.getParameter(
+                    megadsp::controlParameterId(0, 7));
+            expect(fastAmount != nullptr);
+            expect(deEssFrequency != nullptr);
+            if (fastAmount != nullptr)
+                expectWithinAbsoluteError(
+                    fastAmount->getValue(), defaults[1], 0.000001f);
+            if (deEssFrequency != nullptr)
+                expectWithinAbsoluteError(
+                    deEssFrequency->getValue(), 0.24f, 0.000001f);
+        }
+
         beginTest("IR directory persists and adjacent browsing wraps");
         const auto irDirectory =
             juce::File::getSpecialLocation(juce::File::tempDirectory)
@@ -1206,6 +1290,65 @@ public:
             expectEquals(
                 restoredIrBrowser.impulseResponseName(0),
                 firstIr.getFileName());
+        }
+        {
+            MegaDSPAudioProcessor wormhole;
+            wormhole.prepareToPlay(48000.0, 512);
+            setType(
+                wormhole, 0,
+                megadsp::ModuleType::wormholeConvolution);
+            wormhole.flushPendingUpdatesForTesting();
+            expect(wormhole.loadImpulseResponse(
+                0, 0, firstIr).wasOk());
+            expect(wormhole.loadImpulseResponse(
+                0, 1, secondIr).wasOk());
+            expectEquals(
+                wormhole.impulseResponsePath(0, 0),
+                firstIr.getFullPathName());
+            expectEquals(
+                wormhole.impulseResponsePath(0, 1),
+                secondIr.getFullPathName());
+            juce::MemoryBlock wormholeState;
+            wormhole.getStateInformation(wormholeState);
+            MegaDSPAudioProcessor restored;
+            restored.prepareToPlay(48000.0, 512);
+            restored.setStateInformation(
+                wormholeState.getData(),
+                static_cast<int>(wormholeState.getSize()));
+            expectEquals(
+                restored.impulseResponseName(0, 0),
+                firstIr.getFileName());
+            expectEquals(
+                restored.impulseResponseName(0, 1),
+                secondIr.getFileName());
+
+            auto legacyXml = juce::AudioProcessor::getXmlFromBinary(
+                wormholeState.getData(),
+                static_cast<int>(wormholeState.getSize()));
+            expect(legacyXml != nullptr);
+            if (legacyXml != nullptr)
+            {
+                auto legacyTree = juce::ValueTree::fromXml(*legacyXml);
+                legacyTree.setProperty("schemaVersion", 11, nullptr);
+                for (auto snapshot :
+                     legacyTree.getChildWithName("SNAPSHOTS"))
+                    for (auto slot : snapshot)
+                        slot.removeProperty("impulseResponse2", nullptr);
+                auto updatedXml = legacyTree.createXml();
+                juce::MemoryBlock legacyData;
+                if (updatedXml != nullptr)
+                    juce::AudioProcessor::copyXmlToBinary(
+                        *updatedXml, legacyData);
+                MegaDSPAudioProcessor legacyRestored;
+                legacyRestored.prepareToPlay(48000.0, 512);
+                legacyRestored.setStateInformation(
+                    legacyData.getData(),
+                    static_cast<int>(legacyData.getSize()));
+                expectEquals(
+                    legacyRestored.impulseResponseName(0, 0),
+                    firstIr.getFileName());
+                expect(legacyRestored.impulseResponsePath(0, 1).isEmpty());
+            }
         }
         expect(firstIr.deleteFile());
         expect(secondIr.deleteFile());

@@ -131,15 +131,40 @@ struct SlotVisualizationData
 class VisualizationData
 {
 public:
-    void setSelectedSlot(int slot)
+    void setSlotActive(int slot, bool active)
     {
-        selectedSlot.store(juce::isPositiveAndBelow(slot, slotCount) ? slot : -1,
-                           std::memory_order_release);
+        if (!juce::isPositiveAndBelow(slot, slotCount))
+            return;
+        const auto bit = std::uint32_t { 1 } << static_cast<unsigned>(slot);
+        if (active)
+            activeSlotMask.fetch_or(bit, std::memory_order_release);
+        else
+            activeSlotMask.fetch_and(~bit, std::memory_order_release);
     }
 
-    int getSelectedSlot() const
+    bool isSlotActive(int slot) const
     {
-        return selectedSlot.load(std::memory_order_acquire);
+        if (!juce::isPositiveAndBelow(slot, slotCount))
+            return false;
+        const auto bit = std::uint32_t { 1 } << static_cast<unsigned>(slot);
+        return (activeSlotMask.load(std::memory_order_acquire) & bit) != 0;
+    }
+
+    std::uint32_t getActiveSlotMask() const
+    {
+        return activeSlotMask.load(std::memory_order_acquire);
+    }
+
+    void setActiveSlotMask(std::uint32_t mask)
+    {
+        constexpr auto validMask =
+            (std::uint32_t { 1 } << static_cast<unsigned>(slotCount)) - 1u;
+        activeSlotMask.store(mask & validMask, std::memory_order_release);
+    }
+
+    void clearActiveSlots()
+    {
+        activeSlotMask.store(0, std::memory_order_release);
     }
 
     void prepare(double sampleRate)
@@ -221,6 +246,6 @@ private:
     }
 
     std::array<SlotVisualizationData, slotCount> slots;
-    std::atomic<int> selectedSlot { -1 };
+    std::atomic<std::uint32_t> activeSlotMask { 0 };
 };
 } // namespace megadsp

@@ -110,28 +110,39 @@ EffectRack::EffectRack(
     outputGain = stateToUse.getRawParameterValue("global.output");
 }
 
-juce::String EffectRack::impulsePath(int slot) const
+juce::String EffectRack::impulsePath(int slot, int lane) const
 {
     if (legacyParameters != nullptr)
         return legacyParameters->state.getProperty(
-            "impulseResponse" + juce::String(slot + 1)).toString();
-    return state->slots[static_cast<size_t>(slot)].impulseResponsePath;
+            "impulseResponse" + (lane == 0 ? juce::String {}
+                                           : juce::String(lane + 1))
+                + juce::String(slot + 1)).toString();
+    const auto& rackSlot = state->slots[static_cast<size_t>(slot)];
+    return lane == 0 ? rackSlot.impulseResponsePath
+                     : rackSlot.impulseResponsePath2;
 }
 
 void EffectRack::setImpulsePath(
-    int slot, const juce::String& path)
+    int slot, int lane, const juce::String& path)
 {
     if (legacyParameters != nullptr)
     {
         const auto property =
-            juce::Identifier("impulseResponse" + juce::String(slot + 1));
+            juce::Identifier(
+                "impulseResponse" + (lane == 0 ? juce::String {}
+                                                : juce::String(lane + 1))
+                + juce::String(slot + 1));
         if (path.isEmpty())
             legacyParameters->state.removeProperty(property, nullptr);
         else
             legacyParameters->state.setProperty(property, path, nullptr);
         return;
     }
-    state->slots[static_cast<size_t>(slot)].impulseResponsePath = path;
+    auto& rackSlot = state->slots[static_cast<size_t>(slot)];
+    if (lane == 0)
+        rackSlot.impulseResponsePath = path;
+    else
+        rackSlot.impulseResponsePath2 = path;
 }
 
 juce::String EffectRack::namPath(int slot) const
@@ -196,6 +207,9 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
     slot.synchronizedImpulsePath.clear();
     slot.observedImpulsePath.clear();
     slot.impulseRestorePending = false;
+    slot.synchronizedImpulsePath2.clear();
+    slot.observedImpulsePath2.clear();
+    slot.impulseRestorePending2 = false;
     slot.synchronizedNamPath.clear();
     slot.observedNamPath.clear();
     slot.namRestorePending = false;
@@ -218,6 +232,18 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
     {
         module->prepare(preparedSpec);
         module->reset();
+        if (auto* impulse = module->impulseResponseCapability();
+            impulse != nullptr
+            && impulse->builtInImpulseResponseCount() > 0)
+        {
+            const auto index = discreteIndex(
+                slot.controls[0]->load(),
+                impulse->builtInImpulseResponseCount());
+            PreparedImpulseResponsePtr prepared;
+            if (impulse->prepareBuiltInImpulseResponse(
+                    index, prepared).wasOk())
+                impulse->commitPreparedImpulseResponse(prepared);
+        }
         slot.dryBuffer.setSize(
             static_cast<int>(preparedSpec.numChannels),
             static_cast<int>(preparedSpec.maximumBlockSize),
@@ -251,6 +277,9 @@ void EffectRack::synchronizeModuleDataState(int slot)
         rackSlot.synchronizedImpulsePath.clear();
         rackSlot.observedImpulsePath.clear();
         rackSlot.impulseRestorePending = false;
+        rackSlot.synchronizedImpulsePath2.clear();
+        rackSlot.observedImpulsePath2.clear();
+        rackSlot.impulseRestorePending2 = false;
         rackSlot.synchronizedNamPath.clear();
         rackSlot.observedNamPath.clear();
         rackSlot.namRestorePending = false;
@@ -264,16 +293,32 @@ void EffectRack::synchronizeModuleDataState(int slot)
         rackSlot.synchronizedImpulsePath.clear();
         rackSlot.observedImpulsePath.clear();
         rackSlot.impulseRestorePending = false;
+        rackSlot.synchronizedImpulsePath2.clear();
+        rackSlot.observedImpulsePath2.clear();
+        rackSlot.impulseRestorePending2 = false;
     }
     else
     {
-        const auto requestedPath = impulsePath(slot);
-        if (requestedPath != rackSlot.observedImpulsePath)
+        for (int lane = 0;
+             lane < impulseResponse->impulseResponseLaneCount(); ++lane)
         {
-            impulseResponse->clearImpulseResponse();
-            rackSlot.synchronizedImpulsePath.clear();
-            rackSlot.observedImpulsePath = requestedPath;
-            rackSlot.impulseRestorePending = requestedPath.isNotEmpty();
+            const auto requestedPath = impulsePath(slot, lane);
+            auto& synchronized = lane == 0
+                ? rackSlot.synchronizedImpulsePath
+                : rackSlot.synchronizedImpulsePath2;
+            auto& observed = lane == 0
+                ? rackSlot.observedImpulsePath
+                : rackSlot.observedImpulsePath2;
+            auto& pending = lane == 0
+                ? rackSlot.impulseRestorePending
+                : rackSlot.impulseRestorePending2;
+            if (requestedPath != observed)
+            {
+                impulseResponse->clearImpulseResponse(lane);
+                synchronized.clear();
+                observed = requestedPath;
+                pending = requestedPath.isNotEmpty();
+            }
         }
     }
 
@@ -449,7 +494,7 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
             slot.wet.setTargetValue(1.0f);
         const auto captureVisualization =
             !bypassRequested
-            && visualization.getSelectedSlot() == slotIndex;
+            && visualization.isSlotActive(slotIndex);
         const ProcessEnvironment environment {
             sidechain, bpm, captureVisualization
         };
@@ -691,15 +736,16 @@ void EffectRack::moveSlot(int source, int destination)
         return juce::Identifier("impulseResponse"
                                 + juce::String(index + 1));
     };
-    auto readIr = [this, &irProperty](int index)
+    auto readIr = [this, &irProperty](int index, int lane)
     {
         juce::ignoreUnused(irProperty);
-        return impulsePath(index);
+        return impulsePath(index, lane);
     };
-    auto writeIr = [this, &irProperty](int index, const juce::String& path)
+    auto writeIr = [this, &irProperty](
+                       int index, int lane, const juce::String& path)
     {
         juce::ignoreUnused(irProperty);
-        setImpulsePath(index, path);
+        setImpulsePath(index, lane, path);
     };
     auto namProperty = [](int index)
     {
@@ -717,24 +763,29 @@ void EffectRack::moveSlot(int source, int destination)
     };
 
     const auto moving = read(source);
-    const auto movingIr = readIr(source);
+    const std::array<juce::String, 2> movingIr {
+        readIr(source, 0), readIr(source, 1)
+    };
     const auto movingNam = readNam(source);
     if (source < destination)
         for (int index = source; index < destination; ++index)
         {
             write(index, read(index + 1));
-            writeIr(index, readIr(index + 1));
+            for (int lane = 0; lane < 2; ++lane)
+                writeIr(index, lane, readIr(index + 1, lane));
             writeNam(index, readNam(index + 1));
         }
     else
         for (int index = source; index > destination; --index)
         {
             write(index, read(index - 1));
-            writeIr(index, readIr(index - 1));
+            for (int lane = 0; lane < 2; ++lane)
+                writeIr(index, lane, readIr(index - 1, lane));
             writeNam(index, readNam(index - 1));
         }
     write(destination, moving);
-    writeIr(destination, movingIr);
+    for (int lane = 0; lane < 2; ++lane)
+        writeIr(destination, lane, movingIr[static_cast<size_t>(lane)]);
     writeNam(destination, movingNam);
 }
 
@@ -743,6 +794,7 @@ void EffectRack::clearSlot(int slot)
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return;
     clearImpulseResponse(slot);
+    clearImpulseResponse(slot, 1);
     clearNamModel(slot);
 
     auto& destination = slots[static_cast<size_t>(slot)];
@@ -751,7 +803,8 @@ void EffectRack::clearSlot(int slot)
     for (int control = 0; control < controlsPerSlot; ++control)
         destination.controls[static_cast<size_t>(control)]->store(
             0.5f, std::memory_order_relaxed);
-    setImpulsePath(slot, {});
+    setImpulsePath(slot, 0, {});
+    setImpulsePath(slot, 1, {});
     setNamPath(slot, {});
 }
 
@@ -764,17 +817,24 @@ void EffectRack::clearModuleDataState()
         {
             if (auto* impulseResponse =
                     rackSlot.activeModule->impulseResponseCapability())
-                impulseResponse->clearImpulseResponse();
+                for (int lane = 0;
+                     lane < impulseResponse->impulseResponseLaneCount();
+                     ++lane)
+                    impulseResponse->clearImpulseResponse(lane);
             if (auto* namCap = rackSlot.activeModule->namModelCapability())
                 namCap->clearNamModel();
         }
         rackSlot.synchronizedImpulsePath.clear();
         rackSlot.observedImpulsePath.clear();
         rackSlot.impulseRestorePending = false;
+        rackSlot.synchronizedImpulsePath2.clear();
+        rackSlot.observedImpulsePath2.clear();
+        rackSlot.impulseRestorePending2 = false;
         rackSlot.synchronizedNamPath.clear();
         rackSlot.observedNamPath.clear();
         rackSlot.namRestorePending = false;
-        setImpulsePath(slot, {});
+        setImpulsePath(slot, 0, {});
+        setImpulsePath(slot, 1, {});
         setNamPath(slot, {});
     }
 }
@@ -831,6 +891,13 @@ juce::Result EffectRack::prepareImpulseResponse(
     int slot, const juce::File& file,
     PreparedImpulseResponseLoad& load)
 {
+    return prepareImpulseResponse(slot, 0, file, load);
+}
+
+juce::Result EffectRack::prepareImpulseResponse(
+    int slot, int lane, const juce::File& file,
+    PreparedImpulseResponseLoad& load)
+{
     load = {};
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return juce::Result::fail("Invalid impulse-response slot.");
@@ -845,12 +912,45 @@ juce::Result EffectRack::prepareImpulseResponse(
         return juce::Result::fail(
             "The selected slot does not support impulse responses.");
 
+    if (!juce::isPositiveAndBelow(
+            lane, impulseResponse->impulseResponseLaneCount()))
+        return juce::Result::fail("Invalid impulse-response lane.");
+
     load.slot = slot;
     load.type = rackSlot.activeType;
     load.module = module;
+    load.lane = lane;
     load.path = file.getFullPathName();
+    const auto values = rackSlot.values();
     auto result = impulseResponse->prepareImpulseResponse(
-        file, load.prepared);
+        lane, file,
+        impulseResponse->impulseResponseTransform(values.data(), lane),
+        load.prepared);
+    if (result.failed())
+        load = {};
+    return result;
+}
+
+juce::Result EffectRack::prepareBuiltInImpulseResponse(
+    int slot, int index, PreparedImpulseResponseLoad& load)
+{
+    load = {};
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return juce::Result::fail("Invalid impulse-response slot.");
+    auto& rackSlot = slots[static_cast<size_t>(slot)];
+    auto* module = selectedModule(rackSlot);
+    if (module == nullptr)
+        return juce::Result::fail(
+            "The selected slot has no synchronized DSP module.");
+    auto* impulseResponse = module->impulseResponseCapability();
+    if (impulseResponse == nullptr)
+        return juce::Result::fail(
+            "The selected slot does not support impulse responses.");
+    load.slot = slot;
+    load.type = rackSlot.activeType;
+    load.module = module;
+    auto result = impulseResponse->prepareBuiltInImpulseResponse(
+        index, load.prepared);
     if (result.failed())
         load = {};
     return result;
@@ -871,13 +971,22 @@ bool EffectRack::commitImpulseResponse(
     auto* impulseResponse = module->impulseResponseCapability();
     if (impulseResponse == nullptr
         || !impulseResponse->commitPreparedImpulseResponse(
-            load.prepared))
+            load.lane, load.prepared))
         return false;
 
-    rackSlot.synchronizedImpulsePath = load.path;
-    rackSlot.observedImpulsePath = load.path;
-    rackSlot.impulseRestorePending = false;
-    setImpulsePath(load.slot, load.path);
+    auto& synchronized = load.lane == 0
+        ? rackSlot.synchronizedImpulsePath
+        : rackSlot.synchronizedImpulsePath2;
+    auto& observed = load.lane == 0
+        ? rackSlot.observedImpulsePath
+        : rackSlot.observedImpulsePath2;
+    auto& pending = load.lane == 0
+        ? rackSlot.impulseRestorePending
+        : rackSlot.impulseRestorePending2;
+    synchronized = load.path;
+    observed = load.path;
+    pending = false;
+    setImpulsePath(load.slot, load.lane, load.path);
     return true;
 }
 
@@ -893,7 +1002,7 @@ void EffectRack::cancelImpulseResponse(
             if (auto* impulseResponse =
                     module->impulseResponseCapability())
                 impulseResponse->cancelPreparedImpulseResponse(
-                    load.prepared);
+                    load.lane, load.prepared);
     }
     load = {};
 }
@@ -901,8 +1010,14 @@ void EffectRack::cancelImpulseResponse(
 juce::Result EffectRack::loadImpulseResponse(
     int slot, const juce::File& file)
 {
+    return loadImpulseResponse(slot, 0, file);
+}
+
+juce::Result EffectRack::loadImpulseResponse(
+    int slot, int lane, const juce::File& file)
+{
     PreparedImpulseResponseLoad load;
-    auto result = prepareImpulseResponse(slot, file, load);
+    auto result = prepareImpulseResponse(slot, lane, file, load);
     if (result.failed())
         return result;
     if (!commitImpulseResponse(load))
@@ -914,7 +1029,27 @@ juce::Result EffectRack::loadImpulseResponse(
     return juce::Result::ok();
 }
 
+juce::Result EffectRack::loadBuiltInImpulseResponse(int slot, int index)
+{
+    PreparedImpulseResponseLoad load;
+    auto result = prepareBuiltInImpulseResponse(slot, index, load);
+    if (result.failed())
+        return result;
+    if (!commitImpulseResponse(load))
+    {
+        cancelImpulseResponse(load);
+        return juce::Result::fail(
+            "The cabinet impulse request was superseded.");
+    }
+    return juce::Result::ok();
+}
+
 juce::Result EffectRack::clearImpulseResponse(int slot)
+{
+    return clearImpulseResponse(slot, 0);
+}
+
+juce::Result EffectRack::clearImpulseResponse(int slot, int lane)
 {
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return juce::Result::fail("Invalid convolution slot.");
@@ -927,11 +1062,33 @@ juce::Result EffectRack::clearImpulseResponse(int slot)
     if (impulseResponse == nullptr)
         return juce::Result::fail(
             "The selected slot does not support impulse responses.");
-    impulseResponse->clearImpulseResponse();
-    rackSlot.synchronizedImpulsePath.clear();
-    rackSlot.observedImpulsePath.clear();
-    rackSlot.impulseRestorePending = false;
-    setImpulsePath(slot, {});
+    if (!juce::isPositiveAndBelow(
+            lane, impulseResponse->impulseResponseLaneCount()))
+        return juce::Result::fail("Invalid impulse-response lane.");
+    if (lane == 0 && impulseResponse->builtInImpulseResponseCount() > 0)
+    {
+        const auto index = discreteIndex(
+            rackSlot.controls[0]->load(),
+            impulseResponse->builtInImpulseResponseCount());
+        auto result = loadBuiltInImpulseResponse(slot, index);
+        if (result.failed())
+            return result;
+    }
+    else
+        impulseResponse->clearImpulseResponse(lane);
+    auto& synchronized = lane == 0
+        ? rackSlot.synchronizedImpulsePath
+        : rackSlot.synchronizedImpulsePath2;
+    auto& observed = lane == 0
+        ? rackSlot.observedImpulsePath
+        : rackSlot.observedImpulsePath2;
+    auto& pending = lane == 0
+        ? rackSlot.impulseRestorePending
+        : rackSlot.impulseRestorePending2;
+    synchronized.clear();
+    observed.clear();
+    pending = false;
+    setImpulsePath(slot, lane, {});
     return juce::Result::ok();
 }
 
@@ -939,14 +1096,24 @@ void EffectRack::reloadImpulseResponses()
 {
     for (int slot = 0; slot < slotCount; ++slot)
     {
-        const auto path = pendingImpulseResponsePath(slot);
-        if (path.isNotEmpty())
-            if (loadImpulseResponse(slot, juce::File(path)).failed())
-                discardPendingImpulseResponse(slot, path);
+        for (int lane = 0; lane < 2; ++lane)
+        {
+            const auto path = pendingImpulseResponsePath(slot, lane);
+            if (path.isNotEmpty())
+                if (loadImpulseResponse(
+                        slot, lane, juce::File(path)).failed())
+                    discardPendingImpulseResponse(slot, lane, path);
+        }
     }
 }
 
 juce::String EffectRack::pendingImpulseResponsePath(int slot) const
+{
+    return pendingImpulseResponsePath(slot, 0);
+}
+
+juce::String EffectRack::pendingImpulseResponsePath(
+    int slot, int lane) const
 {
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return {};
@@ -955,23 +1122,42 @@ juce::String EffectRack::pendingImpulseResponsePath(int slot) const
     if (module == nullptr
         || module->impulseResponseCapability() == nullptr)
         return {};
-    const auto path = impulsePath(slot);
-    return rackSlot.impulseRestorePending && path.isNotEmpty()
-               && path == rackSlot.observedImpulsePath
+    const auto path = impulsePath(slot, lane);
+    const auto& observed = lane == 0
+        ? rackSlot.observedImpulsePath : rackSlot.observedImpulsePath2;
+    const auto pending = lane == 0
+        ? rackSlot.impulseRestorePending : rackSlot.impulseRestorePending2;
+    return pending && path.isNotEmpty()
+               && path == observed
                ? path : juce::String{};
 }
 
 void EffectRack::discardPendingImpulseResponse(
     int slot, const juce::String& path)
 {
+    discardPendingImpulseResponse(slot, 0, path);
+}
+
+void EffectRack::discardPendingImpulseResponse(
+    int slot, int lane, const juce::String& path)
+{
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return;
     auto& rackSlot = slots[static_cast<size_t>(slot)];
-    if (rackSlot.observedImpulsePath == path)
-        rackSlot.impulseRestorePending = false;
+    auto& observed = lane == 0
+        ? rackSlot.observedImpulsePath : rackSlot.observedImpulsePath2;
+    auto& pending = lane == 0
+        ? rackSlot.impulseRestorePending : rackSlot.impulseRestorePending2;
+    if (observed == path)
+        pending = false;
 }
 
 juce::String EffectRack::impulseResponseName(int slot) const
+{
+    return impulseResponseName(slot, 0);
+}
+
+juce::String EffectRack::impulseResponseName(int slot, int lane) const
 {
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return {};
@@ -979,11 +1165,16 @@ juce::String EffectRack::impulseResponseName(int slot) const
     if (const auto* module = selectedModule(rackSlot))
         if (const auto* impulseResponse =
                 module->impulseResponseCapability())
-            return impulseResponse->impulseResponseName();
+            return impulseResponse->impulseResponseName(lane);
     return {};
 }
 
 juce::String EffectRack::impulseResponsePath(int slot) const
+{
+    return impulseResponsePath(slot, 0);
+}
+
+juce::String EffectRack::impulseResponsePath(int slot, int lane) const
 {
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return {};
@@ -992,10 +1183,16 @@ juce::String EffectRack::impulseResponsePath(int slot) const
     if (module == nullptr
         || module->impulseResponseCapability() == nullptr)
         return {};
-    return impulsePath(slot);
+    return impulsePath(slot, lane);
 }
 
 ImpulseResponsePreview EffectRack::impulseResponsePreview(int slot) const
+{
+    return impulseResponsePreview(slot, 0);
+}
+
+ImpulseResponsePreview EffectRack::impulseResponsePreview(
+    int slot, int lane) const
 {
     if (!juce::isPositiveAndBelow(slot, slotCount))
         return {};
@@ -1003,7 +1200,7 @@ ImpulseResponsePreview EffectRack::impulseResponsePreview(int slot) const
     if (const auto* module = selectedModule(rackSlot))
         if (const auto* impulseResponse =
                 module->impulseResponseCapability())
-            return impulseResponse->impulseResponsePreview();
+            return impulseResponse->impulseResponsePreview(lane);
     return {};
 }
 
@@ -1039,8 +1236,8 @@ BeatPermutationVisualEvents EffectRack::beatPermutationVisualEvents(
 bool EffectRack::readContinuousTelemetry(
     int slot, ContinuousTelemetrySnapshot& snapshot) const noexcept
 {
-    if (visualization.getSelectedSlot() != slot
-        || !juce::isPositiveAndBelow(slot, slotCount)
+    if (!juce::isPositiveAndBelow(slot, slotCount)
+        || !visualization.isSlotActive(slot)
         || slots[static_cast<size_t>(slot)].bypass->load() >= 0.5f
         || !activeModuleHasCapability(
             slot, ModuleCapability::continuousTelemetry))
@@ -1056,8 +1253,8 @@ bool EffectRack::readContinuousTelemetry(
 bool EffectRack::readEventTelemetry(
     int slot, EventTelemetrySnapshot& snapshot) const noexcept
 {
-    if (visualization.getSelectedSlot() != slot
-        || !juce::isPositiveAndBelow(slot, slotCount)
+    if (!juce::isPositiveAndBelow(slot, slotCount)
+        || !visualization.isSlotActive(slot)
         || slots[static_cast<size_t>(slot)].bypass->load() >= 0.5f
         || !activeModuleHasCapability(
             slot, ModuleCapability::eventTelemetry))

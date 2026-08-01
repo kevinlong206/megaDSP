@@ -33,7 +33,7 @@ DAW. Their transformed wet sound arrives after the analysis window as a natural
 pre-delay. Phase-critical correction, lookahead, and nonlinear processors still
 report and align the latency required for accurate processing.
 
-Today, megaDSP includes fifty-three purpose-built processors with interactive
+Today, megaDSP includes fifty-eight purpose-built processors with interactive
 graphs, realtime analysis, and controls that match the musical quantities they
 edit. The long-term vision is a community-built library spanning dozens—and
 eventually perhaps hundreds—of useful effects in one consistent rack.
@@ -124,12 +124,13 @@ The seven-character Git commit shown beneath the **megaDSP** title identifies
 the exact source used for the build. Click the hash to copy it when reporting a
 problem.
 
-Continuous and spectral DSP telemetry, meters, and animation remain focused on
-the selected card. Inactive cards do not keep visualization capture running,
-and hidden editors suspend it entirely.
+Continuous and spectral DSP telemetry, meters, and animation run for every
+populated card while the editor is visible. Hidden editors and fully bypassed
+cards suspend their visualization capture.
 
-Compact control groups float over the lower part of each response, leaving the
-full card body available to its graph, timeline, or measured visualization.
+Compact control groups occupy a dedicated region below each standard
+visualization so controls never obscure the graph, timeline, or measured view.
+The mouse wheel always scrolls the rack and never changes a control value.
 
 Snapshot recall never waits for modules or external files to load: populated
 snapshots remain prepared while inactive. Each snapshot keeps its native DSP
@@ -177,7 +178,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Multiband Compressor** | Three reconstructing bands with direct editing and actual per-band reduction/state telemetry |
 | **Loudness Rider** | Long-term gated LUFS riding with bounded gain, lookahead, and crest preservation |
 | **Adaptive Clipper** | Transient-aware oversampled clipping with true-peak ceiling control and auto trim |
-| **Stage Vocal** | Zero-latency live vocal strip with rumble filtering, bounded expansion, frequency-selective de-essing, linked compression, Presence, Air, and Output trim |
+| **Stage Vocal** | Zero-latency live strip with frequency-selective de-essing, fast feedback FET peak control into slow optical leveling, Presence, Air, and Output trim |
 | **Opto Leveler** | Program-dependent optical leveling with dual-stage cell memory, detector emphasis, and a calibrated analog makeup stage |
 | **FET Limiter** | Fast feedback FET compression with stepped ratios, a distinct ALL mode, detector filtering, and parallel Mix |
 
@@ -200,10 +201,17 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Analog Tape** | Four cassette/reel machines with level-compensated oversampled saturation, transient softening, bias, head bump, and optional wow/flutter, wear, and hiss |
 | **Vinyl Simulator** | Deterministic dust, crackle, scratches, surface noise, rumble, groove wear, wow, and flutter with a live spinning-record activity view |
 | **Harmonic Mirage** | Tracked partial resynthesis for harmonic, subharmonic, hollow, and metallic color |
-| **Guitar Cabinet** | Fully procedural speaker, enclosure, microphone, and room modeling with dynamic cone breakup, power compression, and direct mic placement |
-| **Neural Amp Modeler** | Loads standard, A2, and SlimmableContainer `.nam` models with Pre Gain, a familiar Bass/Mid/Treble guitar tone stack, and Post Gain |
+| **Bitcrusher** | Continuously variable bit depth and sample clock with four quantizers, dither, noise shaping, anti-aliasing, jitter, step slew, grid bias, drive, and parallel Mix |
 
 ![Saturator transfer curve and drum-bus dynamics chain](docs/images/saturation-dynamics.png)
+
+### Guitar
+
+| Module | What it does |
+|---|---|
+| **Guitar Cabinet** | Cabinet convolution with 23 bundled mono/stereo IRs, user IR loading, wet-path passband and tone shaping, drive, mix, and output |
+| **Neural Amp Modeler** | Loads standard, A2, and SlimmableContainer `.nam` models with Pre Gain, a familiar Bass/Mid/Treble guitar tone stack, and Post Gain |
+| **Velvet Drive** | Purely modeled touch-sensitive boutique amplifier with cascaded tube-style overdrive, interactive tone stack, power-supply bloom, and analytic speaker loads |
 
 ### Time-Based
 
@@ -213,6 +221,9 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Diffusion Delay** | Full-width Time/Division and Cloud Density field with DSP-synchronized primary/cloud activity, energy, progress, and stereo placement |
 | **Algorithmic Reverb** | 16-line Hall, Chamber, and Plate network with input high-pass/low-pass filtering, smooth wet ducking, Decay, Room Scale, and independent Dry/Wet |
 | **Convolution Reverb** | Toggle among a live stereo reflection chamber, a +18 dB frequency-coloured EQ-style wet analyzer, and a rolling 12-band wet-only history; visualization measures the pre-level wet path independently of Wet and Output, with persisted WAV/AIFF/FLAC IR browsing, a dedicated wet-passband strip, and adjacent Dry/Wet/Ducking/Output rails |
+| **Wormhole Convolution** | Loads two WAV, AIFF, or FLAC reverb IRs in parallel, with independent crop windows, reverse switches, and wet levels plus shared filtering, Dry, and Output |
+| **Portal Permuter** | Rearranges recent tempo-locked input slices, then sends them through a focused, positionable, reversible region of one loaded IR |
+| **IR Mosaic** | Slices one IR into eight edge-faded chunks, repeatedly selects a loudness-normalized shuffled space at a knob-controlled or synced rate, and crossfades tails without clicks |
 | **Studio Plate** | Physically informed modal onset and dense late plate field with stereo pickup geometry, frequency-dependent decay, and completed-wet ducking |
 | **Resonant Matrix** | Tuned resonators routed through evolving signed feedback patterns for pitched, metallic spaces |
 | **Pitch Bloom** | Musical interval shifting with actual repeat-event arcs for interval, progress, energy, pan, and spread |
@@ -252,7 +263,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | Module | What it does |
 |---|---|
 | **Stereo Width** | Frequency-dependent M/S scaling, mono-compatible all-pass Dimension field, Mono Below threshold, and dynamic correlation protection |
-| **M/S Decoder** | Reconstructs L/R from encoded Mid/Side input; live vectorscope with Mid, Side, Left, and Right orientation |
+| **M/S Decoder** | Reconstructs L/R from encoded Mid/Side input with large decoded-output meters, peak hold, and a centered live balance indicator |
 | **Spatial Orbit** | DSP-reported Circle, Figure Eight, Pendulum, and deterministic Wander position/trails |
 | **Phase Coherence** | Confidence-gated stereo timing, phase, and low-frequency coherence repair |
 

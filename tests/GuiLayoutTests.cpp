@@ -209,6 +209,9 @@ public:
                 ModuleType::signalDecay })
             expectEquals(static_cast<int>(keyboardControlOrder(
                 type, moduleDefaults(type), true, true).size()), 11);
+        expectEquals(static_cast<int>(keyboardControlOrder(
+            ModuleType::bitcrusher,
+            moduleDefaults(ModuleType::bitcrusher), true, true).size()), 12);
         for (const auto type : {
                 ModuleType::studioPhaser,
                 ModuleType::studioFlanger })
@@ -365,15 +368,51 @@ public:
             moduleCardHeight * 8 + moduleCardGap * 8
                 + addModuleCardHeight);
 
-        beginTest("Wheel direction matches JUCE sliders");
+        beginTest("Stereo balance measurement follows channel energy");
+        const std::array<float, 4> balancedLeft {
+            0.5f, -0.5f, 0.5f, -0.5f
+        };
+        const std::array<float, 4> balancedRight {
+            -0.5f, 0.5f, -0.5f, 0.5f
+        };
+        const auto balanced = measureStereoBalance(
+            balancedLeft.data(), balancedRight.data(),
+            balancedLeft.size());
+        expectWithinAbsoluteError(balanced.balance, 0.0f, 0.00001f);
         expectWithinAbsoluteError(
-            normalizedWheelDelta(0.1f, 0.8f, false), 0.8f, 0.00001f);
+            balanced.leftRmsDb, balanced.rightRmsDb, 0.00001f);
         expectWithinAbsoluteError(
-            normalizedWheelDelta(0.1f, 0.8f, true), -0.8f, 0.00001f);
-        expectWithinAbsoluteError(
-            normalizedWheelDelta(0.9f, 0.2f, false), -0.9f, 0.00001f);
-        expectWithinAbsoluteError(
-            normalizedWheelDelta(0.9f, 0.2f, true), 0.9f, 0.00001f);
+            balanced.leftPeakDb, balanced.rightPeakDb, 0.00001f);
+
+        const std::array<float, 4> quiet {
+            0.1f, -0.1f, 0.1f, -0.1f
+        };
+        const auto leftHeavy = measureStereoBalance(
+            balancedLeft.data(), quiet.data(), balancedLeft.size());
+        const auto rightHeavy = measureStereoBalance(
+            quiet.data(), balancedRight.data(), quiet.size());
+        expect(leftHeavy.balance < -0.9f);
+        expect(rightHeavy.balance > 0.9f);
+        expect(leftHeavy.leftRmsDb > leftHeavy.rightRmsDb);
+        expect(rightHeavy.rightRmsDb > rightHeavy.leftRmsDb);
+
+        const std::array<float, 4> silence {};
+        const auto silent = measureStereoBalance(
+            silence.data(), silence.data(), silence.size());
+        expectEquals(silent.balance, 0.0f);
+        expectEquals(silent.leftRmsDb, -60.0f);
+        expectEquals(silent.rightRmsDb, -60.0f);
+
+        const std::array<float, 4> subFloor {
+            0.0001f, -0.0001f, 0.0001f, -0.0001f
+        };
+        const auto belowDisplayFloor = measureStereoBalance(
+            subFloor.data(), silence.data(), subFloor.size());
+        expectEquals(belowDisplayFloor.balance, 0.0f);
+
+        const auto unavailableMeasurement =
+            measureStereoBalance(nullptr, nullptr, 0);
+        expectEquals(unavailableMeasurement.balance, 0.0f);
 
         beginTest("Chorus geometry round trips at the field edge");
         const juce::Rectangle<float> field {

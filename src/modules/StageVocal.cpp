@@ -21,6 +21,15 @@ float followEnvelope(
         target > current ? attackCoefficient : releaseCoefficient;
     return smoothing * current + (1.0f - smoothing) * target;
 }
+
+float followGainDb(
+    float current, float target,
+    float attackCoefficient, float releaseCoefficient) noexcept
+{
+    const auto smoothing =
+        target < current ? attackCoefficient : releaseCoefficient;
+    return smoothing * current + (1.0f - smoothing) * target;
+}
 } // namespace
 
 float StageVocalModule::onePoleCoefficient(
@@ -39,6 +48,21 @@ float StageVocalModule::smoothStep(float value) noexcept
     return value * value * (3.0f - 2.0f * value);
 }
 
+float StageVocalModule::compressionReduction(
+    float levelDb, float thresholdDb, float ratio,
+    float kneeDb) noexcept
+{
+    const auto over = levelDb - thresholdDb;
+    const auto slope =
+        1.0f / juce::jmax(1.0001f, ratio) - 1.0f;
+    if (over <= -kneeDb * 0.5f)
+        return 0.0f;
+    if (over >= kneeDb * 0.5f)
+        return slope * over;
+    const auto kneeInput = over + kneeDb * 0.5f;
+    return slope * kneeInput * kneeInput / (2.0f * kneeDb);
+}
+
 void StageVocalModule::prepare(const juce::dsp::ProcessSpec& spec)
 {
     sampleRate = detail::safeSampleRate(spec.sampleRate);
@@ -50,12 +74,12 @@ void StageVocalModule::prepare(const juce::dsp::ProcessSpec& spec)
 void StageVocalModule::reset()
 {
     channelStates = {};
-    expanderEnvelope = 0.0f;
+    fullEnvelope = 0.0f;
     deEssEnvelope = 0.0f;
-    compressorEnvelope = 0.0f;
-    expanderGainDb = 0.0f;
     deEssGainDb = 0.0f;
-    compressorGainDb = 0.0f;
+    fastGainDb = 0.0f;
+    slowGainDb = 0.0f;
+    opticalMemory = 0.0f;
     for (auto& value : smoothed)
         value.setCurrentAndTargetValue(0.0f);
     initialized = false;
@@ -100,20 +124,19 @@ void StageVocalModule::process(
                 .setTargetValue(targets[static_cast<size_t>(control)]);
     }
 
-    const auto expanderAttack = coefficient(sampleRate, 3.0f);
-    const auto expanderRelease = coefficient(sampleRate, 140.0f);
-    const auto deEssAttack = coefficient(sampleRate, 1.2f);
-    const auto deEssRelease = coefficient(sampleRate, 75.0f);
-    const auto expanderGainAttack = coefficient(sampleRate, 5.0f);
-    const auto expanderGainRelease = coefficient(sampleRate, 120.0f);
-    const auto deEssGainAttack = coefficient(sampleRate, 2.0f);
-    const auto deEssGainRelease = coefficient(sampleRate, 90.0f);
+    const auto fullAttack = coefficient(sampleRate, 1.5f);
+    const auto fullRelease = coefficient(sampleRate, 90.0f);
+    const auto deEssAttack = coefficient(sampleRate, 0.8f);
+    const auto deEssRelease = coefficient(sampleRate, 65.0f);
+    const auto deEssGainAttack = coefficient(sampleRate, 1.2f);
+    const auto deEssGainRelease = coefficient(sampleRate, 80.0f);
+    const auto memoryRise = coefficient(sampleRate, 45.0f);
 
     auto maximumInput = 0.0f;
     auto maximumOutput = 0.0f;
-    auto maximumExpanderReduction = 0.0f;
+    auto maximumFastReduction = 0.0f;
     auto maximumDeEssReduction = 0.0f;
-    auto maximumCompressorReduction = 0.0f;
+    auto maximumSlowReduction = 0.0f;
 
     for (int sample = 0; sample < samples; ++sample)
     {
@@ -122,23 +145,22 @@ void StageVocalModule::process(
             current[static_cast<size_t>(control)] =
                 smoothed[static_cast<size_t>(control)].getNextValue();
 
-        const auto lowCut = exponential(40.0f, 220.0f, current[lowCutControl]);
-        const auto expanderThreshold =
-            lerp(-70.0f, -20.0f, current[expanderThresholdControl]);
-        const auto expanderRange =
-            lerp(0.0f, 36.0f, current[expanderRangeControl]);
+        const auto lowCut = exponential(
+            40.0f, 220.0f, current[lowCutControl]);
+        const auto fastAmount = current[fastAmountControl];
+        const auto fastAttackMs = exponential(
+            0.02f, 0.8f, current[fastAttackControl]);
+        const auto fastReleaseMs = exponential(
+            40.0f, 800.0f, current[fastReleaseControl]);
+        const auto slowAmount = current[slowAmountControl];
+        const auto slowAttackMs = exponential(
+            2.0f, 40.0f, current[slowAttackControl]);
+        const auto slowReleaseMs = exponential(
+            200.0f, 3000.0f, current[slowReleaseControl]);
         const auto deEssFrequency = exponential(
             3000.0f, 10000.0f, current[deEssFrequencyControl]);
         const auto deEssAmount =
             lerp(0.0f, 12.0f, current[deEssAmountControl]);
-        const auto compressorThreshold =
-            lerp(-40.0f, 0.0f, current[compressorThresholdControl]);
-        const auto ratio =
-            exponential(1.0f, 10.0f, current[compressorRatioControl]);
-        const auto attackMs =
-            exponential(0.5f, 50.0f, current[attackControl]);
-        const auto releaseMs =
-            exponential(30.0f, 800.0f, current[releaseControl]);
         const auto presenceGain = juce::Decibels::decibelsToGain(
             lerp(-6.0f, 6.0f, current[presenceControl]));
         const auto airGain = juce::Decibels::decibelsToGain(
@@ -148,19 +170,20 @@ void StageVocalModule::process(
 
         const auto lowCutCoefficient =
             onePoleCoefficient(sampleRate, lowCut);
+        const auto deEssCoefficient =
+            onePoleCoefficient(sampleRate, deEssFrequency);
         const auto presenceLowCoefficient =
             onePoleCoefficient(sampleRate, 1200.0f);
         const auto presenceHighCoefficient =
             onePoleCoefficient(sampleRate, 5000.0f);
         const auto airCoefficient =
             onePoleCoefficient(sampleRate, 8000.0f);
-        const auto deEssCoefficient =
-            onePoleCoefficient(sampleRate, deEssFrequency);
 
-        std::array<float, 2> filteredSamples {};
+        std::array<float, 2> filtered {};
         std::array<float, 2> deEssLow {};
         std::array<float, 2> deEssHigh {};
-        auto linkedInput = 0.0f;
+        auto linkedFull = 0.0f;
+        auto linkedDeEss = 0.0f;
         for (int channel = 0; channel < channels; ++channel)
         {
             const auto index = static_cast<size_t>(channel);
@@ -174,48 +197,22 @@ void StageVocalModule::process(
             const auto firstHighPass = input - state.lowCutFirst;
             state.lowCutSecond += lowCutCoefficient
                                   * (firstHighPass - state.lowCutSecond);
-            const auto filtered = firstHighPass - state.lowCutSecond;
-            linkedInput = juce::jmax(linkedInput, std::abs(filtered));
-
-            filteredSamples[index] = filtered;
-        }
-
-        expanderEnvelope = followEnvelope(
-            expanderEnvelope, linkedInput,
-            expanderAttack, expanderRelease);
-        const auto expanderLevelDb = juce::Decibels::gainToDecibels(
-            expanderEnvelope, -100.0f);
-        const auto expanderDepth = smoothStep(
-            (expanderThreshold - expanderLevelDb) / 18.0f);
-        const auto targetExpanderGainDb =
-            -expanderRange * expanderDepth;
-        expanderGainDb = followEnvelope(
-            expanderGainDb, targetExpanderGainDb,
-            expanderGainAttack, expanderGainRelease);
-        const auto expanderGain =
-            juce::Decibels::decibelsToGain(expanderGainDb);
-        maximumExpanderReduction = juce::jmax(
-            maximumExpanderReduction, -expanderGainDb);
-
-        auto linkedDeEss = 0.0f;
-        for (int channel = 0; channel < channels; ++channel)
-        {
-            const auto index = static_cast<size_t>(channel);
-            filteredSamples[index] *= expanderGain;
-            auto& state = channelStates[index];
+            filtered[index] = firstHighPass - state.lowCutSecond;
             state.deEssLow += deEssCoefficient
-                              * (filteredSamples[index] - state.deEssLow);
+                              * (filtered[index] - state.deEssLow);
             deEssLow[index] = state.deEssLow;
-            deEssHigh[index] =
-                filteredSamples[index] - state.deEssLow;
+            deEssHigh[index] = filtered[index] - state.deEssLow;
+            linkedFull = juce::jmax(linkedFull, std::abs(filtered[index]));
             linkedDeEss =
                 juce::jmax(linkedDeEss, std::abs(deEssHigh[index]));
         }
 
+        fullEnvelope = followEnvelope(
+            fullEnvelope, linkedFull, fullAttack, fullRelease);
         deEssEnvelope = followEnvelope(
             deEssEnvelope, linkedDeEss, deEssAttack, deEssRelease);
         const auto fullDb = juce::Decibels::gainToDecibels(
-            juce::jmax(expanderEnvelope, 1.0e-5f), -100.0f);
+            fullEnvelope, -100.0f);
         const auto highDb = juce::Decibels::gainToDecibels(
             deEssEnvelope, -100.0f);
         const auto spectralActivity =
@@ -224,62 +221,111 @@ void StageVocalModule::process(
             smoothStep((highDb + 48.0f) / 24.0f);
         const auto targetDeEssGainDb =
             -deEssAmount * spectralActivity * levelActivity;
-        deEssGainDb = followEnvelope(
+        deEssGainDb = followGainDb(
             deEssGainDb, targetDeEssGainDb,
-            deEssGainRelease, deEssGainAttack);
+            deEssGainAttack, deEssGainRelease);
         const auto deEssGain =
             juce::Decibels::decibelsToGain(deEssGainDb);
         maximumDeEssReduction =
             juce::jmax(maximumDeEssReduction, -deEssGainDb);
 
         std::array<float, 2> deEssed {};
-        auto linkedCompressor = 0.0f;
+        auto linkedFastFeedback = 0.0f;
         for (int channel = 0; channel < channels; ++channel)
         {
             const auto index = static_cast<size_t>(channel);
             deEssed[index] =
                 deEssLow[index] + deEssHigh[index] * deEssGain;
-            linkedCompressor = juce::jmax(
-                linkedCompressor, std::abs(deEssed[index]));
+            linkedFastFeedback = juce::jmax(
+                linkedFastFeedback,
+                std::abs(channelStates[index].previousFastOutput));
         }
 
-        const auto compressorAttack =
-            coefficient(sampleRate, attackMs);
-        const auto compressorRelease =
-            coefficient(sampleRate, releaseMs);
-        compressorEnvelope = followEnvelope(
-            compressorEnvelope, linkedCompressor,
-            compressorAttack, compressorRelease);
-        const auto compressorLevelDb = juce::Decibels::gainToDecibels(
-            compressorEnvelope, -100.0f);
-        const auto over =
-            juce::jmax(0.0f, compressorLevelDb - compressorThreshold);
-        const auto targetCompressorGainDb =
-            -(1.0f - 1.0f / ratio) * over;
-        compressorGainDb = followEnvelope(
-            compressorGainDb, targetCompressorGainDb,
-            compressorRelease, compressorAttack);
-        const auto compressorGain =
-            juce::Decibels::decibelsToGain(compressorGainDb);
-        maximumCompressorReduction = juce::jmax(
-            maximumCompressorReduction, -compressorGainDb);
+        const auto fastDetectorDb = juce::Decibels::gainToDecibels(
+            linkedFastFeedback, -100.0f)
+            - fastGainDb + fastAmount * 30.0f;
+        const auto targetFastGainDb = juce::jlimit(
+            -36.0f, 0.0f,
+            compressionReduction(
+                fastDetectorDb, -18.0f, 8.0f, 3.0f)
+                * smoothStep(fastAmount));
+        fastGainDb = followGainDb(
+            fastGainDb, targetFastGainDb,
+            coefficient(sampleRate, fastAttackMs),
+            coefficient(sampleRate, fastReleaseMs));
+        if (!std::isfinite(fastGainDb))
+            fastGainDb = 0.0f;
+        const auto fastGain =
+            juce::Decibels::decibelsToGain(fastGainDb);
+        maximumFastReduction =
+            juce::jmax(maximumFastReduction, -fastGainDb);
+
+        std::array<float, 2> fastOutput {};
+        auto linkedSlowFeedback = 0.0f;
+        for (int channel = 0; channel < channels; ++channel)
+        {
+            const auto index = static_cast<size_t>(channel);
+            const auto compressed = deEssed[index] * fastGain;
+            const auto fetDrive = 1.0f + fastAmount * 0.7f;
+            const auto colored = lerp(
+                compressed,
+                std::tanh(compressed * fetDrive) / std::tanh(fetDrive),
+                fastAmount * 0.18f);
+            fastOutput[index] = detail::finiteSample(colored);
+            channelStates[index].previousFastOutput = fastOutput[index];
+            linkedSlowFeedback = juce::jmax(
+                linkedSlowFeedback,
+                std::abs(channelStates[index].previousSlowOutput));
+        }
+
+        const auto slowDetectorDb = juce::Decibels::gainToDecibels(
+            linkedSlowFeedback, -100.0f)
+            - slowGainDb + slowAmount * 30.0f;
+        const auto targetSlowGainDb = juce::jlimit(
+            -30.0f, 0.0f,
+            compressionReduction(
+                slowDetectorDb, -18.0f, 3.5f, 10.0f)
+                * smoothStep(slowAmount));
+        const auto memoryTarget =
+            smoothStep(-targetSlowGainDb / 18.0f);
+        const auto memoryDecay = coefficient(
+            sampleRate, slowReleaseMs * 3.5f);
+        const auto memoryCoefficient =
+            memoryTarget > opticalMemory ? memoryRise : memoryDecay;
+        opticalMemory = juce::jlimit(
+            0.0f, 1.0f,
+            memoryCoefficient * opticalMemory
+                + (1.0f - memoryCoefficient) * memoryTarget);
+        const auto opticalReleaseMs =
+            slowReleaseMs * lerp(1.0f, 3.5f, opticalMemory);
+        slowGainDb = followGainDb(
+            slowGainDb, targetSlowGainDb,
+            coefficient(sampleRate, slowAttackMs),
+            coefficient(sampleRate, opticalReleaseMs));
+        if (!std::isfinite(slowGainDb))
+            slowGainDb = 0.0f;
+        const auto slowGain =
+            juce::Decibels::decibelsToGain(slowGainDb);
+        maximumSlowReduction =
+            juce::jmax(maximumSlowReduction, -slowGainDb);
 
         for (int channel = 0; channel < channels; ++channel)
         {
             const auto index = static_cast<size_t>(channel);
             auto& state = channelStates[index];
-            const auto compressed = deEssed[index] * compressorGain;
+            const auto leveled = fastOutput[index] * slowGain;
+            state.previousSlowOutput = detail::finiteSample(leveled);
             state.presenceLow += presenceLowCoefficient
-                                 * (compressed - state.presenceLow);
+                                 * (leveled - state.presenceLow);
             state.presenceHigh += presenceHighCoefficient
-                                  * (compressed - state.presenceHigh);
+                                  * (leveled - state.presenceHigh);
             const auto presenceBand =
                 state.presenceHigh - state.presenceLow;
             state.airLow +=
-                airCoefficient * (compressed - state.airLow);
-            const auto airBand = compressed - state.airLow;
+                airCoefficient * (leveled - state.airLow);
+            const auto airBand = leveled - state.airLow;
             const auto output = detail::finiteSample(
-                (compressed
+                (leveled
                  + presenceBand * (presenceGain - 1.0f)
                  + airBand * (airGain - 1.0f))
                 * outputGain);
@@ -292,8 +338,8 @@ void StageVocalModule::process(
         juce::Decibels::gainToDecibels(maximumInput, -100.0f),
         std::memory_order_relaxed);
     totalReductionDb.store(
-        maximumExpanderReduction + maximumDeEssReduction
-            + maximumCompressorReduction,
+        maximumFastReduction + maximumDeEssReduction
+            + maximumSlowReduction,
         std::memory_order_relaxed);
 
     if (environment.captureTelemetry)
@@ -303,12 +349,12 @@ void StageVocalModule::process(
         snapshot.valueCount = telemetryValueCount;
         snapshot.values[inputLevelDb] =
             juce::Decibels::gainToDecibels(maximumInput, -100.0f);
-        snapshot.values[expanderReductionDb] =
-            maximumExpanderReduction;
+        snapshot.values[fastReductionDb] =
+            maximumFastReduction;
         snapshot.values[deEssReductionDb] =
             maximumDeEssReduction;
-        snapshot.values[compressorReductionDb] =
-            maximumCompressorReduction;
+        snapshot.values[slowReductionDb] =
+            maximumSlowReduction;
         snapshot.values[outputLevelDb] =
             juce::Decibels::gainToDecibels(maximumOutput, -100.0f);
         snapshot.historyValueCount = telemetryHistoryCount;
@@ -316,12 +362,12 @@ void StageVocalModule::process(
         snapshot.historyWritePosition = 1;
         snapshot.history[inputHistory][0] =
             snapshot.values[inputLevelDb];
-        snapshot.history[expanderHistory][0] =
-            maximumExpanderReduction;
+        snapshot.history[fastHistory][0] =
+            maximumFastReduction;
         snapshot.history[deEssHistory][0] =
             maximumDeEssReduction;
-        snapshot.history[compressorHistory][0] =
-            maximumCompressorReduction;
+        snapshot.history[slowHistory][0] =
+            maximumSlowReduction;
         telemetry.publish(snapshot);
     }
 }

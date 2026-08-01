@@ -19,6 +19,7 @@ void RackSlotState::copyFrom(const RackSlotState& source)
             source.controls[index].load(std::memory_order_relaxed),
             std::memory_order_relaxed);
     impulseResponsePath = source.impulseResponsePath;
+    impulseResponsePath2 = source.impulseResponsePath2;
     namModelPath = source.namModelPath;
 }
 
@@ -45,6 +46,7 @@ void RackState::clear()
         for (auto& control : slot.controls)
             control.store(0.5f, std::memory_order_relaxed);
         slot.impulseResponsePath.clear();
+        slot.impulseResponsePath2.clear();
         slot.namModelPath.clear();
     }
     inputGainDb.store(0.0f, std::memory_order_relaxed);
@@ -83,6 +85,9 @@ juce::ValueTree RackState::toValueTree(int index) const
         if (source.impulseResponsePath.isNotEmpty())
             slot.setProperty(
                 "impulseResponse", source.impulseResponsePath, nullptr);
+        if (source.impulseResponsePath2.isNotEmpty())
+            slot.setProperty(
+                "impulseResponse2", source.impulseResponsePath2, nullptr);
         if (source.namModelPath.isNotEmpty())
             slot.setProperty("namModel", source.namModelPath, nullptr);
         snapshot.addChild(slot, -1, nullptr);
@@ -128,6 +133,8 @@ void RackState::fromValueTree(const juce::ValueTree& snapshot)
                 std::memory_order_relaxed);
         destination.impulseResponsePath =
             child.getProperty("impulseResponse").toString();
+        destination.impulseResponsePath2 =
+            child.getProperty("impulseResponse2").toString();
         destination.namModelPath =
             child.getProperty("namModel").toString();
     }

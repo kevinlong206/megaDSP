@@ -179,7 +179,7 @@ public:
         expect(events.sequence == 0);
         expect(events.eventCount == 0);
 
-        beginTest("Rack routes time telemetry to the selected slot only");
+        beginTest("Rack routes time telemetry to every active slot");
         juce::AudioProcessorGraph owner;
         juce::AudioProcessorValueTreeState state(
             owner, nullptr, "timeTelemetryState", createParameterLayout());
@@ -201,28 +201,30 @@ public:
         state.getParameter(controlParameterId(1, 2))
             ->setValueNotifyingHost(0.0f);
         rack.synchronizeModules();
-        rack.visualizationData().setSelectedSlot(1);
+        rack.visualizationData().setSlotActive(0, true);
+        rack.visualizationData().setSlotActive(1, true);
         juce::AudioBuffer<float> routed(2, 512);
         for (int block = 0; block < 12; ++block)
         {
             fillSignal(routed, block * routed.getNumSamples());
             rack.process(routed, nullptr, 120.0);
         }
-        expect(!rack.readEventTelemetry(0, events));
+        expect(rack.readEventTelemetry(0, events));
+        expect(events.sequence > 0);
         expect(rack.readEventTelemetry(1, events));
         expect(events.sequence > 0);
         const auto* uncapturedDiffusion =
             rack.activeModuleInstance(0)->eventTelemetryCapability();
         expect(uncapturedDiffusion != nullptr);
         expect(uncapturedDiffusion->readEventTelemetry(events));
-        expect(events.sequence == 0);
+        expect(events.sequence > 0);
 
         const auto* capturedPitch =
             rack.activeModuleInstance(1)->eventTelemetryCapability();
         expect(capturedPitch != nullptr);
         expect(capturedPitch->readEventTelemetry(events));
         const auto pitchSequence = events.sequence;
-        rack.visualizationData().setSelectedSlot(0);
+        rack.visualizationData().setSlotActive(1, false);
         for (int block = 0; block < 6; ++block)
         {
             fillSignal(routed, block * routed.getNumSamples());

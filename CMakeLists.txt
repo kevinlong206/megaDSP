@@ -83,6 +83,33 @@ set(NAM_CORE_SOURCES
     "${neuralampmodelercore_SOURCE_DIR}/NAM/wavenet/a2_fast.cpp"
     "${neuralampmodelercore_SOURCE_DIR}/NAM/wavenet/slimmable.cpp")
 
+juce_add_binary_data(megaDSPCabinetIRs
+    NAMESPACE CabinetIRData
+    SOURCES
+        "assets/cabinet-irs/1960 GREEN 5757121.wav"
+        "assets/cabinet-irs/1984B V30 GB.wav"
+        "assets/cabinet-irs/6402 57 121.wav"
+        "assets/cabinet-irs/6402 57.wav"
+        "assets/cabinet-irs/65W 57121.wav"
+        "assets/cabinet-irs/BLACK 57 160.wav"
+        "assets/cabinet-irs/CREAM65 57121.wav"
+        "assets/cabinet-irs/EV12L 57121.wav"
+        "assets/cabinet-irs/GREEN.wav"
+        "assets/cabinet-irs/GREEN+V30 MIX 5757121.wav"
+        "assets/cabinet-irs/MESRECT V30 57421.wav"
+        "assets/cabinet-irs/Mikko1.wav"
+        "assets/cabinet-irs/TJ 66 Alnico Silver e906 2.wav"
+        "assets/cabinet-irs/TJ 66 Alnico Silver FAT-906 1.wav"
+        "assets/cabinet-irs/TJ 66 Alnico Silver R121-SM545 1.wav"
+        "assets/cabinet-irs/TJ 69 G12M Green R121-545 3.wav"
+        "assets/cabinet-irs/TJ 70 G12H Green Fat-57 2.wav"
+        "assets/cabinet-irs/TJ C12N e906 2.wav"
+        "assets/cabinet-irs/TJ C12N R121-SM545 1.wav"
+        "assets/cabinet-irs/TJ M75 e906 3.wav"
+        "assets/cabinet-irs/TJ M75 FAT-SM57 3.wav"
+        "assets/cabinet-irs/TJ M75 R121-SM545 2.wav"
+        "assets/cabinet-irs/V30.wav")
+
 # OBJECT library ensures static-init registration objects survive linking
 add_library(nam_core OBJECT ${NAM_CORE_SOURCES})
 target_include_directories(nam_core PUBLIC
@@ -179,7 +206,12 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/OptoLeveler.cpp
     src/modules/FetLimiter.cpp
     src/modules/ProgramEqualizer.cpp
-    src/modules/StudioPlate.cpp)
+    src/modules/StudioPlate.cpp
+    src/modules/VelvetDrive.cpp
+    src/modules/WormholeConvolution.cpp
+    src/modules/Bitcrusher.cpp
+    src/modules/PortalPermuter.cpp
+    src/modules/IRMosaic.cpp)
 
 set(MEGADSP_MODULE_HEADERS
     src/DspModules.h
@@ -241,7 +273,12 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/OptoLeveler.h
     src/modules/FetLimiter.h
     src/modules/ProgramEqualizer.h
-    src/modules/StudioPlate.h)
+    src/modules/StudioPlate.h
+    src/modules/VelvetDrive.h
+    src/modules/WormholeConvolution.h
+    src/modules/Bitcrusher.h
+    src/modules/PortalPermuter.h
+    src/modules/IRMosaic.h)
 
 set(MEGADSP_UI_SOURCES
     src/ui/EffectGraph.cpp
@@ -308,7 +345,12 @@ set(MEGADSP_UI_SOURCES
     src/ui/modules/OptoLevelerModuleView.cpp
     src/ui/modules/FetLimiterModuleView.cpp
     src/ui/modules/ProgramEqualizerModuleView.cpp
-    src/ui/modules/StudioPlateModuleView.cpp)
+    src/ui/modules/StudioPlateModuleView.cpp
+    src/ui/modules/VelvetDriveModuleView.cpp
+    src/ui/modules/WormholeConvolutionModuleView.cpp
+    src/ui/modules/BitcrusherModuleView.cpp
+    src/ui/modules/PortalPermuterModuleView.cpp
+    src/ui/modules/IRMosaicModuleView.cpp)
 
 target_sources(megaDSP PRIVATE
     ${MEGADSP_MODULE_SOURCES}
@@ -347,6 +389,7 @@ target_link_libraries(megaDSP
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
+        megaDSPCabinetIRs
         nam_core
     PUBLIC
         juce::juce_recommended_config_flags
@@ -396,6 +439,11 @@ target_sources(megaDSPTests PRIVATE
     tests/FetLimiterTests.cpp
     tests/ProgramEqualizerTests.cpp
     tests/StudioPlateTests.cpp
+    tests/VelvetDriveTests.cpp
+    tests/WormholeConvolutionTests.cpp
+    tests/BitcrusherTests.cpp
+    tests/PortalPermuterTests.cpp
+    tests/IRMosaicTests.cpp
     tests/ModuleBrowserTests.cpp
     tests/NextTenUtilityTests.cpp
     tests/ProcessorTests.cpp
@@ -426,6 +474,7 @@ target_compile_definitions(megaDSPTests PRIVATE
 target_link_libraries(megaDSPTests PRIVATE
     juce::juce_audio_utils
     juce::juce_dsp
+    megaDSPCabinetIRs
     nam_core
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)

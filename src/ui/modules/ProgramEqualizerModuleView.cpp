@@ -122,8 +122,6 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
-    void mouseWheelMove(const juce::MouseEvent&,
-                        const juce::MouseWheelDetails&) override;
 
 private:
     static juce::Rectangle<float> plotArea(juce::Rectangle<float>);
@@ -337,26 +335,6 @@ void ProgramEqualizerModuleView::mouseDoubleClick(
             resetToDefault(handle.control);
             return;
         }
-}
-
-void ProgramEqualizerModuleView::mouseWheelMove(
-    const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
-{
-    const auto plot = plotArea(getLocalBounds().toFloat().reduced(12.0f));
-    if (event.position.getDistanceFrom(highBoostPoint(plot)) > 40.0f)
-        return;
-    if (auto* target = parameter(5))
-    {
-        graph.focusKeyboardControl(5);
-        const auto step = event.mods.isShiftDown() ? 0.02f : 0.06f;
-        const auto delta = normalizedWheelDelta(
-            wheel.deltaX, wheel.deltaY, wheel.isReversed);
-        target->beginChangeGesture();
-        target->setValueNotifyingHost(
-            juce::jlimit(0.0f, 1.0f, target->getValue() + delta * step));
-        target->endChangeGesture();
-        repaint();
-    }
 }
 
 void ProgramEqualizerModuleView::paint(

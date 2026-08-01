@@ -171,7 +171,7 @@ public:
         expectEquals(
             continuousTelemetryHistoryValue(history, 1, 63), 165.0f);
 
-        beginTest("Rack captures telemetry for the selected slot only");
+        beginTest("Rack captures telemetry for every active slot");
         juce::AudioProcessorGraph owner;
         juce::AudioProcessorValueTreeState state(
             owner, nullptr, "dynamicsTelemetryState",
@@ -190,19 +190,23 @@ public:
                 static_cast<float>(types[static_cast<size_t>(slot)])));
         }
         rack.synchronizeModules();
-        rack.visualizationData().setSelectedSlot(1);
+        rack.visualizationData().setSlotActive(0, true);
+        rack.visualizationData().setSlotActive(1, true);
+        rack.visualizationData().setSlotActive(2, true);
         auto routedSignal = transients;
         routedSignal.setSize(2, 512, true, true, true);
         rack.process(routedSignal, nullptr, 120.0);
-        expect(!rack.readContinuousTelemetry(0, snapshot));
+        expect(rack.readContinuousTelemetry(0, snapshot));
+        expect(snapshot.sequence > 0);
         expect(rack.readContinuousTelemetry(1, snapshot));
         expect(snapshot.sequence > 0);
-        expect(!rack.readContinuousTelemetry(2, snapshot));
+        expect(rack.readContinuousTelemetry(2, snapshot));
+        expect(snapshot.sequence > 0);
         const auto* uncaptured = rack.activeModuleInstance(0)
             ->continuousTelemetryCapability();
         expect(uncaptured != nullptr);
         expect(uncaptured->readContinuousTelemetry(snapshot));
-        expect(snapshot.sequence == 0);
+        expect(snapshot.sequence > 0);
     }
 };
 

@@ -57,7 +57,9 @@ private:
     static juce::Rectangle<float> fieldBounds(juce::Rectangle<float> area)
     {
         area.removeFromTop(33.0f);
-        area.removeFromBottom(area.getHeight() * 0.43f);
+        const auto trackHeight =
+            juce::jlimit(76.0f, 88.0f, area.getHeight() * 0.40f);
+        area.removeFromBottom(trackHeight + 6.0f);
         return area.reduced(5.0f);
     }
 
@@ -97,7 +99,9 @@ private:
         juce::Rectangle<float> area, int control, bool synced)
     {
         area.removeFromTop(33.0f);
-        auto tracks = area.removeFromBottom(area.getHeight() * 0.43f);
+        const auto trackHeight =
+            juce::jlimit(76.0f, 88.0f, area.getHeight() * 0.40f);
+        auto tracks = area.removeFromBottom(trackHeight);
         const std::array<int, 7> order {
             synced ? ChaosFieldModule::divisionControl
                    : ChaosFieldModule::rateControl,

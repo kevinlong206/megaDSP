@@ -46,6 +46,20 @@ const ModuleDescriptor& descriptorFor(ModuleType type)
     return moduleDescriptors()[static_cast<size_t>(stableType)];
 }
 
+std::array<float, controlsPerSlot>
+migrateStageVocalControlsFromSchema12(
+    const std::array<float, controlsPerSlot>& legacy)
+{
+    auto migrated = moduleDefaults(ModuleType::stageVocal);
+    migrated[0] = legacy[0];
+    migrated[7] = legacy[3];
+    migrated[8] = legacy[4];
+    migrated[9] = legacy[9];
+    migrated[10] = legacy[10];
+    migrated[11] = legacy[11];
+    return migrated;
+}
+
 juce::ValueTree migrateStateToCurrentSchema(juce::ValueTree state)
 {
     const auto sourceSchema = static_cast<int>(
@@ -199,6 +213,26 @@ juce::ValueTree migrateStateToCurrentSchema(juce::ValueTree state)
                 setValue(controlParameterId(slot, 7), 0.0f);
             else if (type == ModuleType::convolutionReverb)
                 setValue(controlParameterId(slot, 5), 0.0f);
+        }
+    }
+    if (sourceSchema < 13)
+    {
+        for (int slot = 0; slot < slotCount; ++slot)
+        {
+            const auto type = static_cast<ModuleType>(juce::roundToInt(
+                value(slotParameterId(slot, "type"), 0.0f)));
+            if (type != ModuleType::stageVocal)
+                continue;
+            std::array<float, controlsPerSlot> legacy {};
+            for (int control = 0; control < controlsPerSlot; ++control)
+                legacy[static_cast<size_t>(control)] = value(
+                    controlParameterId(slot, control), 0.5f);
+            const auto migrated =
+                migrateStageVocalControlsFromSchema12(legacy);
+            for (int control = 0; control < controlsPerSlot; ++control)
+                setValue(
+                    controlParameterId(slot, control),
+                    migrated[static_cast<size_t>(control)]);
         }
     }
     for (int slot = 0; slot < slotCount; ++slot)

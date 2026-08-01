@@ -171,7 +171,7 @@ public:
         expect(module.readEventTelemetry(eventRead));
         expectEquals(static_cast<int>(eventRead.eventCount), 0);
 
-        beginTest("Rack telemetry reads are selected-slot-only and optional");
+        beginTest("Rack telemetry reads require an active capable slot");
         juce::AudioProcessorGraph owner;
         juce::AudioProcessorValueTreeState state(
             owner, nullptr, "telemetryState",
@@ -187,16 +187,16 @@ public:
         megadsp::EventTelemetrySnapshot events;
         expect(!rack.readContinuousTelemetry(0, continuous));
         expect(!rack.readEventTelemetry(0, events));
-        rack.visualizationData().setSelectedSlot(0);
+        rack.visualizationData().setSlotActive(0, true);
         expect(!rack.readContinuousTelemetry(0, continuous));
         expect(!rack.readEventTelemetry(0, events));
         expect(!rack.readContinuousTelemetry(1, continuous));
 
-        beginTest("Rack captures telemetry only for the selected capable slot");
+        beginTest("Rack captures telemetry for every active capable slot");
         type->setValueNotifyingHost(type->convertTo0to1(
             static_cast<float>(megadsp::ModuleType::studioPhaser)));
         rack.synchronizeModules();
-        rack.visualizationData().setSelectedSlot(0);
+        rack.visualizationData().setSlotActive(0, true);
         juce::AudioBuffer<float> telemetryBlock(1, 64);
         telemetryBlock.clear();
         rack.process(telemetryBlock, nullptr, 120.0);
@@ -205,20 +205,20 @@ public:
         expect(!rack.readEventTelemetry(0, events));
         const auto capturedSequence = continuous.sequence;
 
-        rack.visualizationData().setSelectedSlot(1);
+        rack.visualizationData().setSlotActive(0, false);
         rack.process(telemetryBlock, nullptr, 120.0);
         expect(!rack.readContinuousTelemetry(0, continuous));
-        rack.visualizationData().setSelectedSlot(0);
+        rack.visualizationData().setSlotActive(0, true);
         expect(rack.readContinuousTelemetry(0, continuous));
         expect(continuous.sequence == capturedSequence);
 
         beginTest("Process environment defaults to no telemetry capture");
         const megadsp::ProcessEnvironment defaultEnvironment;
-        const megadsp::ProcessEnvironment selectedEnvironment {
+        const megadsp::ProcessEnvironment captureEnvironment {
             nullptr, 120.0, true
         };
         expect(!defaultEnvironment.captureTelemetry);
-        expect(selectedEnvironment.captureTelemetry);
+        expect(captureEnvironment.captureTelemetry);
     }
 };
 

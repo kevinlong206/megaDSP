@@ -23,8 +23,6 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
-    void mouseWheelMove(const juce::MouseEvent&,
-                        const juce::MouseWheelDetails&) override;
 
 private:
     static juce::Rectangle<float> eqPlotArea(juce::Rectangle<float>);
@@ -321,32 +319,6 @@ void EqualizerModuleView::mouseDoubleClick(
         removeBand(band);
     else if (plot.contains(event.position))
         addBandAt(event.position, plot);
-}
-
-void EqualizerModuleView::mouseWheelMove(
-    const juce::MouseEvent& event,
-    const juce::MouseWheelDetails& wheel)
-{
-    const auto plot = eqPlotArea(
-        getLocalBounds().toFloat().reduced(12.0f));
-    if (!plot.contains(event.position))
-        return;
-    const auto closestBand = bandAt(event.position, plot);
-    if (closestBand < 0)
-        return;
-    const auto control = closestBand * 3 + 2;
-    if (auto* target = parameter(control))
-    {
-        graph.focusKeyboardControl(control);
-        const auto step = event.mods.isShiftDown() ? 0.035f : 0.12f;
-        const auto delta = normalizedWheelDelta(
-            wheel.deltaX, wheel.deltaY, wheel.isReversed);
-        target->beginChangeGesture();
-        target->setValueNotifyingHost(juce::jlimit(
-            0.0f, 1.0f, target->getValue() + delta * step));
-        target->endChangeGesture();
-        repaint();
-    }
 }
 
 void EqualizerModuleView::paint(juce::Graphics& graphics, juce::Rectangle<float> area)

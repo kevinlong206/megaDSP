@@ -38,6 +38,7 @@ public:
     void mouseDoubleClick(const juce::MouseEvent&) override;
 
 private:
+    static juce::Rectangle<float> telemetryArea(juce::Rectangle<float>);
     static juce::Rectangle<float> plotArea(juce::Rectangle<float>);
     static juce::Rectangle<float> pillArea(juce::Rectangle<float>);
     static juce::Rectangle<float> barArea(juce::Rectangle<float>, int index);
@@ -54,6 +55,12 @@ void OptoLevelerModuleView::configureAccessibility(
         "detector. Click Compress/Limit to switch curves, and drag the "
         "tracks below to edit Peak Reduction, Gain, HF Emphasis, "
         "Sidechain Low Cut, Cell Age, Stereo Link, Mix, and Output.");
+}
+
+juce::Rectangle<float> OptoLevelerModuleView::telemetryArea(
+    juce::Rectangle<float> area)
+{
+    return area.removeFromTop(22.0f).reduced(6.0f, 0.0f);
 }
 
 juce::Rectangle<float> OptoLevelerModuleView::plotArea(
@@ -234,7 +241,8 @@ void OptoLevelerModuleView::paint(
                       0)
                   + "%"
             : "DSP TELEMETRY WAITING",
-        plot.reduced(6.0f).toNearestInt(), juce::Justification::bottomLeft);
+        telemetryArea(area).toNearestInt(),
+        juce::Justification::centredLeft);
 
     const auto pill = pillArea(area);
     const auto isLimit = value(OptoLevelerModule::compressLimitControl) >= 0.5f;

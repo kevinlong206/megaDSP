@@ -17,6 +17,7 @@ struct RackSlotState
     std::atomic<float> bypass { 0.0f };
     std::array<std::atomic<float>, controlsPerSlot> controls;
     juce::String impulseResponsePath;
+    juce::String impulseResponsePath2;
     juce::String namModelPath;
 
     RackSlotState();

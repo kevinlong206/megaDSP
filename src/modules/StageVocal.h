@@ -12,14 +12,14 @@ public:
     enum ControlIndex
     {
         lowCutControl,
-        expanderThresholdControl,
-        expanderRangeControl,
+        fastAmountControl,
+        fastAttackControl,
+        fastReleaseControl,
+        slowAmountControl,
+        slowAttackControl,
+        slowReleaseControl,
         deEssFrequencyControl,
         deEssAmountControl,
-        compressorThresholdControl,
-        compressorRatioControl,
-        attackControl,
-        releaseControl,
         presenceControl,
         airControl,
         outputControl
@@ -28,9 +28,9 @@ public:
     enum TelemetryValue
     {
         inputLevelDb,
-        expanderReductionDb,
+        fastReductionDb,
         deEssReductionDb,
-        compressorReductionDb,
+        slowReductionDb,
         outputLevelDb,
         telemetryValueCount
     };
@@ -38,9 +38,9 @@ public:
     enum TelemetryHistory
     {
         inputHistory,
-        expanderHistory,
+        fastHistory,
         deEssHistory,
-        compressorHistory,
+        slowHistory,
         telemetryHistoryCount
     };
 
@@ -73,15 +73,20 @@ private:
     {
         float lowCutFirst = 0.0f;
         float lowCutSecond = 0.0f;
+        float deEssLow = 0.0f;
+        float previousFastOutput = 0.0f;
+        float previousSlowOutput = 0.0f;
         float presenceLow = 0.0f;
         float presenceHigh = 0.0f;
         float airLow = 0.0f;
-        float deEssLow = 0.0f;
     };
 
     static float onePoleCoefficient(
         double sampleRate, float frequency) noexcept;
     static float smoothStep(float value) noexcept;
+    static float compressionReduction(
+        float levelDb, float thresholdDb, float ratio,
+        float kneeDb) noexcept;
 
     std::array<ChannelState, 2> channelStates;
     std::array<juce::SmoothedValue<float,
@@ -89,12 +94,12 @@ private:
                controlsPerSlot>
         smoothed;
     double sampleRate = 44100.0;
-    float expanderEnvelope = 0.0f;
+    float fullEnvelope = 0.0f;
     float deEssEnvelope = 0.0f;
-    float compressorEnvelope = 0.0f;
-    float expanderGainDb = 0.0f;
     float deEssGainDb = 0.0f;
-    float compressorGainDb = 0.0f;
+    float fastGainDb = 0.0f;
+    float slowGainDb = 0.0f;
+    float opticalMemory = 0.0f;
     bool initialized = false;
     std::uint64_t telemetrySequence = 0;
     std::atomic<float> totalReductionDb { 0.0f };

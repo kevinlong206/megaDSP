@@ -194,11 +194,17 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::autoWah: return "Auto Wah";
         case ModuleType::resonantSculpture: return "Sculpture";
         case ModuleType::neuralAmpModeler: return "NAM";
+        case ModuleType::stageVocal: return "Vocal";
         case ModuleType::vinylSimulator: return "Vinyl";
         case ModuleType::optoLeveler: return "Opto";
         case ModuleType::fetLimiter: return "FET";
         case ModuleType::programEqualizer: return "Prog EQ";
         case ModuleType::studioPlate: return "Plate";
+        case ModuleType::velvetDrive: return "Velvet";
+        case ModuleType::wormholeConvolution: return "Wormhole";
+        case ModuleType::bitcrusher: return "Crush";
+        case ModuleType::portalPermuter: return "Portal";
+        case ModuleType::irMosaic: return "IR Mosaic";
         case ModuleType::empty:
         case ModuleType::delay:
         case ModuleType::limiter:
@@ -207,12 +213,45 @@ juce::String compactTabName(ModuleType type)
     return moduleDefinition(type).displayName;
 }
 
-float normalizedWheelDelta(
-    float deltaX, float deltaY, bool isReversed)
+StereoBalanceMeasurement measureStereoBalance(
+    const float* left, const float* right, std::size_t sampleCount)
 {
-    const auto dominant =
-        std::abs(deltaX) > std::abs(deltaY) ? -deltaX : deltaY;
-    return dominant * (isReversed ? -1.0f : 1.0f);
+    StereoBalanceMeasurement result;
+    if (left == nullptr || right == nullptr || sampleCount == 0)
+        return result;
+
+    double leftPower = 0.0;
+    double rightPower = 0.0;
+    auto leftPeak = 0.0f;
+    auto rightPeak = 0.0f;
+    for (std::size_t sample = 0; sample < sampleCount; ++sample)
+    {
+        const auto leftSample = left[sample];
+        const auto rightSample = right[sample];
+        leftPower += static_cast<double>(leftSample) * leftSample;
+        rightPower += static_cast<double>(rightSample) * rightSample;
+        leftPeak = juce::jmax(leftPeak, std::abs(leftSample));
+        rightPeak = juce::jmax(rightPeak, std::abs(rightSample));
+    }
+
+    leftPower /= static_cast<double>(sampleCount);
+    rightPower /= static_cast<double>(sampleCount);
+    constexpr auto silencePower = 1.0e-6;
+    const auto totalPower = leftPower + rightPower;
+    if (totalPower > silencePower)
+        result.balance = static_cast<float>(
+            (rightPower - leftPower) / totalPower);
+    const auto toDecibels = [](double gain)
+    {
+        return gain > 0.001
+            ? static_cast<float>(20.0 * std::log10(gain))
+            : -60.0f;
+    };
+    result.leftRmsDb = toDecibels(std::sqrt(leftPower));
+    result.rightRmsDb = toDecibels(std::sqrt(rightPower));
+    result.leftPeakDb = toDecibels(leftPeak);
+    result.rightPeakDb = toDecibels(rightPeak);
+    return result;
 }
 
 std::vector<int> keyboardControlOrder(
@@ -299,6 +338,10 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::chaosField:
         case ModuleType::timeMosaic:
         case ModuleType::guitarCabinet:
+        case ModuleType::wormholeConvolution:
+        case ModuleType::bitcrusher:
+        case ModuleType::portalPermuter:
+        case ModuleType::irMosaic:
         case ModuleType::chordLoom:
         case ModuleType::volumeSwell:
         case ModuleType::spectralNebula:
@@ -306,6 +349,13 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::autoWah:
         case ModuleType::resonantSculpture:
         case ModuleType::neuralAmpModeler:
+        case ModuleType::stageVocal:
+        case ModuleType::vinylSimulator:
+        case ModuleType::optoLeveler:
+        case ModuleType::fetLimiter:
+        case ModuleType::programEqualizer:
+        case ModuleType::studioPlate:
+        case ModuleType::velvetDrive:
             break;
     }
 

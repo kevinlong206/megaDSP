@@ -21,8 +21,8 @@ void StageVocalModuleView::configureAccessibility(
 {
     component.setTitle("Stage Vocal processing display");
     component.setHelpText(
-        "Shows live input and output level with separate Expander, De-Ess, "
-        "and Compressor gain reduction.");
+        "Shows live input and output level with separate fast FET, De-Ess, "
+        "and slow optical gain reduction.");
 }
 
 void StageVocalModuleView::paint(
@@ -45,14 +45,14 @@ void StageVocalModuleView::paint(
         ? telemetry.values[StageVocalModule::outputLevelDb] : -100.0f;
     const std::array<float, 3> reductions {
         hasTelemetry
-            ? telemetry.values[StageVocalModule::expanderReductionDb] : 0.0f,
+            ? telemetry.values[StageVocalModule::fastReductionDb] : 0.0f,
         hasTelemetry
             ? telemetry.values[StageVocalModule::deEssReductionDb] : 0.0f,
         hasTelemetry
-            ? telemetry.values[StageVocalModule::compressorReductionDb] : 0.0f
+            ? telemetry.values[StageVocalModule::slowReductionDb] : 0.0f
     };
     constexpr std::array<const char*, 3> names {
-        "EXPANDER", "DE-ESS", "COMPRESSOR"
+        "FAST FET", "DE-ESS", "SLOW OPTO"
     };
 
     auto levelArea = area.removeFromLeft(72.0f).reduced(8.0f, 4.0f);

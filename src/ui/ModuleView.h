@@ -24,8 +24,6 @@ public:
     virtual void mouseDown(const juce::MouseEvent&) {}
     virtual void mouseDrag(const juce::MouseEvent&) {}
     virtual void mouseDoubleClick(const juce::MouseEvent&) {}
-    virtual void mouseWheelMove(const juce::MouseEvent&,
-                                const juce::MouseWheelDetails&) {}
     virtual void timerCallback() {}
     virtual bool isInterestedInFileDrag(const juce::StringArray&) const
     {

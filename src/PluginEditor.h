@@ -40,7 +40,9 @@ public:
     int chainInsertButtonCountForTesting() const;
     bool selectedCardVisibleForTesting() const;
     int activeVisualizationCardCountForTesting() const;
+    void setCardsEditorVisibleForTesting(bool);
     bool cardChildrenFitForTesting() const;
+    bool cardGraphsAvoidControlsForTesting() const;
     bool cardHeightsAreUniformForTesting() const;
     bool rackOverflowsVerticallyForTesting() const;
     juce::String commitHashForTesting() const

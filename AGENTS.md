@@ -18,10 +18,12 @@ serial slots and twelve fixed generic controls per slot.
   38, Time Mosaic 39, Guitar Cabinet 40, Chord Loom 41, Volume Swell 42,
   Spectral Nebula 43, Midnight Current 44, Auto Wah 45, Resonant Sculpture 46,
   Neural Amp Modeler 47, Stage Vocal 48, Vinyl Simulator 49, Opto Leveler 50,
-  FET Limiter 51, Program Equalizer 52, and Studio Plate 53.
+  FET Limiter 51, Program Equalizer 52, Studio Plate 53, Velvet Drive 54,
+  Wormhole Convolution 55, Bitcrusher 56, Portal Permuter 57, and IR Mosaic
+  58.
 - Preserve the eight-slot, twelve-control host parameter topology and existing
   parameter IDs.
-- Keep state migration compatible with schema 2 through current schema 11.
+- Keep state migration compatible with schema 2 through current schema 13.
 - Module type parameters are not automatable; saved integer module values must
   continue to restore exactly.
 - Processing after `prepare()` must be allocation-free, lock-free, finite, and
@@ -140,7 +142,7 @@ parsing/formatting, and tests.
   diffusion density. Pitch Bloom uses ratio pitch shifting, not Hz-domain
   translation. Pitch Bloom keeps immediate dry and treats shifter delay as wet
   pre-delay. Both use filtered bounded feedback and conservative measured tails.
-  Their event telemetry is emitted only for the selected capture slot and
+  Their event telemetry is emitted only for active visualization slots and
   visualizes measured DSP activity rather than control-derived events.
 - Harmonic Resonator uses smoothly retuned, bounded modal filters to build
   musical chord fields without allocating on the audio thread. Chord Loom uses
@@ -182,7 +184,7 @@ parsing/formatting, and tests.
 - Resonance Tamer and Spectral Balance share only the prepared fixed-latency
   STFT foundation; their detection, smoothing, targets, and correction behavior
   remain module-specific. Amount-zero or Mix-zero paths stay latency-aligned,
-  and spectral telemetry is published only for the capture-selected slot.
+  and spectral telemetry is published only for active visualization slots.
 - Phase Coherence applies internal stereo correction only with sufficient
   confidence and leaves mono input unchanged. Loudness Rider uses gated
   long-term gain riding rather than a compressor curve. Adaptive Clipper keeps
@@ -199,12 +201,40 @@ parsing/formatting, and tests.
   deterministic breath by signal energy. Harmonic Mirage uses phase-continuous
   oscillators and releases uncertain tracking. Chaos Field uses deterministic,
   bounded attractor integration and stable sub-unity feedback.
-- Guitar Cabinet is a fully procedural post-amp speaker, enclosure, microphone,
-  and room model with no IR or neural asset dependency. Its fixed 4x nonlinear
-  path reports one latency; speaker, cabinet, and microphone changes crossfade
-  prepared states. Stereo input remains stereo, synthetic room side cancels on
-  fold-down, Room zero has no artificial long tail, and visuals use only
-  capture-gated measured cone, compression, breakup, cabinet, and room telemetry.
+- Guitar Cabinet uses the shared non-uniform convolution engine with 23 embedded
+  root-level cabinet IRs plus user WAV, AIFF, and FLAC loading. File decoding
+  and engine preparation stay off the audio thread; bundled selection and user
+  paths restore with snapshots. Mono IRs process stereo channels independently,
+  stereo IRs preserve encoded differences, and bounded pink-noise-weighted
+  calibration keeps IR levels comparable. Mix zero remains immediate dry, and
+  telemetry is capture-gated.
+- Wormhole Convolution owns two independently loaded IR lanes processed in
+  parallel. Each lane applies its persisted start/end crop and reverse transform
+  before prepared-engine commit, has an independent wet level, and crossfades
+  structural replacements. Shared Low Cut and High Cut affect only the summed
+  wet field; Dry remains immediate. File decoding, transforms, construction,
+  and destruction stay off the audio thread, and both paths restore with
+  snapshots.
+- Bitcrusher continuously smooths bit depth, sample clock, drive, reconstruction,
+  and output controls. Its Balanced, Truncate, Floor, and Companded quantizers
+  morph click-safely; deterministic dither, stable bounded first-order noise
+  shaping, pre-hold anti-aliasing, bounded clock jitter, and step slew remain
+  allocation-free. Requested Sample Rate is capped by the host rate, Mix zero
+  is exact immediate dry, and reset restores the deterministic random sequence.
+- Portal Permuter captures tempo-locked input slices in fixed prepared history
+  and rearranges them before one focused IR region. Scheduling is deterministic,
+  slice transitions are click-safe, feedback is filtered, softly bounded inside
+  the loop, and capped at 55%, and IR
+  crop/reverse reconstruction stays off the audio thread. Dry remains immediate
+  and convolution tails continue across permutation boundaries.
+- IR Mosaic constructs four deterministic eight-tile shuffled IRs off the audio
+  thread, applies short chunk-edge fades, and energy-normalizes every kernel to
+  one standard loudness. Its free Re-shuffle Speed knob or synchronized
+  Division selects new spaces through a deterministic sequence. Incoming and
+  outgoing convolution tails use a bounded equal-power crossfade, so only one
+  path normally runs and two run during transitions. Width scales only the wet
+  side field, missing IRs remain immediate dry, and processing reports zero
+  host PDC.
 - Midnight Current combines smoothed analog softening, bounded saturation, a
   resonant moving low-pass filter, and an eight-stage slow phase network. Its
   signed regeneration remains filtered and sub-unity, Mix zero is exact
@@ -234,10 +264,20 @@ parsing/formatting, and tests.
   are Pre Gain, Bass, Mid, Treble, and Post Gain; it has no internal dry/wet
   blend. All tone and gain controls are smoothed and unloaded models are silent.
 - Stage Vocal is a zero-latency integrated live strip. Its stereo-linked
-  expander uses bounded attenuation rather than hard muting; de-essing remains
-  frequency-selective while compression is broadband. Low Cut, Presence, Air,
-  and Output retain their exact musician-facing meanings, and telemetry reports
-  measured input/output and reduction from all three dynamics stages.
+  feedback FET stage catches peaks at a fixed 8:1 before a slower optical stage
+  applies dual-memory, program-dependent phrase leveling. Each compressor has
+  independent Amount, Attack, and Release controls; zero Amount is transparent.
+  De-essing remains frequency-selective while both compressors are broadband.
+  Low Cut, Presence, Air, and Output retain their exact musician-facing
+  meanings, and telemetry reports input/output plus FET, de-ess, and optical
+  reduction.
+- Velvet Drive is a purely modeled boutique guitar amplifier with no NAM,
+  captures, IRs, or external assets. Its cascaded preamp stages, interactive
+  tone stack, phase inverter, power-stage feedback, linked supply sag, and
+  analytic speaker loads remain distinct parts of the model. Structural input,
+  voice, and speaker changes crossfade without clearing state; duplicated mono
+  remains channel-matched, and the module reports one fixed oversampling
+  latency for every setting.
 
 ## Build and test
 

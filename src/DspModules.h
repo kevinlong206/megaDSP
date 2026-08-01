@@ -54,3 +54,8 @@
 #include "modules/FetLimiter.h"
 #include "modules/ProgramEqualizer.h"
 #include "modules/StudioPlate.h"
+#include "modules/VelvetDrive.h"
+#include "modules/WormholeConvolution.h"
+#include "modules/Bitcrusher.h"
+#include "modules/PortalPermuter.h"
+#include "modules/IRMosaic.h"

@@ -1,11 +1,12 @@
 # Effects reference
 
-Detailed control and interaction notes for each of megaDSP's fifty-three
+Detailed control and interaction notes for each of megaDSP's fifty-four
 modules. For installation and a quick overview see the [README](../README.md).
 
-Runtime-specific graphs show **DSP telemetry waiting** until the selected slot
-has processed an audio block. After capture begins, an empty event field means
-the DSP reported no event activity; it is not filled from an editor clock.
+Runtime-specific graphs show **DSP telemetry waiting** until their slot has
+processed an audio block while the editor is visible. After capture begins, an
+empty event field means the DSP reported no event activity; it is not filled
+from an editor clock.
 
 ## Latency behavior
 
@@ -126,24 +127,124 @@ Displays a transfer curve with overlaid input and output waveforms. **Drive** is
 
 ---
 
+## Bitcrusher
+
+A focused digital degradation processor that ranges from polished low-bit
+texture to unstable clock grit. Drag the main waveform field horizontally for
+**Sample Rate** and vertically for **Bit Depth**. The requested clock is capped
+by the current host rate, so settings at or above that rate do not downsample.
+
+| # | Control | Range | Default | Purpose |
+|---|---|---|---|---|
+| 1 | Bit Depth | 2–24 bits | 12 bits | Sets continuously variable quantization resolution |
+| 2 | Sample Rate | 250 Hz–768 kHz | 12 kHz | Sets the sample-and-hold clock request, capped by the host rate |
+| 3 | Quantizer | Balanced/Truncate/Floor/Companded | Balanced | Chooses symmetric, old-digital, asymmetric, or low-level-detail behavior |
+| 4 | Dither | 0–100% | 20% | Adds deterministic triangular dither scaled to one quantization step |
+| 5 | Noise Shape | 0–100% | 0% | Moves quantization error upward with bounded first-order feedback |
+| 6 | Anti-Alias | 0–100% | 65% | Filters above the reduced clock before holding samples |
+| 7 | Jitter | 0–100% | 0% | Varies clock intervals without losing the requested average rate |
+| 8 | Step Slew | 0–100% | 0% | Rounds held-sample edges |
+| 9 | Grid Bias | -1–+1 LSB | 0 LSB | Offsets quantization thresholds |
+| 10 | Drive | 0–24 dB | 0 dB | Adds bounded saturation before quantization |
+| 11 | Mix | 0–100% | 100% | Blends immediate dry and crushed signals |
+| 12 | Output | -18–+12 dB | 0 dB | Sets final level |
+
+The four quantizers crossfade internally during automation. All audible
+continuous controls are smoothed, random behavior resets deterministically,
+stereo channels share one sample clock to preserve imaging, and processing is
+allocation-free after prepare. Mix zero remains exact immediate dry.
+
+---
+
 ## Guitar Cabinet
 
-A fully procedural guitar speaker, enclosure, microphone, and compact room
-model intended to follow an amp or preamp. It does not load or approximate a
-cabinet impulse response: the response changes dynamically with cone excursion,
-power compression, breakup, cabinet modes, microphone placement, and input
-level.
+A cabinet convolution processor intended to follow an amp or preamp. It ships
+with 23 bundled mono and stereo cabinet captures. Click the cabinet name to
+choose from the full dropdown, use the arrows to browse sequentially, or load
+and drop a WAV, AIFF, or FLAC IR. User files are stored by path with rack and
+snapshot state; selecting a bundled cabinet returns to a self-contained
+embedded IR.
 
-Choose one of four generic **Speaker** families, four **Cabinet** constructions,
-and **Dynamic**, **Ribbon**, or **Condenser** microphone voicings. Drag the
-microphone across the cabinet graphic to move from **Center** toward **Edge**;
-drag it vertically to set **Mic Distance** from 1 to 100 cm. The lower tracks
-control **Speaker Drive**, **Cone Breakup**, **Cabinet Resonance**, **Damping**,
-**Room**, mono-compatible **Room Width**, and final **Output**.
+| # | Control | Range | Default | Purpose |
+|---|---|---|---|---|
+| 1 | Cabinet IR | 23 bundled captures | EV12L 57+121 | Selects the embedded cabinet and microphone capture |
+| 2 | Low Cut | 30–300 Hz | 70 Hz | Removes excess low end from the cabinet signal |
+| 3 | High Cut | 2.5–18 kHz | 9 kHz | Softens the upper edge |
+| 4 | Body | -6..+6 dB | 0 dB | Adjusts weight around 180 Hz |
+| 5 | Presence | -6..+6 dB | 0 dB | Adjusts definition above 2.2 kHz |
+| 6 | Drive | 0–18 dB | 0 dB | Adds bounded pre-cabinet speaker-style drive |
+| 7 | Mix | 0–100% | 100% | Blends immediate source and cabinet signal |
+| 8 | Output | -18..+12 dB | 0 dB | Sets final level |
 
-The animated cone, compression color, breakup ring, and room field come from
-capture-gated DSP telemetry. Model changes crossfade without clearing the
-active speaker state, and all choices share one fixed reported latency.
+Convolution uses the shared JUCE non-uniform engine with a 256-sample head.
+File decoding and engine construction stay off the audio thread, and prepared
+engines are committed while processing is suspended. Mono IRs preserve stereo
+input by applying the same response independently; stereo IRs preserve their
+encoded channel differences. Bundled and user-loaded IRs receive bounded
+pink-noise-weighted gain calibration so cabinet changes retain their tonal
+contrast without large perceived-level jumps.
+
+---
+
+## Wormhole Convolution
+
+Loads two WAV, AIFF, or FLAC reverb impulses and processes them in parallel.
+**Load A** and **Load B** select the two sources; dropping a file onto the upper
+or lower waveform targets the corresponding lane. Each waveform has independent
+Start and End crop handles, Reverse, and Level controls, so two spaces can be
+shortened, offset, inverted in time, and balanced without editing the source
+files.
+
+| # | Control | Range | Default | Purpose |
+|---|---|---|---|---|
+| 1 | A Start | 0–100% | 0% | Crops the beginning of impulse A |
+| 2 | A End | 0–100% | 100% | Crops the end of impulse A |
+| 3 | Reverse A | Off/On | Off | Reverses cropped impulse A |
+| 4 | Level A | 0–100% | 35% | Sets impulse A wet level |
+| 5 | B Start | 0–100% | 0% | Crops the beginning of impulse B |
+| 6 | B End | 0–100% | 100% | Crops the end of impulse B |
+| 7 | Reverse B | Off/On | Off | Reverses cropped impulse B |
+| 8 | Level B | 0–100% | 35% | Sets impulse B wet level |
+| 9 | Low Cut | 20–1000 Hz | 20 Hz | Filters the combined wet field |
+| 10 | High Cut | 2–20 kHz | 20 kHz | Filters the combined wet field |
+| 11 | Dry | 0–100% | 100% | Sets the immediate dry level |
+| 12 | Output | -18–+12 dB | 0 dB | Sets final output level |
+
+File decoding, transformation, and convolution-engine preparation stay off the
+audio thread. Crop or reverse automation rebuilds prepared lanes on the message
+thread, and commits crossfade from the previous engine over 20 ms. Both asset
+paths and transformations persist independently in rack and snapshot state.
+
+---
+
+## Portal Permuter
+
+Captures recent tempo-locked input slices in fixed prepared history and
+probabilistically rearranges them before they excite one loaded IR. Repeat,
+Reverse, Rotate, and Shuffle patterns can change event length, source-history
+depth, slice duration, and pitch. IR Position selects a focused region of the
+impulse and Reverse IR flips that region during off-thread reconstruction.
+Convolution tails continue across slice boundaries; Feedback is filtered,
+softly saturated inside the loop, and capped at 55% so dense IRs cannot build
+into runaway gain. Mix retains an immediate dry path.
+
+---
+
+## IR Mosaic
+
+Splits one loaded IR into eight regions and constructs four deterministic
+shuffled spaces off the audio thread. Every chunk receives a short edge fade,
+and JUCE energy-normalizes every reconstructed kernel to the same standard
+loudness. **Re-shuffle Speed** is the main free-running knob; Sync replaces it
+with a tempo Division. Step, Random, Ping Pong, and Leap choose how each new
+shuffle is selected.
+
+At each re-shuffle, the incoming convolution starts from a reset prepared state
+and overlaps the previous tail with a bounded equal-power Crossfade. Only one
+convolution normally runs; two run during the transition. This prevents
+kernel-switch clicks and keeps realtime cost bounded. Wet Level, Stereo Width,
+Feedback, Low Cut, and High Cut shape the shuffled field, while Mix retains an
+immediate dry path.
 
 ---
 
@@ -233,7 +334,7 @@ The graph visually separates Foundation, Dimension Field, and Mono Safe regions.
 
 ## M/S Decoder
 
-Expects encoded Mid on input channel 1 and encoded Side on input channel 2, then reconstructs conventional left/right output. Controls: **Width** from 0–100% (35% by default), **Mute Sides**, and **Swap Channels**. The live vectorscope shows the actual decoded stereo field with Mid, Side, Left, and Right orientation.
+Expects encoded Mid on input channel 1 and encoded Side on input channel 2, then reconstructs conventional left/right output. Controls: **Width** from 0–100% (35% by default), **Mute Sides**, and **Swap Channels**. Large live L/R meters show decoded RMS level and peak hold, while the centered balance rail reports the measured output energy as Center or a percentage toward L or R.
 
 ---
 
@@ -350,29 +451,31 @@ history they affect.
 
 Combines the essential cleanup, control, and finishing stages for a live vocal
 in one zero-latency module. A two-stage Low Cut removes handling and stage
-rumble; the stereo-linked expander lowers bleed without hard muting; and the
-frequency-selective de-esser controls sibilance before smooth linked
-compression. Presence and Air provide final broad tone shaping, followed by
-Output trim. The live display shows measured input/output levels and separate
-expander, de-esser, and compressor reduction.
+rumble, and the frequency-selective de-esser controls sibilance. A fast
+stereo-linked feedback FET stage then catches peaks with an 8:1 curve before a
+slow optical stage levels phrases with dual-memory, program-dependent recovery.
+Presence and Air provide final broad tone shaping, followed by Output trim.
+The live display shows measured input/output levels and separate fast FET,
+de-esser, and slow optical reduction.
 
 | # | Control | Range | Default | Description |
 |---|---------|-------|---------|-------------|
 | 0 | Low Cut | 40–220 Hz | 80 Hz | Two-stage rumble filter |
-| 1 | Expander Threshold | -70–-20 dB | -50 dB | Level below which stage bleed is reduced |
-| 2 | Expander Range | 0–36 dB | 18 dB | Maximum downward attenuation |
-| 3 | De-Ess Frequency | 3–10 kHz | 6.5 kHz | Start of the detected sibilance band |
-| 4 | De-Ess Amount | 0–12 dB | 4 dB | Maximum sibilance reduction |
-| 5 | Compressor Threshold | -40–0 dB | -18 dB | Level above which compression begins |
-| 6 | Ratio | 1:1–10:1 | 3:1 | Compression strength |
-| 7 | Attack | 0.5–50 ms | 8 ms | Compressor response to peaks |
-| 8 | Release | 30–800 ms | 120 ms | Compressor recovery time |
+| 1 | Fast Compression | 0–30 dB | 10 dB | Drives the feedback FET peak catcher |
+| 2 | Fast Attack | 0.02–0.8 ms | 0.15 ms | FET peak response |
+| 3 | Fast Release | 40–800 ms | 120 ms | FET recovery time |
+| 4 | Slow Compression | 0–30 dB | 6 dB | Drives the optical phrase leveler |
+| 5 | Slow Attack | 2–40 ms | 10 ms | Optical-cell onset |
+| 6 | Slow Release | 200–3000 ms | 800 ms | Base optical recovery before program extension |
+| 7 | De-Ess Frequency | 3–10 kHz | 6.5 kHz | Start of the detected sibilance band |
+| 8 | De-Ess Amount | 0–12 dB | 4 dB | Maximum sibilance reduction |
 | 9 | Presence | -6–+6 dB | +1 dB | Broad vocal-definition contour |
 | 10 | Air | -6–+6 dB | +1.5 dB | High-frequency openness |
 | 11 | Output | -18–+12 dB | 0 dB | Final level trim |
 
-All audible controls are smoothed. Mono input remains mono-compatible, while
-stereo-linked detection prevents gain changes from shifting the image.
+Both compressors use feedback detection and linked gain so they cannot pull the
+stereo image sideways. All audible controls are smoothed, zero Amount is
+transparent for its stage, and mono input remains mono-compatible.
 
 ---
 
@@ -683,6 +786,40 @@ from evolving ages. History, tile width/time, Age, Motion, Coherence, Pitch
 Drift, Freeze, and Stereo Spread create deterministic rearrangements while
 preserving phase within tiles. The map displays actual tile assignments and
 reassignment events.
+
+---
+
+## Velvet Drive
+
+A purely modeled touch-sensitive boutique guitar amplifier. Velvet Drive uses
+four cascaded asymmetric tube-style stages, an interactive passive tone stack,
+frequency-dependent power-stage feedback, linked supply sag, and analytic
+speaker-load filters. It does not load NAM models, captures, impulse responses,
+or other external assets.
+
+**Classic** places its broad tone shaping before a smooth, sustaining overdrive
+cascade. **Modern** adds a firmer post-drive mid voice. **High Headroom** keeps
+the attack open and delays breakup for large clean tones. **Normal** input is
+the softer tube path; **FET** adds brighter front-end gain and asymmetric push.
+
+| # | Control | Range | Default | Description |
+|---|---------|-------|---------|-------------|
+| 0 | Input | Normal / FET | Normal | Selects the front-end gain and brightness |
+| 1 | Voice | Classic / Modern / High Headroom | Classic | Chooses gain structure and tone-stack position |
+| 2 | Drive | 0–10 | 3.8 | Drives the cascaded preamp |
+| 3 | Ratio | 0–10 | 4.6 | Blends clean-stage articulation into the extra overdrive stages |
+| 4 | Level | -18..+12 dB | 0 dB | Sets overdrive-channel level into the phase inverter |
+| 5 | Bass | 0–10 | 4.6 | Interactive passive low-frequency control |
+| 6 | Mid | 0–10 | 5.8 | Interactive passive midrange control |
+| 7 | Treble | 0–10 | 5.4 | Interactive passive high-frequency control |
+| 8 | Presence | 0–10 | 4.5 | Reduces high-frequency negative feedback |
+| 9 | Feel | 0–10 | 4.2 | Sets supply sag, compression, and recovery bloom |
+| 10 | Speaker | Direct / Flat 12 / Scooped 12 / Chime 12 | Flat 12 | Selects an analytic reactive-load response |
+| 11 | Master | -24..+12 dB | 0 dB | Drives the power stage and sets calibrated output |
+
+The speaker choices model only the amplifier load and close response; they add
+no room or microphone. Follow Velvet Drive with **Guitar Cabinet** for a
+captured speaker, cabinet, microphone, and recording-chain response.
 
 ---
 

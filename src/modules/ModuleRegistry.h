@@ -12,8 +12,8 @@ namespace megadsp
 {
 constexpr int slotCount = 8;
 constexpr int controlsPerSlot = 12;
-constexpr int stateSchemaVersion = 11;
-constexpr int moduleTypeCount = 54;
+constexpr int stateSchemaVersion = 13;
+constexpr int moduleTypeCount = 59;
 
 enum class ModuleType
 {
@@ -70,7 +70,12 @@ enum class ModuleType
     optoLeveler = 50,
     fetLimiter = 51,
     programEqualizer = 52,
-    studioPlate = 53
+    studioPlate = 53,
+    velvetDrive = 54,
+    wormholeConvolution = 55,
+    bitcrusher = 56,
+    portalPermuter = 57,
+    irMosaic = 58
 };
 
 enum class ModuleCategory
@@ -143,11 +148,16 @@ enum class ModulePresentation
     fetLimiter,
     programEqualizer,
     studioPlate,
+    velvetDrive,
+    wormholeConvolution,
+    bitcrusher,
+    portalPermuter,
+    irMosaic,
     count
 };
 
 static_assert(
-    static_cast<int>(ModuleType::studioPlate) + 1 == moduleTypeCount);
+    static_cast<int>(ModuleType::irMosaic) + 1 == moduleTypeCount);
 static_assert(static_cast<int>(ModulePresentation::count) == moduleTypeCount);
 
 enum class ControlKind
@@ -170,7 +180,7 @@ struct ControlMetadata
 
 struct ControlOptions
 {
-    static constexpr int capacity = 12;
+    static constexpr int capacity = 24;
     std::array<const char*, capacity> values {};
     int count = 0;
 

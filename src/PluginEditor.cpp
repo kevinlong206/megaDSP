@@ -7,6 +7,8 @@
 #include "ui/GuiLayout.h"
 #include "ui/ModuleBrowser.h"
 
+#include <numeric>
+
 namespace
 {
 using megadsp::ui::accent;
@@ -102,6 +104,7 @@ private:
 
 void configureSlider(juce::Slider& slider)
 {
+    slider.setScrollWheelEnabled(false);
     slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 20);
     slider.setColour(juce::Slider::rotarySliderFillColourId, accent);
@@ -442,6 +445,7 @@ public:
                   callback(index);
               })
     {
+        box.setScrollWheelEnabled(false);
         box.addItemList(options, 1);
         box.onChange = [this]
         {
@@ -677,6 +681,7 @@ public:
           supportsImpulseResponse(
               processor.getRack().activeModuleHasCapability(
                   slot, megadsp::ModuleCapability::impulseResponse)),
+          isWormhole(type == megadsp::ModuleType::wormholeConvolution),
           supportsNamModel(
               processor.getRack().activeModuleHasCapability(
                   slot, megadsp::ModuleCapability::neuralAmpModel)),
@@ -710,7 +715,7 @@ public:
 
         if (supportsImpulseResponse)
         {
-            loadImpulse.setButtonText("Load IR...");
+            loadImpulse.setButtonText(isWormhole ? "Load A..." : "Load IR...");
             loadImpulse.setTooltip(
                 "Load a WAV, AIFF, or FLAC impulse response.");
             loadImpulse.onClick = [this]
@@ -731,10 +736,37 @@ public:
                         const auto file = chooser.getResult();
                         if (file == juce::File {})
                             return;
-                        safeThis->loadAssetFile(file);
+                        safeThis->loadAssetFile(file, 0);
                     });
             };
             addAndMakeVisible(loadImpulse);
+            if (isWormhole)
+            {
+                loadImpulse2.setButtonText("Load B...");
+                loadImpulse2.setTooltip(
+                    "Load the second parallel reverb impulse response.");
+                loadImpulse2.onClick = [this]
+                {
+                    impulseChooser2 = std::make_unique<juce::FileChooser>(
+                        "Load Wormhole impulse B",
+                        processor.impulseResponseDirectory(slot),
+                        "*.wav;*.aif;*.aiff;*.flac");
+                    const auto flags =
+                        juce::FileBrowserComponent::openMode
+                        | juce::FileBrowserComponent::canSelectFiles;
+                    juce::Component::SafePointer<ModuleCard> safeThis(this);
+                    impulseChooser2->launchAsync(
+                        flags, [safeThis](const juce::FileChooser& chooser)
+                        {
+                            if (safeThis == nullptr)
+                                return;
+                            const auto file = chooser.getResult();
+                            if (file != juce::File {})
+                                safeThis->loadAssetFile(file, 1);
+                        });
+                };
+                addAndMakeVisible(loadImpulse2);
+            }
             previousImpulse.setButtonText("< IR");
             previousImpulse.setTooltip(
                 "Load the previous impulse response in this directory.");
@@ -760,6 +792,17 @@ public:
                 graph->repaint();
             };
             addAndMakeVisible(clearImpulse);
+            if (isWormhole)
+            {
+                clearImpulse.setButtonText("Clear A");
+                clearImpulse2.setButtonText("Clear B");
+                clearImpulse2.onClick = [this]
+                {
+                    processor.clearImpulseResponse(slot, 1);
+                    graph->repaint();
+                };
+                addAndMakeVisible(clearImpulse2);
+            }
         }
 
         if (supportsNamModel)
@@ -942,14 +985,30 @@ public:
         bypass.setBounds(heading.removeFromRight(54).reduced(2));
         if (supportsImpulseResponse)
         {
-            nextImpulse.setBounds(
-                heading.removeFromRight(46).reduced(2));
-            previousImpulse.setBounds(
-                heading.removeFromRight(46).reduced(2));
-            clearImpulse.setBounds(
-                heading.removeFromRight(72).reduced(2));
-            loadImpulse.setBounds(
-                heading.removeFromRight(88).reduced(2));
+            if (isWormhole)
+            {
+                clearImpulse2.setBounds(
+                    heading.removeFromRight(62).reduced(2));
+                loadImpulse2.setBounds(
+                    heading.removeFromRight(74).reduced(2));
+                clearImpulse.setBounds(
+                    heading.removeFromRight(62).reduced(2));
+                loadImpulse.setBounds(
+                    heading.removeFromRight(74).reduced(2));
+                previousImpulse.setBounds({});
+                nextImpulse.setBounds({});
+            }
+            else
+            {
+                nextImpulse.setBounds(
+                    heading.removeFromRight(46).reduced(2));
+                previousImpulse.setBounds(
+                    heading.removeFromRight(46).reduced(2));
+                clearImpulse.setBounds(
+                    heading.removeFromRight(72).reduced(2));
+                loadImpulse.setBounds(
+                    heading.removeFromRight(88).reduced(2));
+            }
         }
         if (supportsNamModel)
         {
@@ -959,9 +1018,9 @@ public:
                 heading.removeFromRight(100).reduced(2));
         }
         bounds.removeFromTop(6);
-        graph->setBounds(bounds);
         if (graph->usesFullPanel())
         {
+            graph->setBounds(bounds);
             controlsOverlay.setVisible(false);
             controlsOverlay.setFrames({});
             return;
@@ -999,10 +1058,20 @@ public:
             && mainControls[0] == 2 && mainControls[1] == 4)
             std::swap(mainControls[0], mainControls[1]);
 
-        const auto overlayHeight = juce::jlimit(
-            112, 146, bounds.getHeight() * 56 / 100);
+        const auto visibleControlCount =
+            static_cast<int>(mainControls.size())
+            + std::accumulate(
+                secondaryGroups.begin(), secondaryGroups.end(), 0,
+                [](int total, const auto& group)
+                {
+                    return total + static_cast<int>(group.second.size());
+                });
+        const auto overlayHeight = visibleControlCount <= 4
+            ? 112
+            : juce::jlimit(112, 146, bounds.getHeight() * 56 / 100);
         const auto overlayBounds =
             bounds.removeFromBottom(overlayHeight).reduced(8, 5);
+        graph->setBounds(bounds.withTrimmedBottom(4));
         controlsOverlay.setBounds(overlayBounds);
         auto overlayArea = controlsOverlay.getLocalBounds().reduced(1);
         std::vector<ControlGroupFrame> frames;
@@ -1045,7 +1114,6 @@ public:
     {
         const auto changed = selected != shouldBeSelected;
         selected = shouldBeSelected;
-        setEditorVisible(editor.isShowing());
         if (!graph->usesFullPanel())
             startTimerHz(selected ? 10 : 2);
         if (changed)
@@ -1054,7 +1122,7 @@ public:
 
     void setEditorVisible(bool editorVisible)
     {
-        const auto active = selected && editorVisible;
+        const auto active = editorVisible;
         graph->setVisualizationActive(active);
         for (auto& slider : sliders)
             slider.setMeterActive(active);
@@ -1091,6 +1159,11 @@ public:
                 && !getLocalBounds().contains(child->getBounds()))
                 return false;
         return true;
+    }
+    bool graphAndControlsAreSeparatedForTesting() const
+    {
+        return graph->usesFullPanel()
+            || !graph->getBounds().intersects(controlsOverlay.getBounds());
     }
     bool acceptsAssetDropForTesting(const juce::String& path) const
     {
@@ -1234,14 +1307,14 @@ private:
         return false;
     }
 
-    void loadAssetFile(const juce::File& file)
+    void loadAssetFile(const juce::File& file, int impulseLane = 0)
     {
         if (!acceptsAssetFile(file))
             return;
         editor.selectSlot(slot);
         const auto result = supportsNamModel
             ? processor.loadNamModel(slot, file)
-            : processor.loadImpulseResponse(slot, file);
+            : processor.loadImpulseResponse(slot, impulseLane, file);
         if (result.failed())
             juce::AlertWindow::showMessageBoxAsync(
                 juce::MessageBoxIconType::WarningIcon,
@@ -1438,6 +1511,7 @@ private:
     megadsp::ModuleType type;
     juce::String moduleName;
     bool supportsImpulseResponse = false;
+    bool isWormhole = false;
     bool supportsNamModel = false;
     juce::Label name;
     juce::ToggleButton bypass;
@@ -1448,6 +1522,9 @@ private:
     juce::TextButton nextImpulse;
     juce::TextButton clearImpulse;
     std::unique_ptr<juce::FileChooser> impulseChooser;
+    juce::TextButton loadImpulse2;
+    juce::TextButton clearImpulse2;
+    std::unique_ptr<juce::FileChooser> impulseChooser2;
     juce::TextButton loadNam;
     juce::TextButton clearNam;
     std::unique_ptr<juce::FileChooser> namChooser;
@@ -1781,6 +1858,7 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
 
     factoryPresets.addItemList(
         { "Init", "Vocal Polish", "Drum Smash", "Wide Delay", "Ambient Hall" }, 1);
+    factoryPresets.setScrollWheelEnabled(false);
     factoryPresets.setTextWhenNothingSelected("Factory Racks");
     factoryPresets.onChange = [this]
     {
@@ -1966,7 +2044,7 @@ MegaDSPAudioProcessorEditor::~MegaDSPAudioProcessorEditor()
     fileChooser.reset();
     megadsp::Diagnostics::instance().log(
         "editor", "closed");
-    audioProcessor.getVisualizationData().setSelectedSlot(-1);
+    audioProcessor.getVisualizationData().clearActiveSlots();
 }
 
 void MegaDSPAudioProcessorEditor::paint(juce::Graphics& graphics)
@@ -1984,7 +2062,7 @@ void MegaDSPAudioProcessorEditor::visibilityChanged()
     for (auto& card : cards)
         card->setEditorVisible(showing);
     if (!showing)
-        audioProcessor.getVisualizationData().setSelectedSlot(-1);
+        audioProcessor.getVisualizationData().clearActiveSlots();
 }
 
 void MegaDSPAudioProcessorEditor::resized()
@@ -2178,7 +2256,7 @@ void MegaDSPAudioProcessorEditor::selectSlot(int slot)
     if (active <= 0)
     {
         selectedSlot = 0;
-        audioProcessor.getVisualizationData().setSelectedSlot(-1);
+        audioProcessor.getVisualizationData().clearActiveSlots();
         return;
     }
     selectedSlot = juce::jlimit(0, active - 1, slot);
@@ -2189,7 +2267,7 @@ void MegaDSPAudioProcessorEditor::selectSlot(int slot)
         chainNavigatorButtons[static_cast<size_t>(index)]->setToggleState(
             index == selectedSlot, juce::dontSendNotification);
     if (!isShowing())
-        audioProcessor.getVisualizationData().setSelectedSlot(-1);
+        audioProcessor.getVisualizationData().clearActiveSlots();
 }
 
 void MegaDSPAudioProcessorEditor::restoreFocusedCardAfterHover()
@@ -2234,6 +2312,7 @@ void MegaDSPAudioProcessorEditor::refreshCards(
         {
             auto card = std::make_unique<ModuleCard>(*this, slot);
             rackContent.addAndMakeVisible(*card);
+            card->setEditorVisible(isShowing());
             cards.push_back(std::move(card));
         }
         addButton.setVisible(active < megadsp::slotCount);
@@ -2397,11 +2476,29 @@ int MegaDSPAudioProcessorEditor::activeVisualizationCardCountForTesting() const
         }));
 }
 
+void MegaDSPAudioProcessorEditor::setCardsEditorVisibleForTesting(bool visible)
+{
+    for (auto& card : cards)
+        card->setEditorVisible(visible);
+    if (!visible)
+        audioProcessor.getVisualizationData().clearActiveSlots();
+}
+
 bool MegaDSPAudioProcessorEditor::cardChildrenFitForTesting() const
 {
     return std::all_of(
         cards.begin(), cards.end(),
         [](const auto& card) { return card->childrenFitForTesting(); });
+}
+
+bool MegaDSPAudioProcessorEditor::cardGraphsAvoidControlsForTesting() const
+{
+    return std::all_of(
+        cards.begin(), cards.end(),
+        [](const auto& card)
+        {
+            return card->graphAndControlsAreSeparatedForTesting();
+        });
 }
 
 bool MegaDSPAudioProcessorEditor::cardHeightsAreUniformForTesting() const

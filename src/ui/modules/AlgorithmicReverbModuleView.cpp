@@ -46,6 +46,8 @@ juce::Rectangle<float> AlgorithmicReverbModuleView::tailBounds(
     area.removeFromBottom(30.0f);
     area.removeFromTop(area.getHeight() * 0.35f);
     area.removeFromTop(8.0f);
+    area.removeFromTop(18.0f);
+    area.removeFromBottom(18.0f);
     return area;
 }
 
@@ -192,18 +194,19 @@ void AlgorithmicReverbModuleView::paint(juce::Graphics& graphics, juce::Rectangl
     area.removeFromBottom(30.0f);
     auto reflectionArea = area.removeFromTop(area.getHeight() * 0.35f);
     area.removeFromTop(8.0f);
+    auto reflectionHeader = reflectionArea.removeFromTop(20.0f);
     graphics.setColour(juce::Colour(0xff8995a4));
     graphics.drawText(modeNames[static_cast<size_t>(mode)],
-                      reflectionArea.toNearestInt(),
+                      reflectionHeader.toNearestInt(),
                       juce::Justification::topLeft);
     graphics.setColour(juce::Colours::white);
     graphics.drawText(
         "ROOM SCALE  "
             + megadsp::formatControlValue(type, 1, value(1)),
-        reflectionArea.toNearestInt(),
+        reflectionHeader.toNearestInt(),
         juce::Justification::centredTop);
     graphics.drawText("EARLY REFLECTIONS",
-                      reflectionArea.toNearestInt(),
+                      reflectionHeader.toNearestInt(),
                       juce::Justification::topRight);
     for (int tap = 0; tap < 16; ++tap)
     {
@@ -229,52 +232,56 @@ void AlgorithmicReverbModuleView::paint(juce::Graphics& graphics, juce::Rectangl
                              5.0f, 5.0f);
     }
 
+    auto tailReadout = area.removeFromTop(18.0f);
+    auto tailHint = area.removeFromBottom(18.0f);
+    const auto tail = area;
     const std::array<juce::Colour, 3> bandColours {
         juce::Colour(0xff6f8cff), accent, juce::Colour(0xffffb15c)
     };
     for (int band = 0; band < 3; ++band)
     {
         juce::Path envelope;
-        for (int pixel = 0; pixel < static_cast<int>(area.getWidth()); ++pixel)
+        for (int pixel = 0; pixel < static_cast<int>(tail.getWidth()); ++pixel)
         {
             const auto time = static_cast<float>(pixel)
-                              / juce::jmax(1.0f, area.getWidth()) * 12.0f;
+                              / juce::jmax(1.0f, tail.getWidth()) * 12.0f;
             const auto amplitude = std::pow(0.001f,
                 time / juce::jmax(0.1f,
                     bandDecay[static_cast<size_t>(band)]));
-            const auto baseline = area.getBottom()
+            const auto baseline = tail.getBottom()
                                   - static_cast<float>(band) * 6.0f;
             const auto y = baseline
-                           - amplitude * area.getHeight()
+                           - amplitude * tail.getHeight()
                                  * (0.62f + diffusion * 0.25f);
-            if (pixel == 0) envelope.startNewSubPath(area.getX(), y);
-            else envelope.lineTo(area.getX() + static_cast<float>(pixel), y);
+            if (pixel == 0) envelope.startNewSubPath(tail.getX(), y);
+            else envelope.lineTo(tail.getX() + static_cast<float>(pixel), y);
         }
         graphics.setColour(bandColours[static_cast<size_t>(band)].withAlpha(0.8f));
         graphics.strokePath(envelope, juce::PathStrokeType(2.0f));
     }
     graphics.setColour(juce::Colours::white);
     graphics.drawText(juce::String(decay, 2) + " s decay",
-                      area.toNearestInt(), juce::Justification::topRight);
+                      tailReadout.toNearestInt(),
+                      juce::Justification::centredRight);
     graphics.drawText(
         "DRY " + megadsp::formatControlValue(type, 2, value(2))
             + "   WET "
             + megadsp::formatControlValue(type, 3, value(3))
             + "   DUCK "
             + megadsp::formatControlValue(type, 7, value(7)),
-        area.toNearestInt(), juce::Justification::topLeft);
+        tailReadout.toNearestInt(), juce::Justification::centredLeft);
     const auto handle = spacePoint(fullArea);
     graphics.setColour(accent.withAlpha(0.8f));
     graphics.drawVerticalLine(juce::roundToInt(handle.x),
-                            area.getY(), area.getBottom());
+                              tail.getY(), tail.getBottom());
     graphics.drawHorizontalLine(
-        juce::roundToInt(handle.y), area.getX(), area.getRight());
+        juce::roundToInt(handle.y), tail.getX(), tail.getRight());
     graphics.setColour(juce::Colours::white);
     graphics.fillEllipse(
         juce::Rectangle<float>(12.0f, 12.0f).withCentre(handle));
     graphics.setColour(juce::Colour(0xff8995a4));
     graphics.drawText("Drag Decay / Room Scale",
-                      area.toNearestInt(), juce::Justification::centredBottom);
+                      tailHint.toNearestInt(), juce::Justification::centred);
 
     const auto frequencyX = [&filter](float frequency)
     {

@@ -33,6 +33,7 @@ public:
         int slot = -1;
         ModuleType type = ModuleType::empty;
         DspModule* module = nullptr;
+        int lane = 0;
         juce::String path;
         PreparedImpulseResponsePtr prepared;
     };
@@ -80,17 +81,31 @@ public:
         int slot, ModuleCapability capability) const;
     juce::Result prepareImpulseResponse(
         int slot, const juce::File&, PreparedImpulseResponseLoad&);
+    juce::Result prepareImpulseResponse(
+        int slot, int lane, const juce::File&,
+        PreparedImpulseResponseLoad&);
+    juce::Result prepareBuiltInImpulseResponse(
+        int slot, int index, PreparedImpulseResponseLoad&);
     bool commitImpulseResponse(PreparedImpulseResponseLoad&);
     void cancelImpulseResponse(PreparedImpulseResponseLoad&) noexcept;
     juce::Result loadImpulseResponse(int slot, const juce::File&);
+    juce::Result loadImpulseResponse(int slot, int lane, const juce::File&);
+    juce::Result loadBuiltInImpulseResponse(int slot, int index);
     juce::Result clearImpulseResponse(int slot);
+    juce::Result clearImpulseResponse(int slot, int lane);
     void reloadImpulseResponses();
     juce::String pendingImpulseResponsePath(int slot) const;
+    juce::String pendingImpulseResponsePath(int slot, int lane) const;
     void discardPendingImpulseResponse(
         int slot, const juce::String& path);
+    void discardPendingImpulseResponse(
+        int slot, int lane, const juce::String& path);
     juce::String impulseResponseName(int slot) const;
+    juce::String impulseResponseName(int slot, int lane) const;
     juce::String impulseResponsePath(int slot) const;
+    juce::String impulseResponsePath(int slot, int lane) const;
     ImpulseResponsePreview impulseResponsePreview(int slot) const;
+    ImpulseResponsePreview impulseResponsePreview(int slot, int lane) const;
     juce::Result loadNamModel(int slot, const juce::File&);
     juce::Result prepareNamModel(
         int slot, const juce::File&, PreparedNamModelLoad&);
@@ -123,6 +138,9 @@ private:
         juce::String synchronizedImpulsePath;
         juce::String observedImpulsePath;
         bool impulseRestorePending = false;
+        juce::String synchronizedImpulsePath2;
+        juce::String observedImpulsePath2;
+        bool impulseRestorePending2 = false;
         juce::String synchronizedNamPath;
         juce::String observedNamPath;
         bool namRestorePending = false;
@@ -156,8 +174,8 @@ private:
     const DspModule* selectedModule(const Slot&) const;
     void rebuildSlot(Slot&, ModuleType);
     void synchronizeModuleDataState(int slot);
-    juce::String impulsePath(int slot) const;
-    void setImpulsePath(int slot, const juce::String&);
+    juce::String impulsePath(int slot, int lane = 0) const;
+    void setImpulsePath(int slot, int lane, const juce::String&);
     juce::String namPath(int slot) const;
     void setNamPath(int slot, const juce::String&);
 };

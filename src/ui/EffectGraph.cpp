@@ -191,7 +191,7 @@ EffectGraph::EffectGraph(MegaDSPAudioProcessor& processorToUse, int slotToUse,
         }
     }
     visualizationActive =
-        processor.getVisualizationData().getSelectedSlot() == slot;
+        processor.getVisualizationData().isSlotActive(slot);
     startTimerHz(30);
 }
 
@@ -298,8 +298,7 @@ void EffectGraph::mouseDoubleClick(const juce::MouseEvent& event)
 void EffectGraph::mouseWheelMove(
     const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
 {
-    if (moduleView != nullptr)
-        moduleView->mouseWheelMove(event, wheel);
+    juce::Component::mouseWheelMove(event, wheel);
 }
 
 bool EffectGraph::keyPressed(const juce::KeyPress& key)
@@ -362,8 +361,10 @@ void EffectGraph::filesDropped(
     {
         if (!isInterestedInFileDrag(files))
             return;
+        const auto lane = type == ModuleType::wormholeConvolution
+            && y >= getHeight() / 2 ? 1 : 0;
         const auto result = processor.loadImpulseResponse(
-            slot, juce::File(files[0]));
+            slot, lane, juce::File(files[0]));
         if (result.failed())
             juce::AlertWindow::showMessageBoxAsync(
                 juce::MessageBoxIconType::WarningIcon,
@@ -386,11 +387,7 @@ void EffectGraph::setVisualizationActive(bool active)
     if (visualizationActive == active)
         return;
     visualizationActive = active;
-    auto& visualization = processor.getVisualizationData();
-    if (active)
-        visualization.setSelectedSlot(slot);
-    else if (visualization.getSelectedSlot() == slot)
-        visualization.setSelectedSlot(-1);
+    processor.getVisualizationData().setSlotActive(slot, active);
     repaint();
 }
 

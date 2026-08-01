@@ -22,7 +22,7 @@ public:
         expectEquals(static_cast<int>(ModuleType::vinylSimulator), 49);
         expectEquals(static_cast<int>(ModuleType::optoLeveler), 50);
         expectEquals(static_cast<int>(ModuleType::fetLimiter), 51);
-        expectEquals(moduleTypeCount, 54);
+        expectEquals(moduleTypeCount, 59);
         const auto& definition = moduleDefinition(ModuleType::optoLeveler);
         expect(definition.category == ModuleCategory::dynamics);
         expect(definition.capabilities

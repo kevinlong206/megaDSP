@@ -80,16 +80,28 @@ public:
     void addModule(megadsp::ModuleType type);
     void resetModuleToDefaults(int slot);
     juce::Result loadImpulseResponse(int slot, const juce::File& file);
+    juce::Result loadImpulseResponse(
+        int slot, int lane, const juce::File& file);
+    juce::Result loadBuiltInImpulseResponse(int slot, int index);
     juce::Result loadAdjacentImpulseResponse(int slot, int direction);
     void clearImpulseResponse(int slot);
+    void clearImpulseResponse(int slot, int lane);
     juce::File impulseResponseDirectory(int slot) const;
     juce::String impulseResponseName(int slot) const
     {
         return getRack().impulseResponseName(slot);
     }
+    juce::String impulseResponseName(int slot, int lane) const
+    {
+        return getRack().impulseResponseName(slot, lane);
+    }
     juce::String impulseResponsePath(int slot) const
     {
         return getRack().impulseResponsePath(slot);
+    }
+    juce::String impulseResponsePath(int slot, int lane) const
+    {
+        return getRack().impulseResponsePath(slot, lane);
     }
     juce::Result loadNamModel(int slot, const juce::File& file);
     juce::Result clearNamModel(int slot)
@@ -111,6 +123,11 @@ public:
     megadsp::ImpulseResponsePreview impulseResponsePreview(int slot) const
     {
         return getRack().impulseResponsePreview(slot);
+    }
+    megadsp::ImpulseResponsePreview impulseResponsePreview(
+        int slot, int lane) const
+    {
+        return getRack().impulseResponsePreview(slot, lane);
     }
     bool readContinuousTelemetry(
         int slot, megadsp::ContinuousTelemetrySnapshot& snapshot) const noexcept
@@ -137,10 +154,7 @@ public:
     {
         const auto nextTab = juce::jlimit(
             0, juce::jmax(0, getRack().activeSlotCount() - 1), tab);
-        if (getRack().visualizationData().getSelectedSlot() != nextTab)
-            getRack().visualizationData().slotData(nextTab).clear();
         selectedTab = nextTab;
-        getRack().visualizationData().setSelectedSlot(selectedTab);
     }
     int getBackgroundThemeIndex() const;
     void setBackgroundThemeIndex(int index);
@@ -286,6 +300,10 @@ private:
     std::array<std::array<juce::String, megadsp::controlsPerSlot>,
                megadsp::slotCount>
         controlParameterIds;
+    std::array<std::atomic<int>, megadsp::slotCount>
+        pendingBuiltInCabinetLoads {};
+    std::array<std::atomic<std::uint8_t>, megadsp::slotCount>
+        pendingWormholeReloads {};
     std::array<std::unique_ptr<megadsp::EffectRack>,
                megadsp::snapshotCount> snapshotRacks;
     std::atomic<int> selectedSnapshot { 0 };

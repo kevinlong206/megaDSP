@@ -478,7 +478,7 @@ public:
 
         beginTest("Stereo visualization does not cancel anti-phase channels");
         megadsp::VisualizationData visualization;
-        visualization.setSelectedSlot(0);
+        visualization.setSlotActive(0, true);
         juce::AudioBuffer<float> antiPhase(2, 1);
         antiPhase.setSample(0, 0, 1.0f);
         antiPhase.setSample(1, 0, -1.0f);
@@ -561,7 +561,7 @@ public:
                          index);
 
         beginTest("Musical defaults avoid generic half-value hazards");
-        expectEquals(megadsp::stateSchemaVersion, 11);
+        expectEquals(megadsp::stateSchemaVersion, 13);
         const auto reverbDefaults = megadsp::moduleDefaults(
             megadsp::ModuleType::algorithmicReverb);
         expectEquals(reverbDefaults[2], 1.0f);
@@ -1239,12 +1239,12 @@ public:
             linearDefault(-18.0f, 12.0f, 0.0f), 0.5f
         });
         expectDefaults(megadsp::ModuleType::guitarCabinet, {
-            megadsp::discreteValue(1, 4), megadsp::discreteValue(3, 4),
-            megadsp::discreteValue(0, 3), 0.62f,
-            exponentialDefault(1.0f, 100.0f, 4.0f),
-            linearDefault(0.0f, 24.0f, 6.0f),
-            0.35f, 0.50f, 0.50f, 0.12f, 0.50f,
-            linearDefault(-18.0f, 12.0f, -3.0f)
+            megadsp::discreteValue(7, 23),
+            exponentialDefault(30.0f, 300.0f, 70.0f),
+            exponentialDefault(2500.0f, 18000.0f, 9000.0f),
+            0.50f, 0.50f, 0.0f, 1.0f,
+            linearDefault(-18.0f, 12.0f, 0.0f),
+            0.5f, 0.5f, 0.5f, 0.5f
         });
         expectDefaults(megadsp::ModuleType::chordLoom, {
             0.62f, exponentialDefault(0.25f, 2.0f, 0.9f),
@@ -1294,14 +1294,14 @@ public:
         });
         expectDefaults(megadsp::ModuleType::stageVocal, {
             exponentialDefault(40.0f, 220.0f, 80.0f),
-            linearDefault(-70.0f, -20.0f, -50.0f),
-            linearDefault(0.0f, 36.0f, 18.0f),
+            linearDefault(0.0f, 30.0f, 10.0f),
+            exponentialDefault(0.02f, 0.8f, 0.15f),
+            exponentialDefault(40.0f, 800.0f, 120.0f),
+            linearDefault(0.0f, 30.0f, 6.0f),
+            exponentialDefault(2.0f, 40.0f, 10.0f),
+            exponentialDefault(200.0f, 3000.0f, 800.0f),
             exponentialDefault(3000.0f, 10000.0f, 6500.0f),
             linearDefault(0.0f, 12.0f, 4.0f),
-            linearDefault(-40.0f, 0.0f, -18.0f),
-            exponentialDefault(1.0f, 10.0f, 3.0f),
-            exponentialDefault(0.5f, 50.0f, 8.0f),
-            exponentialDefault(30.0f, 800.0f, 120.0f),
             linearDefault(-6.0f, 6.0f, 1.0f),
             linearDefault(-6.0f, 6.0f, 1.5f),
             linearDefault(-18.0f, 12.0f, 0.0f)
@@ -1357,11 +1357,20 @@ public:
             1.0f, 0.18f,
             linearDefault(-18.0f, 12.0f, 0.0f)
         });
+        expectDefaults(megadsp::ModuleType::velvetDrive, {
+            megadsp::discreteValue(0, 2),
+            megadsp::discreteValue(0, 3),
+            0.38f, 0.46f,
+            linearDefault(-18.0f, 12.0f, 0.0f),
+            0.46f, 0.58f, 0.54f, 0.45f, 0.42f,
+            megadsp::discreteValue(1, 4),
+            linearDefault(-24.0f, 12.0f, 0.0f)
+        });
 
         beginTest("Host parameter contract remains fixed");
-        expectEquals(megadsp::moduleTypeCount, 54);
-        expectEquals(megadsp::stateSchemaVersion, 11);
-        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 54);
+        expectEquals(megadsp::moduleTypeCount, 59);
+        expectEquals(megadsp::stateSchemaVersion, 13);
+        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 59);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
         expectEquals(static_cast<int>(megadsp::ModuleType::compressor), 2);
@@ -1459,7 +1468,17 @@ public:
                          megadsp::ModuleType::programEqualizer), 52);
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::studioPlate), 53);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 54);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::velvetDrive), 54);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::wormholeConvolution), 55);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::bitcrusher), 56);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::portalPermuter), 57);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::irMosaic), 58);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 59);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1492,7 +1511,7 @@ public:
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 54);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 59);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1508,6 +1527,8 @@ public:
                          stableType);
             const auto expectedCapabilities =
                 type == megadsp::ModuleType::convolutionReverb
+                    || type == megadsp::ModuleType::portalPermuter
+                    || type == megadsp::ModuleType::irMosaic
                     ? megadsp::ModuleCapability::impulseResponse
                           | megadsp::ModuleCapability::continuousTelemetry
                     : type == megadsp::ModuleType::randomGranulizer
@@ -1515,6 +1536,12 @@ public:
                           : type == megadsp::ModuleType::beatPermuter
                                 ? megadsp::ModuleCapability::
                                       beatPermutationVisualization
+                          : type == megadsp::ModuleType::guitarCabinet
+                          ? megadsp::ModuleCapability::impulseResponse
+                               | megadsp::ModuleCapability::
+                                     continuousTelemetry
+                          : type == megadsp::ModuleType::wormholeConvolution
+                          ? megadsp::ModuleCapability::impulseResponse
                           : type == megadsp::ModuleType::signalDecay
                               || type == megadsp::ModuleType::timeMosaic
                           ? megadsp::ModuleCapability::continuousTelemetry
@@ -1536,7 +1563,6 @@ public:
                               || type == megadsp::ModuleType::formantForge
                               || type == megadsp::ModuleType::harmonicMirage
                               || type == megadsp::ModuleType::chaosField
-                              || type == megadsp::ModuleType::guitarCabinet
                               || type == megadsp::ModuleType::chordLoom
                               || type == megadsp::ModuleType::volumeSwell
                               || type == megadsp::ModuleType::spectralNebula
@@ -1549,6 +1575,7 @@ public:
                               || type == megadsp::ModuleType::fetLimiter
                               || type == megadsp::ModuleType::programEqualizer
                               || type == megadsp::ModuleType::studioPlate
+                              || type == megadsp::ModuleType::velvetDrive
                               || type == megadsp::ModuleType::gateExpander
                               || type == megadsp::ModuleType::transientDesigner
                               || type
@@ -1809,8 +1836,16 @@ public:
                       megadsp::ModuleCategory::saturationAndColor,
                       "Saturation & Color");
         expectCategory(megadsp::ModuleType::guitarCabinet,
+                      megadsp::ModuleCategory::guitar, "Guitar");
+        expectCategory(megadsp::ModuleType::bitcrusher,
                       megadsp::ModuleCategory::saturationAndColor,
                       "Saturation & Color");
+        expectCategory(megadsp::ModuleType::portalPermuter,
+                      megadsp::ModuleCategory::glitchAndCreative,
+                      "Glitch & Creative");
+        expectCategory(megadsp::ModuleType::irMosaic,
+                      megadsp::ModuleCategory::reverbAndSpace,
+                      "Reverb & Space");
         expectCategory(megadsp::ModuleType::neuralAmpModeler,
                       megadsp::ModuleCategory::guitar, "Guitar");
         expectCategory(megadsp::ModuleType::stageVocal,
@@ -1828,6 +1863,8 @@ public:
         expectCategory(megadsp::ModuleType::studioPlate,
                       megadsp::ModuleCategory::reverbAndSpace,
                       "Reverb & Space");
+        expectCategory(megadsp::ModuleType::velvetDrive,
+                      megadsp::ModuleCategory::guitar, "Guitar");
         expectCategory(megadsp::ModuleType::delay,
                       megadsp::ModuleCategory::delayAndEcho,
                       "Delay & Echo");

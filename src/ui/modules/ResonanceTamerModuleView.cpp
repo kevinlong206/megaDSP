@@ -42,7 +42,7 @@ private:
 
     static float controlHeight(juce::Rectangle<float> area)
     {
-        return juce::jlimit(96.0f, 126.0f, area.getHeight() * 0.34f);
+        return juce::jlimit(72.0f, 90.0f, area.getHeight() * 0.30f);
     }
 
     static juce::Rectangle<float> plotBounds(juce::Rectangle<float> area)
@@ -57,10 +57,10 @@ private:
         juce::Rectangle<float> plot)
     {
         auto graphArea = plot.reduced(8.0f);
-        graphArea.removeFromTop(26.0f);
-        graphArea.removeFromBottom(16.0f);
+        graphArea.removeFromTop(22.0f);
+        graphArea.removeFromBottom(14.0f);
         graphArea.removeFromBottom(
-            juce::jmax(42.0f, graphArea.getHeight() * 0.27f) + 6.0f);
+            juce::jmax(28.0f, graphArea.getHeight() * 0.24f) + 4.0f);
         return graphArea;
     }
 
@@ -304,12 +304,12 @@ void ResonanceTamerModuleView::paint(
     graphics.setColour(juce::Colour(0xe6121821));
     graphics.fillRoundedRectangle(plot, 8.0f);
     auto graphArea = plot.reduced(8.0f);
-    auto metrics = graphArea.removeFromTop(24.0f);
+    auto metrics = graphArea.removeFromTop(20.0f);
     graphArea.removeFromTop(2.0f);
-    auto frequencyAxis = graphArea.removeFromBottom(16.0f);
+    auto frequencyAxis = graphArea.removeFromBottom(14.0f);
     auto reductionArea = graphArea.removeFromBottom(
-        juce::jmax(42.0f, graphArea.getHeight() * 0.27f));
-    graphArea.removeFromBottom(6.0f);
+        juce::jmax(28.0f, graphArea.getHeight() * 0.24f));
+    graphArea.removeFromBottom(4.0f);
     const auto spectrumArea = graphArea;
 
     ContinuousTelemetrySnapshot telemetry;

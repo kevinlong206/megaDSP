@@ -22,6 +22,7 @@ public:
     void mouseDoubleClick(const juce::MouseEvent&) override;
 
 private:
+    static juce::Rectangle<float> fieldFrame(juce::Rectangle<float>);
     static juce::Rectangle<float> fieldBounds(juce::Rectangle<float>);
     static juce::Rectangle<float> foundationBounds(juce::Rectangle<float>);
 };
@@ -36,10 +37,19 @@ void StereoWidthModuleView::configureAccessibility(
         "L, C, and R pan language; Mono Safe protects correlation.");
 }
 
-juce::Rectangle<float> StereoWidthModuleView::fieldBounds(
+juce::Rectangle<float> StereoWidthModuleView::fieldFrame(
     juce::Rectangle<float> area)
 {
     area.removeFromBottom(38.0f);
+    return area;
+}
+
+juce::Rectangle<float> StereoWidthModuleView::fieldBounds(
+    juce::Rectangle<float> area)
+{
+    area = fieldFrame(area);
+    area.removeFromTop(22.0f);
+    area.removeFromBottom(20.0f);
     return area;
 }
 
@@ -110,6 +120,7 @@ void StereoWidthModuleView::mouseDoubleClick(
 
 void StereoWidthModuleView::paint(juce::Graphics& graphics, juce::Rectangle<float> area)
 {
+    auto frame = fieldFrame(area);
     const auto field = fieldBounds(area);
     const auto foundation = foundationBounds(area);
     const auto width = value(0) * 2.0f;
@@ -121,7 +132,7 @@ void StereoWidthModuleView::paint(juce::Graphics& graphics, juce::Rectangle<floa
         field.getHeight() * (0.18f + dimension * 0.27f);
 
     graphics.setColour(accent.withAlpha(0.045f + dimension * 0.07f));
-    graphics.fillRoundedRectangle(field, 8.0f);
+    graphics.fillRoundedRectangle(frame, 8.0f);
 
     for (int ring = 4; ring >= 1; --ring)
     {
@@ -140,19 +151,21 @@ void StereoWidthModuleView::paint(juce::Graphics& graphics, juce::Rectangle<floa
     graphics.drawVerticalLine(juce::roundToInt(centre.x),
                               field.getY(), field.getBottom());
     graphics.drawText("MONO", field.withWidth(field.getWidth() * 0.5f).toNearestInt(),
-                      juce::Justification::centredTop);
+                      juce::Justification::centredLeft);
     graphics.drawText("WIDE", field.withTrimmedLeft(field.getWidth() * 0.5f).toNearestInt(),
-                      juce::Justification::centredTop);
+                      juce::Justification::centredRight);
     graphics.setColour(accent);
     graphics.drawText(
         "DIMENSION FIELD  "
             + megadsp::formatControlValue(type, 1, value(1)),
-        field.toNearestInt(), juce::Justification::centredBottom);
+        frame.removeFromBottom(20.0f).toNearestInt(),
+        juce::Justification::centred);
     graphics.setColour(juce::Colours::white);
     graphics.drawText(
         "BALANCE  "
             + megadsp::formatControlValue(type, 4, value(4)),
-        field.toNearestInt(), juce::Justification::topRight);
+        frame.removeFromTop(22.0f).reduced(7.0f, 0.0f).toNearestInt(),
+        juce::Justification::centredRight);
 
     const auto handleX = field.getX() + value(0) * field.getWidth();
     graphics.setColour(juce::Colours::white);

@@ -926,30 +926,23 @@ constexpr Metadata timeMosaicMetadata {{
     unused
 }};
 constexpr Metadata guitarCabinetMetadata {{
-    { "Speaker", ControlKind::choice, true, "Models",
-      "Selects a generic guitar-speaker family." },
-    { "Cabinet", ControlKind::choice, true, "Models",
-      "Selects the modeled enclosure size and construction." },
-    { "Microphone", ControlKind::choice, true, "Microphone",
-      "Selects a dynamic, ribbon, or condenser response." },
-    { "Mic Position", ControlKind::horizontal, true, "Microphone",
-      "Moves the microphone from the bright cone center toward the softer edge." },
-    { "Mic Distance", ControlKind::horizontal, true, "Microphone",
-      "Sets microphone distance from the speaker in centimeters." },
-    { "Speaker Drive", ControlKind::level, true, "Speaker",
-      "Drives the speaker mechanics into power compression and breakup." },
-    { "Cone Breakup", ControlKind::horizontal, true, "Speaker",
-      "Sets the level of upper cone-resonance modes." },
-    { "Cabinet Resonance", ControlKind::horizontal, true, "Cabinet",
-      "Scales enclosure resonance and low-frequency bloom." },
-    { "Damping", ControlKind::horizontal, true, "Cabinet",
-      "Moves the speaker and cabinet response from loose to tight." },
-    { "Room", ControlKind::horizontal, true, "Room",
-      "Adds a compact modeled recording-room field." },
-    { "Room Width", ControlKind::horizontal, false, "Room",
-      "Sets the mono-compatible width of the modeled room." },
+    { "Cabinet IR", ControlKind::choice, true, "Impulse",
+      "Selects one of the bundled cabinet impulse responses." },
+    { "Low Cut", ControlKind::horizontal, true, "Passband",
+      "Removes excess low end from the cabinet response." },
+    { "High Cut", ControlKind::horizontal, true, "Passband",
+      "Softens the upper edge of the cabinet response." },
+    { "Body", ControlKind::horizontal, true, "Tone",
+      "Adjusts low-mid cabinet weight around 180 Hz." },
+    { "Presence", ControlKind::horizontal, true, "Tone",
+      "Adjusts upper-mid definition above 2.2 kHz." },
+    { "Drive", ControlKind::level, true, "Input",
+      "Adds bounded speaker-style input drive before the cabinet IR." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the immediate source with the cabinet signal." },
     { "Output", ControlKind::level, true, "Output",
-      "Adjusts level after the cabinet and room model." }
+      "Adjusts final cabinet level." },
+    unused, unused, unused, unused
 }};
 constexpr Metadata chordLoomMetadata {{
     { "Sensitivity", ControlKind::horizontal, true, "Capture",
@@ -1035,22 +1028,22 @@ constexpr Metadata neuralAmpModelerMetadata {{
 constexpr Metadata stageVocalMetadata {{
     { "Low Cut", ControlKind::horizontal, true, "Cleanup",
       "Removes stage rumble and proximity buildup below the selected frequency." },
-    { "Expander Threshold", ControlKind::level, true, "Expander",
-      "Sets the vocal level below which background sound is attenuated." },
-    { "Expander Range", ControlKind::level, false, "Expander",
-      "Limits the maximum attenuation instead of hard-muting the microphone." },
+    { "Fast Compression", ControlKind::level, true, "Fast FET",
+      "Drives the feedback FET stage harder to catch vocal peaks." },
+    { "Fast Attack", ControlKind::horizontal, true, "Fast FET",
+      "Sets the FET peak catcher's sub-millisecond attack." },
+    { "Fast Release", ControlKind::horizontal, false, "Fast FET",
+      "Sets how quickly the FET stage recovers after peaks." },
+    { "Slow Compression", ControlKind::level, true, "Slow Optical",
+      "Drives the optical stage harder for smooth phrase leveling." },
+    { "Slow Attack", ControlKind::horizontal, true, "Slow Optical",
+      "Sets how gradually the optical cell applies leveling." },
+    { "Slow Release", ControlKind::horizontal, false, "Slow Optical",
+      "Sets the base recovery time before program-dependent extension." },
     { "De-Ess Frequency", ControlKind::horizontal, true, "De-Esser",
       "Sets the lower edge of the sibilance band." },
     { "De-Ess Amount", ControlKind::level, true, "De-Esser",
       "Sets the maximum linked high-band attenuation for sibilant consonants." },
-    { "Compressor Threshold", ControlKind::level, true, "Compressor",
-      "Sets where broadband vocal compression begins." },
-    { "Ratio", ControlKind::rotary, true, "Compressor",
-      "Sets how strongly vocal peaks above the threshold are controlled." },
-    { "Attack", ControlKind::rotary, false, "Compressor",
-      "Sets how quickly compression catches vocal peaks." },
-    { "Release", ControlKind::rotary, false, "Compressor",
-      "Sets how quickly compression recovers between phrases." },
     { "Presence", ControlKind::level, true, "Tone",
       "Cuts or boosts vocal articulation between roughly 1.2 and 5 kHz." },
     { "Air", ControlKind::level, true, "Tone",
@@ -1174,6 +1167,136 @@ constexpr Metadata studioPlateMetadata {{
       "Sets completed plate level independently." },
     { "Output", ControlKind::level, true, "Output",
       "Adjusts final level after the dry and wet paths." }
+}};
+constexpr Metadata velvetDriveMetadata {{
+    { "Input", ControlKind::choice, true, "Front End",
+      "Selects the normal tube input or a brighter, hotter FET-style input." },
+    { "Voice", ControlKind::choice, true, "Architecture",
+      "Selects smooth classic overdrive, post-drive modern mids, or high-headroom clean response." },
+    { "Drive", ControlKind::level, true, "Preamp",
+      "Sets gain through the cascaded preamp stages." },
+    { "Ratio", ControlKind::horizontal, true, "Preamp",
+      "Blends the clean-stage voice into the additional overdrive cascade." },
+    { "Level", ControlKind::level, true, "Preamp",
+      "Sets overdrive-channel level before the phase inverter." },
+    { "Bass", ControlKind::rotary, true, "Tone Stack",
+      "Adjusts the interactive passive low-frequency response." },
+    { "Mid", ControlKind::rotary, true, "Tone Stack",
+      "Adjusts the interactive passive midrange response." },
+    { "Treble", ControlKind::rotary, true, "Tone Stack",
+      "Adjusts the interactive passive high-frequency response." },
+    { "Presence", ControlKind::rotary, true, "Power Amp",
+      "Reduces high-frequency negative feedback for more open attack and upper presence." },
+    { "Feel", ControlKind::horizontal, true, "Power Amp",
+      "Sets linked power-supply sag, compression, and recovery bloom." },
+    { "Speaker", ControlKind::choice, true, "Speaker Load",
+      "Selects direct output or one of three analytic high-headroom speaker-load responses." },
+    { "Master", ControlKind::level, true, "Output",
+      "Drives the modeled power stage and sets the final calibrated level." }
+}};
+constexpr Metadata wormholeConvolutionMetadata {{
+    { "A Start", ControlKind::horizontal, true, "Impulse A",
+      "Sets the beginning of the crop window for impulse A." },
+    { "A End", ControlKind::horizontal, true, "Impulse A",
+      "Sets the end of the crop window for impulse A." },
+    { "Reverse A", ControlKind::toggle, true, "Impulse A",
+      "Reverses the cropped impulse A." },
+    { "Level A", ControlKind::level, true, "Impulse A",
+      "Sets the parallel wet level of impulse A." },
+    { "B Start", ControlKind::horizontal, true, "Impulse B",
+      "Sets the beginning of the crop window for impulse B." },
+    { "B End", ControlKind::horizontal, true, "Impulse B",
+      "Sets the end of the crop window for impulse B." },
+    { "Reverse B", ControlKind::toggle, true, "Impulse B",
+      "Reverses the cropped impulse B." },
+    { "Level B", ControlKind::level, true, "Impulse B",
+      "Sets the parallel wet level of impulse B." },
+    { "Low Cut", ControlKind::horizontal, false, "Wet Passband",
+      "Removes low frequencies from the combined wet field." },
+    { "High Cut", ControlKind::horizontal, false, "Wet Passband",
+      "Softens high frequencies in the combined wet field." },
+    { "Dry", ControlKind::level, true, "Output",
+      "Sets the immediate dry signal level." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts final output level." }
+}};
+constexpr Metadata bitcrusherMetadata {{
+    { "Bit Depth", ControlKind::horizontal, true, "Resolution",
+      "Sets the continuously variable digital word length." },
+    { "Sample Rate", ControlKind::horizontal, true, "Clock",
+      "Sets a 250 Hz to 768 kHz sample-and-hold clock request, capped by the host rate." },
+    { "Quantizer", ControlKind::choice, true, "Resolution",
+      "Chooses balanced rounding, truncation, downward rounding, or companded detail." },
+    { "Dither", ControlKind::horizontal, false, "Quantization",
+      "Adds deterministic triangular dither scaled to the active bit depth." },
+    { "Noise Shape", ControlKind::horizontal, false, "Quantization",
+      "Moves quantization error upward using stable first-order feedback." },
+    { "Anti-Alias", ControlKind::horizontal, true, "Clock",
+      "Filters content above the reduced sample rate before sample-and-hold." },
+    { "Jitter", ControlKind::horizontal, false, "Clock",
+      "Adds bounded deterministic variation to sample-clock intervals." },
+    { "Step Slew", ControlKind::horizontal, false, "Reconstruction",
+      "Rounds the hard edges between held samples." },
+    { "Grid Bias", ControlKind::horizontal, false, "Quantization",
+      "Offsets the quantization grid by up to one least-significant bit." },
+    { "Drive", ControlKind::level, true, "Front End",
+      "Pushes the signal into bounded pre-quantizer saturation." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends the immediate dry signal with the crushed signal." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts final output level." }
+}};
+constexpr Metadata portalPermuterMetadata {{
+    { "Slice", ControlKind::choice, true, "Capture",
+      "Sets the tempo-locked input slice size." },
+    { "Chance", ControlKind::horizontal, true, "Capture",
+      "Sets the probability that a recent slice enters the portal." },
+    { "Pattern", ControlKind::choice, true, "Permutation",
+      "Chooses how recent slices are repeated, reversed, rotated, or shuffled." },
+    { "History", ControlKind::horizontal, false, "Permutation",
+      "Sets how many recent slices may be selected." },
+    { "Length", ControlKind::horizontal, true, "Permutation",
+      "Sets the number of steps in each permutation event." },
+    { "Slice Length", ControlKind::horizontal, false, "Permutation",
+      "Shortens each selected slice before it excites the impulse response." },
+    { "Pitch", ControlKind::horizontal, true, "Permutation",
+      "Transposes selected slices before convolution." },
+    { "IR Position", ControlKind::horizontal, true, "Impulse",
+      "Moves a focused crop window through the loaded impulse response." },
+    { "Reverse IR", ControlKind::toggle, true, "Impulse",
+      "Reverses the selected impulse-response region." },
+    { "Feedback", ControlKind::horizontal, true, "Portal",
+      "Returns a softly bounded filtered convolved signal to the portal excitation." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends immediate dry signal with the convolved permutation field." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts final output level." }
+}};
+constexpr Metadata irMosaicMetadata {{
+    { "Shuffle Style", ControlKind::choice, true, "Mosaic",
+      "Chooses the deterministic sequence used to select each newly shuffled space." },
+    { "Re-shuffle Speed", ControlKind::rotary, true, "Mosaic",
+      "Sets how often a newly shuffled impulse-response space is selected." },
+    { "Sync", ControlKind::toggle, false, "Motion",
+      "Uses a tempo division instead of the free-running re-shuffle speed." },
+    { "Crossfade", ControlKind::horizontal, true, "Mosaic",
+      "Sets the click-free equal-power transition time between shuffled spaces." },
+    { "Division", ControlKind::choice, false, "Motion",
+      "Sets how often a tempo-synchronized re-shuffle occurs." },
+    { "Wet Level", ControlKind::level, true, "Wet Field",
+      "Sets the loudness-normalized shuffled convolution field before Mix." },
+    { "Stereo Width", ControlKind::horizontal, true, "Wet Field",
+      "Scales only the wet side field while preserving mono fold-down." },
+    { "Feedback", ControlKind::horizontal, true, "Wet Field",
+      "Returns a bounded filtered wet field to the convolution input." },
+    { "Low Cut", ControlKind::horizontal, false, "Wet Passband",
+      "Removes low frequencies from the completed wet field." },
+    { "High Cut", ControlKind::horizontal, false, "Wet Passband",
+      "Softens high frequencies in the completed wet field." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends immediate dry signal with the moving mosaic field." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts final output level." }
 }};
 constexpr Metadata midnightCurrentMetadata {{
     { "Filter Center", ControlKind::horizontal, true, "Submerged Filter",
@@ -1418,9 +1541,8 @@ constexpr Names timeMosaicNames {
     "Pitch Drift", "Freeze", "Stereo Spread", "Mix", "Output", "-"
 };
 constexpr Names guitarCabinetNames {
-    "Speaker", "Cabinet", "Microphone", "Mic Position", "Mic Distance",
-    "Speaker Drive", "Cone Breakup", "Cabinet Resonance", "Damping", "Room",
-    "Room Width", "Output"
+    "Cabinet IR", "Low Cut", "High Cut", "Body", "Presence", "Drive",
+    "Mix", "Output", "-", "-", "-", "-"
 };
 constexpr Names chordLoomNames {
     "Sensitivity", "Capture", "Transition", "Texture", "Motion",
@@ -1440,9 +1562,9 @@ constexpr Names neuralAmpModelerNames {
     "-", "-", "-", "-", "-", "-", "-"
 };
 constexpr Names stageVocalNames {
-    "Low Cut", "Expander Threshold", "Expander Range",
-    "De-Ess Frequency", "De-Ess Amount", "Compressor Threshold",
-    "Ratio", "Attack", "Release", "Presence", "Air", "Output"
+    "Low Cut", "Fast Compression", "Fast Attack", "Fast Release",
+    "Slow Compression", "Slow Attack", "Slow Release",
+    "De-Ess Frequency", "De-Ess Amount", "Presence", "Air", "Output"
 };
 constexpr Names vinylSimulatorNames {
     "Condition", "Crackle", "Dust", "Scratches", "Surface Noise", "Rumble",
@@ -1465,6 +1587,29 @@ constexpr Names programEqualizerNames {
 constexpr Names studioPlateNames {
     "Plate Size", "Decay", "Damping", "Pre-Delay", "Low Cut", "High Cut",
     "Pickup Spread", "Width", "Ducking", "Dry", "Wet", "Output"
+};
+constexpr Names velvetDriveNames {
+    "Input", "Voice", "Drive", "Ratio", "Level", "Bass", "Mid", "Treble",
+    "Presence", "Feel", "Speaker", "Master"
+};
+constexpr Names wormholeConvolutionNames {
+    "A Start", "A End", "Reverse A", "Level A",
+    "B Start", "B End", "Reverse B", "Level B",
+    "Low Cut", "High Cut", "Dry", "Output"
+};
+constexpr Names bitcrusherNames {
+    "Bit Depth", "Sample Rate", "Quantizer", "Dither", "Noise Shape",
+    "Anti-Alias", "Jitter", "Step Slew", "Grid Bias", "Drive", "Mix",
+    "Output"
+};
+constexpr Names portalPermuterNames {
+    "Slice", "Chance", "Pattern", "History", "Length", "Slice Length",
+    "Pitch", "IR Position", "Reverse IR", "Feedback", "Mix", "Output"
+};
+constexpr Names irMosaicNames {
+    "Shuffle Style", "Re-shuffle Speed", "Sync", "Crossfade", "Division",
+    "Wet Level",
+    "Stereo Width", "Feedback", "Low Cut", "High Cut", "Mix", "Output"
 };
 constexpr Names midnightCurrentNames {
     "Filter Center", "Filter Sweep", "Motion Rate", "Phase Depth",
@@ -1700,6 +1845,18 @@ ControlOptions optionsFor(ModuleType type, int control)
         return { { "Orbit", "Butterfly", "Spiral", "Scatter" }, 4 };
     if (type == ModuleType::wavefoldGarden && control == 0)
         return { { "Petal", "Prism", "Chebyshev", "Bloom" }, 4 };
+    if (type == ModuleType::bitcrusher && control == 2)
+        return { { "Balanced", "Truncate", "Floor", "Companded" }, 4 };
+    if (type == ModuleType::portalPermuter && control == 0)
+        return { { "1/4", "1/8.", "1/4T", "1/8",
+                   "1/8T", "1/16", "1/16T", "1/32" }, 8 };
+    if (type == ModuleType::portalPermuter && control == 2)
+        return { { "Repeat", "Reverse", "Rotate", "Shuffle" }, 4 };
+    if (type == ModuleType::irMosaic && control == 0)
+        return { { "Step", "Random", "Ping Pong", "Leap" }, 4 };
+    if (type == ModuleType::irMosaic && control == 4)
+        return { { "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8",
+                   "1/8.", "1/16" }, 8 };
     if (type == ModuleType::studioPhaser && control == 0)
         return { { "2", "4", "6", "8", "12" }, 5 };
     if ((type == ModuleType::studioPhaser
@@ -1762,13 +1919,15 @@ ControlOptions optionsFor(ModuleType type, int control)
         return { { "1 bar", "1/2", "1/4.", "1/4",
                    "1/8.", "1/8", "1/16.", "1/16" }, 8 };
     if (type == ModuleType::guitarCabinet && control == 0)
-        return { { "American Clean", "British Vintage", "British Modern",
-                   "High-Power" }, 4 };
-    if (type == ModuleType::guitarCabinet && control == 1)
-        return { { "1x12 Open", "2x12 Open", "2x12 Closed",
-                   "4x12 Closed" }, 4 };
-    if (type == ModuleType::guitarCabinet && control == 2)
-        return { { "Dynamic", "Ribbon", "Condenser" }, 3 };
+        return { {
+            "1960 GREEN 57+57+121", "1984B V30 GB", "6402 57+121",
+            "6402 57", "65W 57+121", "BLACK 57+160", "CREAM65 57+121",
+            "EV12L 57+121", "GREEN", "GREEN+V30 MIX", "MESRECT V30",
+            "Mikko 1", "66 Alnico Silver e906", "66 Alnico Silver FAT-906",
+            "66 Alnico Silver R121-SM545", "69 G12M Green R121-545",
+            "70 G12H Green FAT-57", "C12N e906", "C12N R121-SM545",
+            "M75 e906", "M75 FAT-SM57", "M75 R121-SM545", "V30"
+        }, 23 };
     if (type == ModuleType::autoWah && control == 6)
         return { { "Up", "Down" }, 2 };
     if (type == ModuleType::autoWah && control == 9)
@@ -1788,6 +1947,12 @@ ControlOptions optionsFor(ModuleType type, int control)
         return { { "5 kHz", "10 kHz", "20 kHz" }, 3 };
     if (type == ModuleType::studioPlate && control == 0)
         return { { "Compact", "Standard", "Large" }, 3 };
+    if (type == ModuleType::velvetDrive && control == 0)
+        return { { "Normal", "FET" }, 2 };
+    if (type == ModuleType::velvetDrive && control == 1)
+        return { { "Classic", "Modern", "High Headroom" }, 3 };
+    if (type == ModuleType::velvetDrive && control == 10)
+        return { { "Direct", "Flat 12", "Scooped 12", "Chime 12" }, 4 };
     return {};
 }
 
@@ -2194,12 +2359,12 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
             break;
         case ModuleType::guitarCabinet:
             values = {
-                discreteValue(1, 4), discreteValue(3, 4),
-                discreteValue(0, 3), 0.62f,
-                exponentialNormalized(1.0f, 100.0f, 4.0f),
-                linearNormalized(0.0f, 24.0f, 6.0f),
-                0.35f, 0.50f, 0.50f, 0.12f, 0.50f,
-                linearNormalized(-18.0f, 12.0f, -3.0f)
+                discreteValue(7, 23),
+                exponentialNormalized(30.0f, 300.0f, 70.0f),
+                exponentialNormalized(2500.0f, 18000.0f, 9000.0f),
+                0.50f, 0.50f, 0.0f, 1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.5f, 0.5f, 0.5f, 0.5f
             };
             break;
         case ModuleType::chordLoom:
@@ -2245,14 +2410,14 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
         case ModuleType::stageVocal:
             values = {
                 exponentialNormalized(40.0f, 220.0f, 80.0f),
-                linearNormalized(-70.0f, -20.0f, -50.0f),
-                linearNormalized(0.0f, 36.0f, 18.0f),
+                linearNormalized(0.0f, 30.0f, 10.0f),
+                exponentialNormalized(0.02f, 0.8f, 0.15f),
+                exponentialNormalized(40.0f, 800.0f, 120.0f),
+                linearNormalized(0.0f, 30.0f, 6.0f),
+                exponentialNormalized(2.0f, 40.0f, 10.0f),
+                exponentialNormalized(200.0f, 3000.0f, 800.0f),
                 exponentialNormalized(3000.0f, 10000.0f, 6500.0f),
                 linearNormalized(0.0f, 12.0f, 4.0f),
-                linearNormalized(-40.0f, 0.0f, -18.0f),
-                exponentialNormalized(1.0f, 10.0f, 3.0f),
-                exponentialNormalized(0.5f, 50.0f, 8.0f),
-                exponentialNormalized(30.0f, 800.0f, 120.0f),
                 linearNormalized(-6.0f, 6.0f, 1.0f),
                 linearNormalized(-6.0f, 6.0f, 1.5f),
                 linearNormalized(-18.0f, 12.0f, 0.0f)
@@ -2317,6 +2482,53 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 linearNormalized(0.0f, 18.0f, 0.0f),
                 1.0f, 0.18f,
                 linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::velvetDrive:
+            values = {
+                discreteValue(0, 2), discreteValue(0, 3),
+                0.38f, 0.46f,
+                linearNormalized(-18.0f, 12.0f, 0.0f),
+                0.46f, 0.58f, 0.54f, 0.45f, 0.42f,
+                discreteValue(1, 4),
+                linearNormalized(-24.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::wormholeConvolution:
+            values = {
+                0.0f, 1.0f, 0.0f, 0.35f,
+                0.0f, 1.0f, 0.0f, 0.35f,
+                exponentialNormalized(20.0f, 1000.0f, 20.0f),
+                exponentialNormalized(2000.0f, 20000.0f, 20000.0f),
+                1.0f, linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::bitcrusher:
+            values = {
+                linearNormalized(2.0f, 24.0f, 12.0f),
+                exponentialNormalized(250.0f, 768000.0f, 12000.0f),
+                discreteValue(0, 4),
+                0.20f, 0.0f, 0.65f, 0.0f, 0.0f, 0.5f, 0.0f, 1.0f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::portalPermuter:
+            values = {
+                discreteValue(3, 8), 0.35f, discreteValue(0, 4),
+                3.0f / 7.0f, 3.0f / 7.0f, 1.0f, 0.5f, 0.5f,
+                0.0f, 0.15f, 0.35f,
+                linearNormalized(-18.0f, 12.0f, 0.0f)
+            };
+            break;
+        case ModuleType::irMosaic:
+            values = {
+                discreteValue(1, 4),
+                exponentialNormalized(0.03f, 4.0f, 0.2f), 0.0f,
+                exponentialNormalized(0.05f, 0.5f, 0.2f),
+                discreteValue(2, 8), 1.0f, 2.0f / 3.0f, 0.0f,
+                exponentialNormalized(20.0f, 1000.0f, 20.0f),
+                exponentialNormalized(2000.0f, 20000.0f, 20000.0f),
+                0.35f, linearNormalized(-18.0f, 12.0f, 0.0f)
             };
             break;
         case ModuleType::midnightCurrent:
@@ -2551,6 +2763,40 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             }
             if (control == 9)
                 return juce::String(value * 75.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::portalPermuter:
+            if (control == 1 || control == 3 || control == 4
+                || control == 5 || control == 7 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 6)
+            {
+                const auto semitones = linear(-12.0f, 12.0f, value);
+                return (semitones > 0.05f ? "+" : "")
+                    + juce::String(semitones, 1) + " st";
+            }
+            if (control == 9)
+                return juce::String(value * 55.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::irMosaic:
+            if (control == 5 || control == 6 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 1)
+                return juce::String(exponential(0.03f, 4.0f, value), 2)
+                    + " Hz";
+            if (control == 3)
+                return juce::String(
+                    exponential(0.05f, 0.5f, value) * 1000.0f, 0)
+                    + " ms";
+            if (control == 7)
+                return juce::String(value * 55.0f, 0) + "%";
+            if (control == 8)
+                return formatFrequency(exponential(20.0f, 1000.0f, value));
+            if (control == 9)
+                return formatFrequency(exponential(2000.0f, 20000.0f, value));
             if (control == 11)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
@@ -2876,29 +3122,17 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 10) return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::guitarCabinet:
-            if (control == 3)
-                return value <= 0.005f
-                    ? "Center"
-                    : value >= 0.995f
-                          ? "Edge"
-                          : juce::String(value * 100.0f, 0) + "% Edge";
-            if (control == 4)
-                return juce::String(exponential(1.0f, 100.0f, value), 1)
-                    + " cm";
+            if (control == 1)
+                return formatFrequency(exponential(30.0f, 300.0f, value));
+            if (control == 2)
+                return formatFrequency(exponential(2500.0f, 18000.0f, value));
+            if (control == 3 || control == 4)
+                return juce::String(linear(-6.0f, 6.0f, value), 1) + " dB";
             if (control == 5)
-                return juce::String(linear(0.0f, 24.0f, value), 1) + " dB";
-            if (control == 6 || control == 7 || control == 9
-                || control == 10)
+                return juce::String(linear(0.0f, 18.0f, value), 1) + " dB";
+            if (control == 6)
                 return juce::String(value * 100.0f, 0) + "%";
-            if (control == 8)
-                return value < 0.495f
-                    ? "Loose " + juce::String((0.5f - value) * 200.0f, 0) + "%"
-                    : value > 0.505f
-                          ? "Tight "
-                                + juce::String((value - 0.5f) * 200.0f, 0)
-                                + "%"
-                          : "Neutral";
-            if (control == 11)
+            if (control == 7)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::chordLoom:
@@ -2981,29 +3215,27 @@ juce::String formatControlValue(ModuleType type, int control, float value)
         case ModuleType::stageVocal:
             if (control == 0)
                 return formatFrequency(exponential(40.0f, 220.0f, value));
-            if (control == 1)
-                return juce::String(linear(-70.0f, -20.0f, value), 1)
+            if (control == 1 || control == 4)
+                return juce::String(linear(0.0f, 30.0f, value), 1)
                     + " dB";
             if (control == 2)
-                return juce::String(linear(0.0f, 36.0f, value), 1)
-                    + " dB";
+                return juce::String(exponential(0.02f, 0.8f, value), 2)
+                    + " ms";
             if (control == 3)
-                return formatFrequency(exponential(3000.0f, 10000.0f, value));
-            if (control == 4)
+                return juce::String(exponential(40.0f, 800.0f, value), 0)
+                    + " ms";
+            if (control == 5)
+                return juce::String(exponential(2.0f, 40.0f, value), 1)
+                    + " ms";
+            if (control == 6)
+                return juce::String(exponential(200.0f, 3000.0f, value), 0)
+                    + " ms";
+            if (control == 7)
+                return formatFrequency(
+                    exponential(3000.0f, 10000.0f, value));
+            if (control == 8)
                 return juce::String(linear(0.0f, 12.0f, value), 1)
                     + " dB";
-            if (control == 5)
-                return juce::String(linear(-40.0f, 0.0f, value), 1)
-                    + " dB";
-            if (control == 6)
-                return juce::String(exponential(1.0f, 10.0f, value), 2)
-                    + ":1";
-            if (control == 7)
-                return juce::String(exponential(0.5f, 50.0f, value), 1)
-                    + " ms";
-            if (control == 8)
-                return juce::String(exponential(30.0f, 800.0f, value), 0)
-                    + " ms";
             if (control == 9 || control == 10)
             {
                 const auto gain = linear(-6.0f, 6.0f, value);
@@ -3090,6 +3322,47 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 11)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
+        case ModuleType::velvetDrive:
+            if (control == 2 || control == 3
+                || (control >= 5 && control <= 9))
+                return juce::String(value * 10.0f, 1);
+            if (control == 4)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            if (control == 11)
+                return juce::String(linear(-24.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::wormholeConvolution:
+            if (control == 0 || control == 1
+                || control == 4 || control == 5
+                || control == 3 || control == 7 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 8)
+                return formatFrequency(exponential(20.0f, 1000.0f, value));
+            if (control == 9)
+                return formatFrequency(exponential(2000.0f, 20000.0f, value));
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::bitcrusher:
+            if (control == 0)
+                return juce::String(linear(2.0f, 24.0f, value), 1)
+                    + " bits";
+            if (control == 1)
+                return formatFrequency(
+                    exponential(250.0f, 768000.0f, value));
+            if (control == 8)
+            {
+                const auto bias = linear(-1.0f, 1.0f, value);
+                return (bias > 0.005f ? "+" : "")
+                    + juce::String(bias, 2) + " LSB";
+            }
+            if (control == 9)
+                return juce::String(value * 24.0f, 1) + " dB";
+            if ((control >= 3 && control <= 7) || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 11)
+                return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
+            break;
         case ModuleType::midnightCurrent:
             if (control == 0)
                 return formatFrequency(exponential(120.0f, 3000.0f, value));
@@ -3162,14 +3435,6 @@ std::optional<float> parseControlValue(ModuleType type, int control,
         && text.trim().equalsIgnoreCase("equal"))
         return 0.5f;
     if (type == ModuleType::analogTape && control == 3
-        && text.trim().equalsIgnoreCase("neutral"))
-        return 0.5f;
-    if (type == ModuleType::guitarCabinet && control == 3)
-    {
-        if (text.trim().equalsIgnoreCase("center")) return 0.0f;
-        if (text.trim().equalsIgnoreCase("edge")) return 1.0f;
-    }
-    if (type == ModuleType::guitarCabinet && control == 8
         && text.trim().equalsIgnoreCase("neutral"))
         return 0.5f;
     if (type == ModuleType::algorithmicReverb && control == 1)
@@ -3359,6 +3624,37 @@ std::optional<float> parseControlValue(ModuleType type, int control,
                 return linearNormalized(-12.0f, 12.0f, value);
             if (control == 9)
                 return juce::jlimit(0.0f, 1.0f, value / 75.0f);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::portalPermuter:
+            if (control == 1 || control == 3 || control == 4
+                || control == 5 || control == 7 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 6)
+                return linearNormalized(-12.0f, 12.0f, value);
+            if (control == 9)
+                return juce::jlimit(0.0f, 1.0f, value / 55.0f);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::irMosaic:
+            if (control == 5 || control == 6 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 1)
+                return exponentialNormalized(0.03f, 4.0f, value);
+            if (control == 3)
+                return exponentialNormalized(
+                    0.05f, 0.5f,
+                    parsedMilliseconds(text, value) * 0.001f);
+            if (control == 7)
+                return juce::jlimit(0.0f, 1.0f, value / 55.0f);
+            if (control == 8)
+                return exponentialNormalized(
+                    20.0f, 1000.0f, parsedFrequency(text, value));
+            if (control == 9)
+                return exponentialNormalized(
+                    2000.0f, 20000.0f, parsedFrequency(text, value));
             if (control == 11)
                 return linearNormalized(-18.0f, 12.0f, value);
             break;
@@ -3669,25 +3965,20 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 10) return linearNormalized(-18.0f, 12.0f, value);
             break;
         case ModuleType::guitarCabinet:
-            if (control == 3)
-                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
-            if (control == 6 || control == 7 || control == 9 || control == 10)
-                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
-            if (control == 4)
+            if (control == 1)
                 return exponentialNormalized(
-                    1.0f, 100.0f, juce::jlimit(1.0f, 100.0f, value));
-            if (control == 5) return linearNormalized(0.0f, 24.0f, value);
-            if (control == 8)
-            {
-                const auto amount =
-                    juce::jlimit(0.0f, 100.0f, std::abs(value)) / 200.0f;
-                if (text.containsIgnoreCase("loose"))
-                    return 0.5f - amount;
-                if (text.containsIgnoreCase("tight"))
-                    return 0.5f + amount;
+                    30.0f, 300.0f, parsedFrequency(text, value));
+            if (control == 2)
+                return exponentialNormalized(
+                    2500.0f, 18000.0f, parsedFrequency(text, value));
+            if (control == 3 || control == 4)
+                return linearNormalized(-6.0f, 6.0f, value);
+            if (control == 5)
+                return linearNormalized(0.0f, 18.0f, value);
+            if (control == 6)
                 return juce::jlimit(0.0f, 1.0f, value / 100.0f);
-            }
-            if (control == 11) return linearNormalized(-18.0f, 12.0f, value);
+            if (control == 7)
+                return linearNormalized(-18.0f, 12.0f, value);
             break;
         case ModuleType::chordLoom:
             if (control == 0)
@@ -3786,25 +4077,25 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 0)
                 return exponentialNormalized(
                     40.0f, 220.0f, parsedFrequency(text, value));
-            if (control == 1)
-                return linearNormalized(-70.0f, -20.0f, value);
+            if (control == 1 || control == 4)
+                return linearNormalized(0.0f, 30.0f, value);
             if (control == 2)
-                return linearNormalized(0.0f, 36.0f, value);
+                return exponentialNormalized(
+                    0.02f, 0.8f, parsedMilliseconds(text, value));
             if (control == 3)
                 return exponentialNormalized(
-                    3000.0f, 10000.0f, parsedFrequency(text, value));
-            if (control == 4)
-                return linearNormalized(0.0f, 12.0f, value);
+                    40.0f, 800.0f, parsedMilliseconds(text, value));
             if (control == 5)
-                return linearNormalized(-40.0f, 0.0f, value);
+                return exponentialNormalized(
+                    2.0f, 40.0f, parsedMilliseconds(text, value));
             if (control == 6)
-                return exponentialNormalized(1.0f, 10.0f, value);
+                return exponentialNormalized(
+                    200.0f, 3000.0f, parsedMilliseconds(text, value));
             if (control == 7)
                 return exponentialNormalized(
-                    0.5f, 50.0f, parsedMilliseconds(text, value));
+                    3000.0f, 10000.0f, parsedFrequency(text, value));
             if (control == 8)
-                return exponentialNormalized(
-                    30.0f, 800.0f, parsedMilliseconds(text, value));
+                return linearNormalized(0.0f, 12.0f, value);
             if (control == 9 || control == 10)
                 return linearNormalized(-6.0f, 6.0f, value);
             if (control == 11)
@@ -3882,6 +4173,44 @@ std::optional<float> parseControlValue(ModuleType type, int control,
                     2000.0f, 20000.0f, parsedFrequency(text, value));
             if (control == 8)
                 return linearNormalized(0.0f, 18.0f, value);
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::velvetDrive:
+            if (control == 2 || control == 3
+                || (control >= 5 && control <= 9))
+                return juce::jlimit(0.0f, 1.0f, value / 10.0f);
+            if (control == 4)
+                return linearNormalized(-18.0f, 12.0f, value);
+            if (control == 11)
+                return linearNormalized(-24.0f, 12.0f, value);
+            break;
+        case ModuleType::wormholeConvolution:
+            if (control == 0 || control == 1
+                || control == 4 || control == 5
+                || control == 3 || control == 7 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 8)
+                return exponentialNormalized(
+                    20.0f, 1000.0f, parsedFrequency(text, value));
+            if (control == 9)
+                return exponentialNormalized(
+                    2000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 11)
+                return linearNormalized(-18.0f, 12.0f, value);
+            break;
+        case ModuleType::bitcrusher:
+            if (control == 0)
+                return linearNormalized(2.0f, 24.0f, value);
+            if (control == 1)
+                return exponentialNormalized(
+                    250.0f, 768000.0f, parsedFrequency(text, value));
+            if (control == 8)
+                return linearNormalized(-1.0f, 1.0f, value);
+            if (control == 9)
+                return juce::jlimit(0.0f, 1.0f, value / 24.0f);
+            if ((control >= 3 && control <= 7) || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
             if (control == 11)
                 return linearNormalized(-18.0f, 12.0f, value);
             break;
@@ -4014,13 +4343,23 @@ bool isControlContextuallyVisible(
             if (control == 3)
                 return values[2] >= 0.5f;
             break;
+        case ModuleType::irMosaic:
+            if (control == 1)
+                return values[2] < 0.5f;
+            if (control == 4)
+                return values[2] >= 0.5f;
+            break;
         case ModuleType::neuralAmpModeler:
         case ModuleType::stageVocal:
         case ModuleType::vinylSimulator:
         case ModuleType::optoLeveler:
         case ModuleType::fetLimiter:
         case ModuleType::programEqualizer:
-        case ModuleType::studioPlate: break;
+        case ModuleType::studioPlate:
+        case ModuleType::velvetDrive:
+        case ModuleType::wormholeConvolution: break;
+        case ModuleType::bitcrusher: break;
+        case ModuleType::portalPermuter: break;
         case ModuleType::empty:
         case ModuleType::equalizer:
         case ModuleType::saturator:
@@ -4423,12 +4762,13 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
                 | ModuleCapability::eventTelemetry),
         makeDefinition(
             ModuleType::guitarCabinet, ModulePresentation::guitarCabinet,
-            "Guitar Cabinet", ModuleCategory::saturationAndColor,
-            "Model a responsive guitar speaker, enclosure, microphone, and room.",
-            "guitar cabinet speaker cab microphone cone breakup physical room",
+            "Guitar Cabinet", ModuleCategory::guitar,
+            "Shape guitar through bundled or user-loaded cabinet impulse responses.",
+            "guitar cabinet speaker cab impulse response ir microphone",
             guitarCabinetNames, guitarCabinetMetadata,
             &makeModule<GuitarCabinetModule>,
-            ModuleCapability::continuousTelemetry),
+            ModuleCapability::impulseResponse
+                | ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::chordLoom, ModulePresentation::chordLoom,
             "Chord Loom", ModuleCategory::reverbAndSpace,
@@ -4494,8 +4834,8 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleType::stageVocal,
             ModulePresentation::stageVocal, "Stage Vocal",
             ModuleCategory::dynamics,
-            "Prepare a live vocal with rumble control, expansion, de-essing, compression, presence, and air.",
-            "stage live vocal microphone expander deesser compressor presence air strip",
+            "Catch peaks with fast feedback FET compression, then level phrases through a slow optical cell.",
+            "stage live vocal microphone dual serial fet 1176 optical la2a deesser compressor presence air strip",
             stageVocalNames, stageVocalMetadata,
             &makeModule<StageVocalModule>,
             ModuleCapability::continuousTelemetry),
@@ -4544,7 +4884,51 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "classic studio plate reverb electromechanical modal dense metal pickup",
             studioPlateNames, studioPlateMetadata,
             &makeModule<StudioPlateModule>,
-            ModuleCapability::continuousTelemetry)
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::velvetDrive,
+            ModulePresentation::velvetDrive, "Velvet Drive",
+            ModuleCategory::guitar,
+            "Purely modeled touch-sensitive boutique guitar amplifier with cascading overdrive and dynamic power-stage bloom.",
+            "guitar amp boutique touch sensitive cascading overdrive tube sag speaker clean sustain",
+            velvetDriveNames, velvetDriveMetadata,
+            &makeModule<VelvetDriveModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::wormholeConvolution,
+            ModulePresentation::wormholeConvolution,
+            "Wormhole Convolution", ModuleCategory::reverbAndSpace,
+            "Crop, reverse, and combine two reverb impulse responses in parallel.",
+            "dual parallel convolution reverb impulse reverse crop trim wormhole",
+            wormholeConvolutionNames, wormholeConvolutionMetadata,
+            &makeModule<WormholeConvolutionModule>,
+            ModuleCapability::impulseResponse),
+        makeDefinition(
+            ModuleType::bitcrusher, ModulePresentation::bitcrusher,
+            "Bitcrusher", ModuleCategory::saturationAndColor,
+            "Shape digital resolution and sample-clock reduction from polished texture to broken-machine grit.",
+            "bit crusher bitcrush lo-fi sample rate reduction quantizer dither alias jitter digital",
+            bitcrusherNames, bitcrusherMetadata,
+            &makeModule<BitcrusherModule>),
+        makeDefinition(
+            ModuleType::portalPermuter,
+            ModulePresentation::portalPermuter,
+            "Portal Permuter", ModuleCategory::glitchAndCreative,
+            "Rearrange recent tempo-locked slices before sending them through a focused impulse-response portal.",
+            "portal permutation beat slice convolution impulse response ir reverse shuffle texture guitar",
+            portalPermuterNames, portalPermuterMetadata,
+            &makeModule<PortalPermuterModule>,
+            ModuleCapability::impulseResponse
+                | ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::irMosaic, ModulePresentation::irMosaic,
+            "IR Mosaic", ModuleCategory::reverbAndSpace,
+            "Reassemble an impulse response into moving tile orders while preserving its continuous tail.",
+            "impulse response ir mosaic tiles convolution moving reverb texture morph",
+            irMosaicNames, irMosaicMetadata,
+            &makeModule<IRMosaicModule>,
+            ModuleCapability::impulseResponse
+                | ModuleCapability::continuousTelemetry)
     }};
     return definitions;
 }

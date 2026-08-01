@@ -60,4 +60,9 @@ std::unique_ptr<ModuleView> createOptoLevelerView(EffectGraph&);
 std::unique_ptr<ModuleView> createFetLimiterView(EffectGraph&);
 std::unique_ptr<ModuleView> createProgramEqualizerView(EffectGraph&);
 std::unique_ptr<ModuleView> createStudioPlateView(EffectGraph&);
+std::unique_ptr<ModuleView> createVelvetDriveView(EffectGraph&);
+std::unique_ptr<ModuleView> createWormholeConvolutionView(EffectGraph&);
+std::unique_ptr<ModuleView> createBitcrusherView(EffectGraph&);
+std::unique_ptr<ModuleView> createPortalPermuterView(EffectGraph&);
+std::unique_ptr<ModuleView> createIRMosaicView(EffectGraph&);
 } // namespace megadsp::ui

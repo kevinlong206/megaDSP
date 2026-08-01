@@ -24,7 +24,7 @@ public:
         beginTest("Registry appends Vinyl Simulator without shifting old types");
         expectEquals(static_cast<int>(ModuleType::stageVocal), 48);
         expectEquals(static_cast<int>(ModuleType::vinylSimulator), 49);
-        expectEquals(moduleTypeCount, 54);
+        expectEquals(moduleTypeCount, 59);
         const auto& definition =
             moduleDefinition(ModuleType::vinylSimulator);
         expect(definition.category == ModuleCategory::saturationAndColor);

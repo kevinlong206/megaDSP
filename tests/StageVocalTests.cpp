@@ -1,5 +1,6 @@
 #include "modules/StageVocal.h"
 #include "modules/ModuleRegistry.h"
+#include "Parameters.h"
 
 #include <juce_core/juce_core.h>
 
@@ -41,6 +42,21 @@ float lateRms(const juce::AudioBuffer<float>& buffer)
     return buffer.getRMSLevel(0, start, buffer.getNumSamples() - start);
 }
 
+megadsp::ControlValues neutralControls()
+{
+    auto controls =
+        megadsp::moduleDefaults(megadsp::ModuleType::stageVocal);
+    controls[megadsp::StageVocalModule::lowCutControl] = 0.0f;
+    controls[megadsp::StageVocalModule::fastAmountControl] = 0.0f;
+    controls[megadsp::StageVocalModule::slowAmountControl] = 0.0f;
+    controls[megadsp::StageVocalModule::deEssAmountControl] = 0.0f;
+    controls[megadsp::StageVocalModule::presenceControl] = 0.5f;
+    controls[megadsp::StageVocalModule::airControl] = 0.5f;
+    controls[megadsp::StageVocalModule::outputControl] =
+        linearNormalized(-18.0f, 12.0f, 0.0f);
+    return controls;
+}
+
 class StageVocalTests final : public juce::UnitTest
 {
 public:
@@ -51,7 +67,7 @@ public:
         using namespace megadsp;
         const juce::dsp::ProcessSpec spec { sampleRate, 512, 2 };
 
-        beginTest("Registry exposes the complete live vocal strip");
+        beginTest("Registry exposes serial fast and slow compressors");
         const auto& definition = moduleDefinition(ModuleType::stageVocal);
         expectEquals(static_cast<int>(ModuleType::stageVocal), 48);
         expect(definition.category == ModuleCategory::dynamics);
@@ -66,6 +82,12 @@ public:
                 StageVocalModule::lowCutControl,
                 defaults[StageVocalModule::lowCutControl]),
             juce::String("80 Hz"));
+        expectEquals(
+            formatControlValue(
+                ModuleType::stageVocal,
+                StageVocalModule::fastAttackControl,
+                defaults[StageVocalModule::fastAttackControl]),
+            juce::String("0.15 ms"));
         const auto parsed = parseControlValue(
             ModuleType::stageVocal,
             StageVocalModule::deEssFrequencyControl,
@@ -77,15 +99,27 @@ public:
                 exponentialNormalized(3000.0f, 10000.0f, 7200.0f),
                 0.0001f);
 
+        beginTest("Schema-12 controls preserve compatible vocal settings");
+        std::array<float, controlsPerSlot> legacy {};
+        for (int control = 0; control < controlsPerSlot; ++control)
+            legacy[static_cast<size_t>(control)] =
+                0.03f + static_cast<float>(control) * 0.07f;
+        const auto migrated =
+            migrateStageVocalControlsFromSchema12(legacy);
+        expectEquals(migrated[0], legacy[0]);
+        expectEquals(migrated[7], legacy[3]);
+        expectEquals(migrated[8], legacy[4]);
+        expectEquals(migrated[9], legacy[9]);
+        expectEquals(migrated[10], legacy[10]);
+        expectEquals(migrated[11], legacy[11]);
+        expectEquals(
+            migrated[1],
+            defaults[StageVocalModule::fastAmountControl]);
+
         beginTest("Low cut rejects rumble while retaining vocal fundamentals");
-        auto cleanupControls = defaults;
+        auto cleanupControls = neutralControls();
         cleanupControls[StageVocalModule::lowCutControl] =
             exponentialNormalized(40.0f, 220.0f, 180.0f);
-        cleanupControls[StageVocalModule::expanderRangeControl] = 0.0f;
-        cleanupControls[StageVocalModule::deEssAmountControl] = 0.0f;
-        cleanupControls[StageVocalModule::compressorRatioControl] = 0.0f;
-        cleanupControls[StageVocalModule::presenceControl] = 0.5f;
-        cleanupControls[StageVocalModule::airControl] = 0.5f;
         StageVocalModule lowCutLow;
         StageVocalModule lowCutHigh;
         lowCutLow.prepare(spec);
@@ -96,29 +130,106 @@ public:
         lowCutHigh.process(vocal, cleanupControls, {});
         expect(lateRms(rumble) < lateRms(vocal) * 0.25f);
 
-        beginTest("Expander attenuates quiet stage bleed without hard muting");
-        auto expanderControls = cleanupControls;
-        expanderControls[StageVocalModule::lowCutControl] = 0.0f;
-        expanderControls[StageVocalModule::expanderThresholdControl] =
-            linearNormalized(-70.0f, -20.0f, -35.0f);
-        expanderControls[StageVocalModule::expanderRangeControl] = 1.0f;
-        StageVocalModule quietExpander;
-        quietExpander.prepare(spec);
-        auto quiet = makeSine(2, 48000, 500.0f, 0.005f);
-        const auto quietInput = lateRms(quiet);
-        quietExpander.process(quiet, expanderControls, {});
-        expect(lateRms(quiet) < quietInput * 0.12f);
-        expect(lateRms(quiet) > 0.0f);
+        beginTest("Fast FET stage catches peaks with sub-millisecond attack");
+        auto fastControls = neutralControls();
+        fastControls[StageVocalModule::fastAmountControl] = 1.0f;
+        fastControls[StageVocalModule::fastAttackControl] = 0.0f;
+        fastControls[StageVocalModule::fastReleaseControl] = 0.0f;
+        StageVocalModule fast;
+        fast.prepare(spec);
+        auto fastSignal = makeSine(2, 48000, 700.0f, 0.8f);
+        const auto fastInput = lateRms(fastSignal);
+        fast.process(fastSignal, fastControls, {});
+        expect(lateRms(fastSignal) < fastInput * 0.35f);
 
-        beginTest("Expander opens quickly when the vocal returns");
-        auto onset = makeSine(2, 960, 500.0f, 0.5f);
-        const auto onsetInput = lateRms(onset);
-        quietExpander.process(onset, expanderControls, {});
-        expect(lateRms(onset) > onsetInput * 0.8f);
+        beginTest("Fast feedback curve approaches an 8:1 steady ratio");
+        StageVocalModule lowerFast;
+        StageVocalModule upperFast;
+        lowerFast.prepare(spec);
+        upperFast.prepare(spec);
+        auto lowerLevel = makeSine(2, 96000, 700.0f, 0.2f);
+        auto upperLevel = makeSine(2, 96000, 700.0f, 0.4f);
+        lowerFast.process(lowerLevel, fastControls, {});
+        upperFast.process(upperLevel, fastControls, {});
+        const auto outputDeltaDb = juce::Decibels::gainToDecibels(
+            lateRms(upperLevel) / lateRms(lowerLevel));
+        expect(outputDeltaDb > 0.2f,
+               "Output delta was " + juce::String(outputDeltaDb, 3)
+                   + " dB");
+        expect(outputDeltaDb < 1.8f,
+               "Output delta was " + juce::String(outputDeltaDb, 3)
+                   + " dB");
+        StageVocalModule stabilityFast;
+        stabilityFast.prepare(spec);
+        juce::AudioBuffer<float> stabilitySignal(2, 48000);
+        for (int sample = 0;
+             sample < stabilitySignal.getNumSamples(); ++sample)
+        {
+            const auto input = sample % 2 == 0 ? -0.4f : 0.4f;
+            stabilitySignal.setSample(0, sample, input);
+            stabilitySignal.setSample(1, sample, input);
+        }
+        stabilityFast.process(stabilitySignal, fastControls, {});
+        auto minimumSteadyGain = 100.0f;
+        auto maximumSteadyGain = 0.0f;
+        for (int sample = stabilitySignal.getNumSamples() - 4800;
+             sample < stabilitySignal.getNumSamples(); ++sample)
+        {
+            const auto gain =
+                std::abs(stabilitySignal.getSample(0, sample) / 0.4f);
+            minimumSteadyGain = juce::jmin(minimumSteadyGain, gain);
+            maximumSteadyGain = juce::jmax(maximumSteadyGain, gain);
+        }
+        expect(maximumSteadyGain
+                   < minimumSteadyGain * 1.25f,
+               "Steady gain ranged "
+                   + juce::String(minimumSteadyGain, 4) + " to "
+                   + juce::String(maximumSteadyGain, 4));
 
-        beginTest("De-esser focuses attenuation above its selected frequency");
-        auto deEssControls = cleanupControls;
-        deEssControls[StageVocalModule::lowCutControl] = 0.0f;
+        beginTest("Slow optical stage levels sustained phrases");
+        auto slowControls = neutralControls();
+        slowControls[StageVocalModule::slowAmountControl] = 1.0f;
+        slowControls[StageVocalModule::slowAttackControl] =
+            exponentialNormalized(2.0f, 40.0f, 10.0f);
+        slowControls[StageVocalModule::slowReleaseControl] =
+            exponentialNormalized(200.0f, 3000.0f, 1200.0f);
+        StageVocalModule slow;
+        slow.prepare(spec);
+        auto slowSignal = makeSine(2, 96000, 500.0f, 0.65f);
+        const auto slowInput = lateRms(slowSignal);
+        slow.process(slowSignal, slowControls, {});
+        expect(lateRms(slowSignal) < slowInput * 0.45f);
+
+        beginTest("Optical recovery persists longer than fast FET recovery");
+        StageVocalModule fastRecovery;
+        StageVocalModule slowRecovery;
+        fastRecovery.prepare(spec);
+        slowRecovery.prepare(spec);
+        auto driveFast = makeSine(2, 48000, 500.0f, 0.8f);
+        auto driveSlow = driveFast;
+        fastRecovery.process(driveFast, fastControls, {});
+        slowRecovery.process(driveSlow, slowControls, {});
+        auto fastProbe = makeSine(2, 14400, 500.0f, 0.06f);
+        auto slowProbe = fastProbe;
+        fastRecovery.process(fastProbe, fastControls, {});
+        slowRecovery.process(slowProbe, slowControls, {});
+        expect(lateRms(slowProbe) < lateRms(fastProbe) * 0.75f);
+
+        beginTest("Serial FET and optical stages add their gain reduction");
+        auto serialControls = fastControls;
+        serialControls[StageVocalModule::slowAmountControl] = 1.0f;
+        serialControls[StageVocalModule::slowAttackControl] =
+            slowControls[StageVocalModule::slowAttackControl];
+        serialControls[StageVocalModule::slowReleaseControl] =
+            slowControls[StageVocalModule::slowReleaseControl];
+        StageVocalModule serial;
+        serial.prepare(spec);
+        auto serialSignal = makeSine(2, 96000, 500.0f, 0.8f);
+        serial.process(serialSignal, serialControls, {});
+        expect(lateRms(serialSignal) < lateRms(slowSignal) * 0.8f);
+
+        beginTest("De-esser remains frequency selective");
+        auto deEssControls = neutralControls();
         deEssControls[StageVocalModule::deEssFrequencyControl] =
             exponentialNormalized(3000.0f, 10000.0f, 5000.0f);
         deEssControls[StageVocalModule::deEssAmountControl] = 1.0f;
@@ -132,11 +243,10 @@ public:
         const auto highInput = lateRms(highBand);
         lowVoice.process(lowBand, deEssControls, {});
         sibilance.process(highBand, deEssControls, {});
-        const auto lowRatio = lateRms(lowBand) / lowInput;
-        const auto highRatio = lateRms(highBand) / highInput;
-        expect(highRatio < lowRatio * 0.7f);
+        expect(lateRms(highBand) / highInput
+               < lateRms(lowBand) / lowInput * 0.7f);
 
-        beginTest("Tone shaping does not drive the dynamics detectors");
+        beginTest("Tone shaping does not alter either dynamics detector");
         auto flatToneControls = defaults;
         flatToneControls[StageVocalModule::lowCutControl] = 0.0f;
         auto brightToneControls = flatToneControls;
@@ -157,32 +267,14 @@ public:
         expect(flatTone.readContinuousTelemetry(flatTelemetry));
         expect(brightTone.readContinuousTelemetry(brightTelemetry));
         for (const auto reduction : {
-                 StageVocalModule::expanderReductionDb,
+                 StageVocalModule::fastReductionDb,
                  StageVocalModule::deEssReductionDb,
-                 StageVocalModule::compressorReductionDb })
-        {
+                 StageVocalModule::slowReductionDb })
             expectWithinAbsoluteError(
                 flatTelemetry.values[reduction],
                 brightTelemetry.values[reduction], 0.0001f);
-        }
 
-        beginTest("Linked compression controls loud vocal peaks");
-        auto compressorControls = cleanupControls;
-        compressorControls[StageVocalModule::lowCutControl] = 0.0f;
-        compressorControls[StageVocalModule::compressorThresholdControl] =
-            linearNormalized(-40.0f, 0.0f, -24.0f);
-        compressorControls[StageVocalModule::compressorRatioControl] =
-            exponentialNormalized(1.0f, 10.0f, 6.0f);
-        compressorControls[StageVocalModule::attackControl] =
-            exponentialNormalized(0.5f, 50.0f, 1.0f);
-        StageVocalModule compressor;
-        compressor.prepare(spec);
-        auto loud = makeSine(2, 48000, 500.0f, 0.8f);
-        const auto loudInput = lateRms(loud);
-        compressor.process(loud, compressorControls, {});
-        expect(lateRms(loud) < loudInput * 0.55f);
-
-        beginTest("Mono, stereo and telemetry stay finite");
+        beginTest("Mono and telemetry stay finite and zero latency");
         StageVocalModule mono;
         mono.prepare({ sampleRate, 257, 1 });
         auto monoSignal = makeSine(1, 257, 311.0f, 0.2f);

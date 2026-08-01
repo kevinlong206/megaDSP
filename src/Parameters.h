@@ -18,6 +18,9 @@ struct ModuleDescriptor
 const std::array<ModuleDescriptor, moduleTypeCount>& moduleDescriptors();
 const ModuleDescriptor& descriptorFor(ModuleType type);
 juce::ValueTree migrateStateToCurrentSchema(juce::ValueTree state);
+std::array<float, controlsPerSlot>
+    migrateStageVocalControlsFromSchema12(
+        const std::array<float, controlsPerSlot>&);
 juce::String slotParameterId(int slot, const juce::String& suffix);
 juce::String controlParameterId(int slot, int control);
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

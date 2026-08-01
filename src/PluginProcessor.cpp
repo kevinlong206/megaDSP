@@ -87,6 +87,10 @@ MegaDSPAudioProcessor::MegaDSPAudioProcessor()
 {
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
+        pendingBuiltInCabinetLoads[static_cast<size_t>(slot)].store(
+            -1, std::memory_order_relaxed);
+        pendingWormholeReloads[static_cast<size_t>(slot)].store(
+            0, std::memory_order_relaxed);
         typeParameterIds[static_cast<size_t>(slot)] =
             megadsp::slotParameterId(slot, "type");
         bypassParameterIds[static_cast<size_t>(slot)] =
@@ -367,8 +371,13 @@ void MegaDSPAudioProcessor::processBlockBypassed(
         const auto previous =
             activeAudioSnapshot.exchange(index, std::memory_order_acq_rel);
         selectedSnapshot.store(index, std::memory_order_release);
+        const auto activeVisualSlots =
+            snapshotRacks[static_cast<size_t>(previous)]
+                ->visualizationData().getActiveSlotMask();
         snapshotRacks[static_cast<size_t>(previous)]
-            ->visualizationData().setSelectedSlot(-1);
+            ->visualizationData().clearActiveSlots();
+        snapshotRacks[static_cast<size_t>(index)]
+            ->visualizationData().setActiveSlotMask(activeVisualSlots);
         snapshotUiDirty.store(true, std::memory_order_release);
         snapshotGeneration.fetch_add(1, std::memory_order_release);
     };
@@ -677,6 +686,28 @@ void MegaDSPAudioProcessor::parameterChanged(
                 continue;
             destination.controls[static_cast<size_t>(control)].store(
                 value, std::memory_order_relaxed);
+            if (control == 0
+                && static_cast<megadsp::ModuleType>(
+                       juce::roundToInt(destination.type.load(
+                           std::memory_order_relaxed)))
+                       == megadsp::ModuleType::guitarCabinet)
+                pendingBuiltInCabinetLoads[static_cast<size_t>(slot)].store(
+                    megadsp::discreteIndex(
+                        value,
+                        megadsp::GuitarCabinetModule::builtInCount),
+                    std::memory_order_release);
+            if (static_cast<megadsp::ModuleType>(
+                    juce::roundToInt(destination.type.load(
+                        std::memory_order_relaxed)))
+                    == megadsp::ModuleType::wormholeConvolution)
+            {
+                const auto lane = control <= 2 ? 0 : control >= 4 && control <= 6
+                    ? 1 : -1;
+                if (lane >= 0)
+                    pendingWormholeReloads[static_cast<size_t>(slot)].fetch_or(
+                        static_cast<std::uint8_t>(1u << lane),
+                        std::memory_order_release);
+            }
             return;
         }
     }
@@ -755,6 +786,8 @@ void MegaDSPAudioProcessor::publishSnapshotToParameters(
                     std::memory_order_relaxed));
         const auto irProperty =
             juce::Identifier("impulseResponse" + juce::String(slot + 1));
+        const auto irProperty2 =
+            juce::Identifier("impulseResponse2" + juce::String(slot + 1));
         const auto namProperty =
             juce::Identifier("neuralModel" + juce::String(slot + 1));
         if (source.impulseResponsePath.isEmpty())
@@ -762,6 +795,11 @@ void MegaDSPAudioProcessor::publishSnapshotToParameters(
         else
             parameters.state.setProperty(
                 irProperty, source.impulseResponsePath, nullptr);
+        if (source.impulseResponsePath2.isEmpty())
+            parameters.state.removeProperty(irProperty2, nullptr);
+        else
+            parameters.state.setProperty(
+                irProperty2, source.impulseResponsePath2, nullptr);
         if (source.namModelPath.isEmpty())
             parameters.state.removeProperty(namProperty, nullptr);
         else
@@ -818,15 +856,22 @@ void MegaDSPAudioProcessor::restoreSnapshotAssets(int index)
     auto& state = snapshotStates[static_cast<size_t>(index)];
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
-        const auto ir = state.slots[static_cast<size_t>(slot)]
-                            .impulseResponsePath;
-        if (ir.isNotEmpty())
+        const std::array<juce::String, 2> impulsePaths {
+            state.slots[static_cast<size_t>(slot)].impulseResponsePath,
+            state.slots[static_cast<size_t>(slot)].impulseResponsePath2
+        };
+        for (int lane = 0; lane < 2; ++lane)
         {
-            const auto result = rack.loadImpulseResponse(
-                slot, juce::File(ir));
-            if (result.failed())
-                state.error += "IR slot " + juce::String(slot + 1)
-                               + ": " + result.getErrorMessage() + " ";
+            const auto& ir = impulsePaths[static_cast<size_t>(lane)];
+            if (ir.isNotEmpty())
+            {
+                const auto result = rack.loadImpulseResponse(
+                    slot, lane, juce::File(ir));
+                if (result.failed())
+                    state.error += "IR " + juce::String(lane == 0 ? "A" : "B")
+                        + " slot " + juce::String(slot + 1)
+                        + ": " + result.getErrorMessage() + " ";
+            }
         }
         const auto nam =
             state.slots[static_cast<size_t>(slot)].namModelPath;
@@ -939,13 +984,13 @@ void MegaDSPAudioProcessor::beginSnapshotRecall(int index) noexcept
             snapshotTransition.totalSamples
                 - snapshotTransition.samplesDone);
         snapshotTransition.fadeIncomingOutput = false;
-        const auto visualSlot =
+        const auto activeVisualSlots =
             snapshotRacks[static_cast<size_t>(current)]
-                ->visualizationData().getSelectedSlot();
+                ->visualizationData().getActiveSlotMask();
         snapshotRacks[static_cast<size_t>(current)]
-            ->visualizationData().setSelectedSlot(-1);
+            ->visualizationData().clearActiveSlots();
         snapshotRacks[static_cast<size_t>(index)]
-            ->visualizationData().setSelectedSlot(visualSlot);
+            ->visualizationData().setActiveSlotMask(activeVisualSlots);
         activeAudioSnapshot.store(index, std::memory_order_release);
         selectedSnapshot.store(index, std::memory_order_release);
         snapshotUiDirty.store(true, std::memory_order_release);
@@ -968,13 +1013,13 @@ void MegaDSPAudioProcessor::beginSnapshotRecall(int index) noexcept
     snapshotTransition.totalSamples = juce::jmax(
         1, juce::roundToInt(preparedSampleRate * 0.02));
     snapshotTransition.fadeIncomingOutput = !incomingWasSpilling;
-    const auto visualSlot =
+    const auto activeVisualSlots =
         snapshotRacks[static_cast<size_t>(current)]
-            ->visualizationData().getSelectedSlot();
+            ->visualizationData().getActiveSlotMask();
     snapshotRacks[static_cast<size_t>(current)]
-        ->visualizationData().setSelectedSlot(-1);
+        ->visualizationData().clearActiveSlots();
     snapshotRacks[static_cast<size_t>(index)]
-        ->visualizationData().setSelectedSlot(visualSlot);
+        ->visualizationData().setActiveSlotMask(activeVisualSlots);
     activeAudioSnapshot.store(index, std::memory_order_release);
     selectedSnapshot.store(index, std::memory_order_release);
     snapshotTailSamples.store(
@@ -1486,24 +1531,26 @@ void MegaDSPAudioProcessor::restorePendingImpulseResponses()
     auto& rack = getRack();
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
-        const auto path = rack.pendingImpulseResponsePath(slot);
-        if (path.isEmpty())
-            continue;
-
-        megadsp::EffectRack::PreparedImpulseResponseLoad load;
-        const auto result = rack.prepareImpulseResponse(
-            slot, juce::File(path), load);
-        if (result.failed())
+        for (int lane = 0; lane < 2; ++lane)
         {
-            rack.discardPendingImpulseResponse(slot, path);
-            continue;
+            const auto path =
+                rack.pendingImpulseResponsePath(slot, lane);
+            if (path.isEmpty())
+                continue;
+            megadsp::EffectRack::PreparedImpulseResponseLoad load;
+            const auto result = rack.prepareImpulseResponse(
+                slot, lane, juce::File(path), load);
+            if (result.failed())
+            {
+                rack.discardPendingImpulseResponse(slot, lane, path);
+                continue;
+            }
+            suspendProcessing(true);
+            const auto committed = rack.commitImpulseResponse(load);
+            suspendProcessing(false);
+            if (!committed)
+                rack.cancelImpulseResponse(load);
         }
-
-        suspendProcessing(true);
-        const auto committed = rack.commitImpulseResponse(load);
-        suspendProcessing(false);
-        if (!committed)
-            rack.cancelImpulseResponse(load);
     }
 }
 
@@ -1654,6 +1701,34 @@ void MegaDSPAudioProcessor::restoreSnapshots(
                                 0.0f, std::memory_order_relaxed);
                     }
                 }
+                if (sourceSchema < 13)
+                {
+                    auto& state =
+                        snapshotStates[static_cast<size_t>(index)];
+                    for (auto& slot : state.slots)
+                    {
+                        if (static_cast<megadsp::ModuleType>(
+                                juce::roundToInt(slot.type.load(
+                                    std::memory_order_relaxed)))
+                            != megadsp::ModuleType::stageVocal)
+                            continue;
+                        std::array<float, megadsp::controlsPerSlot>
+                            legacy {};
+                        for (int control = 0;
+                             control < megadsp::controlsPerSlot; ++control)
+                            legacy[static_cast<size_t>(control)] =
+                                slot.controls[static_cast<size_t>(control)]
+                                    .load(std::memory_order_relaxed);
+                        const auto migrated =
+                            megadsp::migrateStageVocalControlsFromSchema12(
+                                legacy);
+                        for (int control = 0;
+                             control < megadsp::controlsPerSlot; ++control)
+                            slot.controls[static_cast<size_t>(control)].store(
+                                migrated[static_cast<size_t>(control)],
+                                std::memory_order_relaxed);
+                    }
+                }
             }
         }
     }
@@ -1666,6 +1741,10 @@ void MegaDSPAudioProcessor::restoreSnapshots(
                 .impulseResponsePath =
                 root.getProperty(
                     "impulseResponse" + juce::String(slot + 1)).toString();
+            snapshotStates[0].slots[static_cast<size_t>(slot)]
+                .impulseResponsePath2 =
+                root.getProperty(
+                    "impulseResponse2" + juce::String(slot + 1)).toString();
             snapshotStates[0].slots[static_cast<size_t>(slot)]
                 .namModelPath =
                 root.getProperty(
@@ -1856,6 +1935,12 @@ void MegaDSPAudioProcessor::resetModuleToDefaults(int slot)
 juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     int slot, const juce::File& file)
 {
+    return loadImpulseResponse(slot, 0, file);
+}
+
+juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
+    int slot, int lane, const juce::File& file)
+{
     auto expected = false;
     if (!topologyMutationInProgress.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel))
@@ -1870,7 +1955,8 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     };
 
     megadsp::EffectRack::PreparedImpulseResponseLoad load;
-    auto result = getRack().prepareImpulseResponse(slot, file, load);
+    auto result =
+        getRack().prepareImpulseResponse(slot, lane, file, load);
     if (result.failed())
     {
         megadsp::Diagnostics::instance().log(
@@ -1898,6 +1984,39 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     parameters.state.setProperty(
         "impulseResponseDirectory",
         file.getParentDirectory().getFullPathName(), nullptr);
+    publishSnapshotToParameters(getSelectedSnapshot());
+    updateHostDisplay(
+        ChangeDetails{}.withNonParameterStateChanged(true));
+    return juce::Result::ok();
+}
+
+juce::Result MegaDSPAudioProcessor::loadBuiltInImpulseResponse(
+    int slot, int index)
+{
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "A topology update is already in progress.");
+    megadsp::EffectRack::PreparedImpulseResponseLoad load;
+    auto result =
+        getRack().prepareBuiltInImpulseResponse(slot, index, load);
+    if (result.failed())
+    {
+        topologyMutationInProgress.store(false, std::memory_order_release);
+        return result;
+    }
+    suspendProcessing(true);
+    const auto committed = getRack().commitImpulseResponse(load);
+    suspendProcessing(false);
+    if (!committed)
+    {
+        getRack().cancelImpulseResponse(load);
+        topologyMutationInProgress.store(false, std::memory_order_release);
+        return juce::Result::fail(
+            "The cabinet impulse request was superseded.");
+    }
+    topologyMutationInProgress.store(false, std::memory_order_release);
     publishSnapshotToParameters(getSelectedSnapshot());
     updateHostDisplay(
         ChangeDetails{}.withNonParameterStateChanged(true));
@@ -1980,11 +2099,18 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentImpulseResponse(
 
 void MegaDSPAudioProcessor::clearImpulseResponse(int slot)
 {
+    clearImpulseResponse(slot, 0);
+}
+
+void MegaDSPAudioProcessor::clearImpulseResponse(int slot, int lane)
+{
     auto expected = false;
     if (!topologyMutationInProgress.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel))
         return;
-    const auto result = getRack().clearImpulseResponse(slot);
+    suspendProcessing(true);
+    const auto result = getRack().clearImpulseResponse(slot, lane);
+    suspendProcessing(false);
     topologyMutationInProgress.store(false, std::memory_order_release);
     if (topologyDirty.load(std::memory_order_acquire))
         triggerAsyncUpdate();
@@ -2243,6 +2369,42 @@ void MegaDSPAudioProcessor::restoreParameterState(const juce::ValueTree& state)
 
 void MegaDSPAudioProcessor::timerCallback()
 {
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        const auto lanes =
+            pendingWormholeReloads[static_cast<size_t>(slot)].exchange(
+                0, std::memory_order_acq_rel);
+        for (int lane = 0; lane < 2; ++lane)
+        {
+            const auto bit = static_cast<std::uint8_t>(1u << lane);
+            if ((lanes & bit) == 0)
+                continue;
+            const auto path = impulseResponsePath(slot, lane);
+            if (path.isEmpty())
+                continue;
+            const auto result =
+                loadImpulseResponse(slot, lane, juce::File(path));
+            if (result.failed()
+                && result.getErrorMessage().containsIgnoreCase("in progress"))
+                pendingWormholeReloads[static_cast<size_t>(slot)].fetch_or(
+                    bit, std::memory_order_release);
+        }
+    }
+
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        const auto index =
+            pendingBuiltInCabinetLoads[static_cast<size_t>(slot)].exchange(
+                -1, std::memory_order_acq_rel);
+        if (index < 0)
+            continue;
+        const auto result = loadBuiltInImpulseResponse(slot, index);
+        if (result.failed()
+            && result.getErrorMessage().containsIgnoreCase("in progress"))
+            pendingBuiltInCabinetLoads[static_cast<size_t>(slot)].store(
+                index, std::memory_order_release);
+    }
+
     const auto callbackGeneration =
         audioCallbackGeneration.load(std::memory_order_acquire);
     if (callbackGeneration != observedAudioCallbackGeneration)
@@ -2269,7 +2431,6 @@ void MegaDSPAudioProcessor::timerCallback()
             0, juce::jmax(
                    0, getRack().activeSlotCount() - 1),
             selectedTab);
-        getRack().visualizationData().setSelectedSlot(selectedTab);
         topologyGeneration.fetch_add(1, std::memory_order_release);
         refreshLatency();
         updateHostDisplay(

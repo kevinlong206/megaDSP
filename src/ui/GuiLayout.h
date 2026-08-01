@@ -4,6 +4,7 @@
 
 #include <juce_graphics/juce_graphics.h>
 
+#include <cstddef>
 #include <vector>
 
 namespace megadsp::ui
@@ -62,7 +63,18 @@ TabLayout calculateTabLayout(
     int availableWidth, int activeTabs, bool showAddButton);
 int calculateRackContentHeight(int activeModules, bool showAddButton);
 juce::String compactTabName(ModuleType);
-float normalizedWheelDelta(float deltaX, float deltaY, bool isReversed);
+
+struct StereoBalanceMeasurement
+{
+    float leftRmsDb = -60.0f;
+    float rightRmsDb = -60.0f;
+    float leftPeakDb = -60.0f;
+    float rightPeakDb = -60.0f;
+    float balance = 0.0f;
+};
+
+StereoBalanceMeasurement measureStereoBalance(
+    const float* left, const float* right, std::size_t sampleCount);
 
 std::vector<int> keyboardControlOrder(
     ModuleType, const std::array<float, controlsPerSlot>& values,

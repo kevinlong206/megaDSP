@@ -65,7 +65,7 @@ public:
                         megadsp::ModuleType::harmonicMirage)
                != colorModules.end());
         expect(std::find(colorModules.begin(), colorModules.end(),
-                        megadsp::ModuleType::guitarCabinet)
+                        megadsp::ModuleType::bitcrusher)
                != colorModules.end());
         expect(std::find(colorModules.begin(), colorModules.end(),
                          megadsp::ModuleType::vinylSimulator)
@@ -89,7 +89,9 @@ public:
         expectOnly("tuned metallic", megadsp::ModuleType::resonantMatrix);
         expectOnly("nonlinear envelope", megadsp::ModuleType::wavefoldGarden);
         expectOnly("reel cassette warmth", megadsp::ModuleType::analogTape);
-        expectOnly("speaker cone physical", megadsp::ModuleType::guitarCabinet);
+        expectOnly(
+            "cabinet impulse microphone",
+            megadsp::ModuleType::guitarCabinet);
         expectOnly("infinite granular strum", megadsp::ModuleType::chordLoom);
         expectOnly("volume pedal knob", megadsp::ModuleType::volumeSwell);
         expectOnly("spectral cloud smear", megadsp::ModuleType::spectralNebula);
@@ -115,6 +117,12 @@ public:
         expectOnly(
             "electromechanical plate pickup",
             megadsp::ModuleType::studioPlate);
+        expectOnly(
+            "boutique touch sensitive cascading",
+            megadsp::ModuleType::velvetDrive);
+        expectOnly(
+            "quantizer dither alias",
+            megadsp::ModuleType::bitcrusher);
 
         beginTest("Next-ten search identities are unique");
         const std::array nextTenSearches {
@@ -136,7 +144,7 @@ public:
                         megadsp::ModuleType::frequencyLab },
             std::pair { "autopan trajectory",
                         megadsp::ModuleType::spatialOrbit },
-            std::pair { "bitcrush dropout",
+            std::pair { "dropout wow flutter",
                         megadsp::ModuleType::signalDecay }
         };
         for (const auto& [query, expected] : nextTenSearches)
