@@ -444,11 +444,12 @@ void EffectRack::reset()
 void EffectRack::process(juce::AudioBuffer<float>& main,
                          const juce::AudioBuffer<float>* sidechain,
                          double bpm,
-                         RealtimeProcessProfile* profile)
+                         RealtimeProcessProfile* profile,
+                         bool nonRealtime)
 {
     if (main.getNumSamples() <= maximumBlockSize)
     {
-        processChunk(main, sidechain, bpm, profile);
+        processChunk(main, sidechain, bpm, profile, nonRealtime);
         return;
     }
 
@@ -474,14 +475,15 @@ void EffectRack::process(juce::AudioBuffer<float>& main,
         }
         processChunk(mainChunk,
                      sidechainChunk.has_value() ? &*sidechainChunk : nullptr,
-                     bpm, profile);
+                     bpm, profile, nonRealtime);
     }
 }
 
 void EffectRack::processChunk(juce::AudioBuffer<float>& main,
                               const juce::AudioBuffer<float>* sidechain,
                               double bpm,
-                              RealtimeProcessProfile* profile)
+                              RealtimeProcessProfile* profile,
+                              bool nonRealtime)
 {
     juce::ScopedNoDenormals noDenormals;
     inputGainLinear.setTargetValue(juce::Decibels::decibelsToGain(inputGain->load()));
@@ -513,7 +515,7 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
             !bypassRequested
             && visualization.isSlotActive(slotIndex);
         const ProcessEnvironment environment {
-            sidechain, bpm, captureVisualization
+            sidechain, bpm, captureVisualization, nonRealtime
         };
         if (captureVisualization)
             visualization.captureInput(slotIndex, main);

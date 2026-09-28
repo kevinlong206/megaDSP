@@ -21,6 +21,7 @@ public:
         ControlValues controls;
         controls.fill(0.5f);
         ProcessEnvironment environment;
+        environment.nonRealtime = true;
         std::array<std::unique_ptr<DspModule>, 41> modules {
             std::make_unique<EqualizerModule>(),
             std::make_unique<CompressorModule>(),

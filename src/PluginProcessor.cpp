@@ -4,7 +4,11 @@
 #include "ui/GraphStyle.h"
 #include "ui/GuiLayout.h"
 
+#include <NAM/wavenet/a2_fast.h>
+#include <json.hpp>
 #include <juce_audio_formats/juce_audio_formats.h>
+
+#include <optional>
 
 thread_local bool
     MegaDSPAudioProcessor::publishingSnapshotParameters = false;
@@ -52,6 +56,14 @@ juce::String globalImpulseResponseRoot()
     return settings.getValue("impulseResponseRootDirectory");
 }
 
+juce::String globalNamModelRoot()
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    juce::PropertiesFile settings(
+        globalSettingsFile(), globalSettingsOptions());
+    return settings.getValue("namModelRootDirectory");
+}
+
 void inheritGlobalImpulseResponseRoot(juce::ValueTree& state)
 {
     if (state.getProperty(
@@ -66,6 +78,18 @@ void inheritGlobalImpulseResponseRoot(juce::ValueTree& state)
     state.setProperty(
         "impulseResponseDirectory",
         root.getFullPathName(), nullptr);
+}
+
+void inheritGlobalNamModelRoot(juce::ValueTree& state)
+{
+    if (state.getProperty(
+            "namModelRootDirectory").toString().isNotEmpty())
+        return;
+    const auto root = juce::File(globalNamModelRoot());
+    if (root.isDirectory())
+        state.setProperty(
+            "namModelRootDirectory",
+            root.getFullPathName(), nullptr);
 }
 
 juce::Result persistGlobalImpulseResponseRoot(const juce::File& root)
@@ -87,6 +111,24 @@ juce::Result persistGlobalImpulseResponseRoot(const juce::File& root)
               "Could not save the global IR library root.");
 }
 
+juce::Result persistGlobalNamModelRoot(const juce::File& root)
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto file = globalSettingsFile();
+    const auto directoryResult =
+        file.getParentDirectory().createDirectory();
+    if (directoryResult.failed())
+        return directoryResult;
+    juce::PropertiesFile settings(
+        file, globalSettingsOptions());
+    settings.setValue(
+        "namModelRootDirectory", root.getFullPathName());
+    return settings.saveIfNeeded()
+        ? juce::Result::ok()
+        : juce::Result::fail(
+              "Could not save the global NAM library root.");
+}
+
 juce::Result seedGlobalImpulseResponseRoot(
     const juce::ValueTree& state)
 {
@@ -98,6 +140,184 @@ juce::Result seedGlobalImpulseResponseRoot(
     return instanceRoot.isDirectory()
         ? persistGlobalImpulseResponseRoot(instanceRoot)
         : juce::Result::ok();
+}
+
+juce::Result seedGlobalNamModelRoot(const juce::ValueTree& state)
+{
+    if (juce::File(globalNamModelRoot()).isDirectory())
+        return juce::Result::ok();
+    const auto instanceRoot = juce::File(
+        state.getProperty("namModelRootDirectory").toString());
+    return instanceRoot.isDirectory()
+        ? persistGlobalNamModelRoot(instanceRoot)
+        : juce::Result::ok();
+}
+
+juce::String namJsonString(
+    const nlohmann::json& object, const char* key)
+{
+    const auto found = object.find(key);
+    return found != object.end() && found->is_string()
+        ? juce::String(found->get<std::string>())
+        : juce::String();
+}
+
+double namJsonNumber(
+    const nlohmann::json& object, const char* key) noexcept
+{
+    const auto found = object.find(key);
+    return found != object.end() && found->is_number()
+        ? found->get<double>() : std::numeric_limits<double>::quiet_NaN();
+}
+
+std::optional<NamModelLibraryEntry> inspectNamModel(
+    const juce::File& file, const juce::File& root)
+{
+    if (!file.existsAsFile()
+        || !file.hasFileExtension("nam"))
+        return std::nullopt;
+    const auto contents = file.loadFileAsString().toStdString();
+    const auto json = nlohmann::json::parse(
+        contents, nullptr, false);
+    if (json.is_discarded() || !json.is_object())
+        return std::nullopt;
+    const auto architecture = json.find("architecture");
+    const auto config = json.find("config");
+    const auto weights = json.find("weights");
+    const auto sampleRate = json.find("sample_rate");
+    const auto version = json.find("version");
+    if (architecture == json.end() || !architecture->is_string()
+        || config == json.end() || !config->is_object()
+        || weights == json.end() || !weights->is_array()
+        || version == json.end() || !version->is_string()
+        || sampleRate == json.end() || !sampleRate->is_number()
+        || sampleRate->get<double>() <= 0.0)
+        return std::nullopt;
+
+    static const std::array<const char*, 7> supported {
+        "Linear", "LSTM", "ConvNet", "WaveNet", "SlimmableWaveNet",
+        "Container", "SlimmableContainer"
+    };
+    const auto architectureName =
+        juce::String(architecture->get<std::string>());
+    if (std::none_of(
+            supported.begin(), supported.end(),
+            [&architectureName](const char* candidate)
+            {
+                return architectureName == candidate;
+            }))
+        return std::nullopt;
+
+    const nlohmann::json* effectiveModel = &json;
+    auto submodelCount = 1;
+    if (architectureName == "Container"
+        || architectureName == "SlimmableContainer")
+    {
+        const auto submodels = config->find("submodels");
+        if (submodels == config->end() || !submodels->is_array()
+            || submodels->empty())
+            return std::nullopt;
+        submodelCount = static_cast<int>(submodels->size());
+        double highest = -std::numeric_limits<double>::infinity();
+        effectiveModel = nullptr;
+        for (const auto& candidate : *submodels)
+        {
+            const auto maximum = candidate.find("max_value");
+            const auto model = candidate.find("model");
+            if (maximum == candidate.end() || !maximum->is_number()
+                || model == candidate.end() || !model->is_object())
+                continue;
+            if (maximum->get<double>() > highest)
+            {
+                highest = maximum->get<double>();
+                effectiveModel = &*model;
+            }
+        }
+        if (effectiveModel == nullptr)
+            return std::nullopt;
+    }
+
+    auto effectiveArchitecture = architectureName;
+    if (effectiveModel != &json)
+    {
+        const auto nestedArchitecture =
+            effectiveModel->find("architecture");
+        if (nestedArchitecture != effectiveModel->end()
+            && nestedArchitecture->is_string())
+            effectiveArchitecture =
+                juce::String(nestedArchitecture->get<std::string>());
+    }
+    const auto effectiveSupported = std::any_of(
+        supported.begin(), supported.end(),
+        [&effectiveArchitecture](const char* candidate)
+        {
+            return effectiveArchitecture == candidate;
+        });
+    const auto effectiveConfig = effectiveModel->find("config");
+    const auto effectiveWeights = effectiveModel->find("weights");
+    if (!effectiveSupported
+        || effectiveConfig == effectiveModel->end()
+        || !effectiveConfig->is_object()
+        || effectiveWeights == effectiveModel->end()
+        || !effectiveWeights->is_array()
+        || effectiveWeights->empty())
+        return std::nullopt;
+
+    auto isA2 = false;
+#if defined(NAM_ENABLE_A2_FAST)
+    if (effectiveArchitecture == "WaveNet")
+    {
+        int channels = 0;
+        isA2 = nam::wavenet::a2_fast::is_a2_shape(
+            *effectiveConfig, &channels);
+    }
+#endif
+
+    NamModelLibraryEntry entry;
+    entry.file = file;
+    entry.relativePath =
+        file.getRelativePathFrom(root).replaceCharacter('\\', '/');
+    entry.displayName = file.getFileNameWithoutExtension();
+    entry.architecture = architectureName;
+    if (effectiveArchitecture != architectureName)
+        entry.architecture += " / " + effectiveArchitecture;
+    entry.sampleRate = sampleRate->get<double>();
+    entry.submodelCount = submodelCount;
+    entry.isA2 = isA2;
+
+    const auto metadata = json.find("metadata");
+    if (metadata != json.end() && metadata->is_object())
+    {
+        const auto displayName = namJsonString(*metadata, "display_name");
+        const auto metadataName = namJsonString(*metadata, "name");
+        if (displayName.isNotEmpty())
+            entry.displayName = displayName;
+        else if (metadataName.isNotEmpty())
+            entry.displayName = metadataName;
+
+        juce::StringArray capture;
+        auto gear = namJsonString(*metadata, "gear_make");
+        const auto gearModel = namJsonString(*metadata, "gear_model");
+        if (gearModel.isNotEmpty())
+            gear += (gear.isNotEmpty() ? " " : "") + gearModel;
+        if (gear.isEmpty())
+            gear = namJsonString(*metadata, "gear_type");
+        if (gear.isNotEmpty())
+            capture.add(gear);
+        const auto tone = namJsonString(*metadata, "tone_type");
+        if (tone.isNotEmpty())
+            capture.add(tone);
+        const auto modeledBy = namJsonString(*metadata, "modeled_by");
+        if (modeledBy.isNotEmpty())
+            capture.add("by " + modeledBy);
+        entry.captureDescription = capture.joinIntoString(" | ");
+        entry.inputLevelDbU =
+            namJsonNumber(*metadata, "input_level_dbu");
+        const auto withCab = metadata->find("with_cab");
+        if (withCab != metadata->end() && withCab->is_boolean())
+            entry.cabIncluded = withCab->get<bool>() ? 1 : 0;
+    }
+    return entry;
 }
 
 float smoothSnapshotFade(float position) noexcept
@@ -177,6 +397,7 @@ MegaDSPAudioProcessor::MegaDSPAudioProcessor()
       parameters(*this, nullptr, "megaDSPState", megadsp::createParameterLayout())
 {
     inheritGlobalImpulseResponseRoot(parameters.state);
+    inheritGlobalNamModelRoot(parameters.state);
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
         pendingBuiltInCabinetLoads[static_cast<size_t>(slot)].store(
@@ -308,7 +529,7 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         ? juce::Time::getHighResolutionTicks() : 0;
     captureRealtimeProfile =
         diagnosticsEnabled
-        && (++diagnosticCallbackCount % 32u) == 0u;
+        && (++diagnosticCallbackCount % 31u) == 0u;
     if (captureRealtimeProfile)
         realtimeProfile.reset();
     auto recalledSnapshot = false;
@@ -647,7 +868,7 @@ void MegaDSPAudioProcessor::processProfiledRack(
     const auto start = profile != nullptr
         ? juce::Time::getHighResolutionTicks() : 0;
     snapshotRacks[static_cast<size_t>(snapshot)]->process(
-        main, sidechain, bpm, profile);
+        main, sidechain, bpm, profile, isNonRealtime());
     if (profile != nullptr)
         profile->recordGraph(
             snapshot, static_cast<std::uint64_t>(
@@ -2613,6 +2834,159 @@ void MegaDSPAudioProcessor::clearImpulseResponse(int slot, int lane)
     }
 }
 
+juce::File MegaDSPAudioProcessor::namModelRootDirectory() const
+{
+    auto root = juce::File(parameters.state.getProperty(
+        "namModelRootDirectory").toString());
+    if (root.isDirectory())
+        return root;
+    root = juce::File(globalNamModelRoot());
+    return root.isDirectory() ? root : juce::File();
+}
+
+juce::Result MegaDSPAudioProcessor::setNamModelRootDirectory(
+    const juce::File& directory)
+{
+    if (!directory.isDirectory())
+        return juce::Result::fail(
+            "Choose an existing NAM model directory.");
+    parameters.state.setProperty(
+        "namModelRootDirectory",
+        directory.getFullPathName(), nullptr);
+    {
+        const juce::ScopedLock lock(namModelLibraryLock);
+        indexedNamModelRoot.clear();
+        namModelLibrary.clear();
+    }
+    const auto result = rebuildNamModelLibrary();
+    if (result.failed())
+        return result;
+    const auto persisted = persistGlobalNamModelRoot(directory);
+    if (persisted.failed())
+        return persisted;
+    updateHostDisplay(
+        ChangeDetails{}.withNonParameterStateChanged(true));
+    return juce::Result::ok();
+}
+
+juce::Result MegaDSPAudioProcessor::rebuildNamModelLibrary()
+{
+    const auto root = namModelRootDirectory();
+    if (!root.isDirectory())
+        return juce::Result::fail(
+            "Choose a NAM model root directory first.");
+
+    juce::Array<juce::File> files;
+    root.findChildFiles(files, juce::File::findFiles, true);
+    std::vector<NamModelLibraryEntry> rebuilt;
+    rebuilt.reserve(static_cast<size_t>(files.size()));
+    for (const auto& file : files)
+    {
+        if (!file.hasFileExtension("nam"))
+            continue;
+        if (const auto entry = inspectNamModel(file, root))
+            rebuilt.push_back(*entry);
+    }
+    std::sort(
+        rebuilt.begin(), rebuilt.end(),
+        [](const auto& left, const auto& right)
+        {
+            const auto order = left.relativePath.compareIgnoreCase(
+                right.relativePath);
+            return order != 0
+                ? order < 0
+                : left.file.getFullPathName()
+                      < right.file.getFullPathName();
+        });
+    {
+        const juce::ScopedLock lock(namModelLibraryLock);
+        namModelLibrary = std::move(rebuilt);
+        indexedNamModelRoot = root.getFullPathName();
+    }
+    return juce::Result::ok();
+}
+
+void MegaDSPAudioProcessor::ensureNamModelLibrary()
+{
+    const auto root = namModelRootDirectory().getFullPathName();
+    if (root.isEmpty())
+    {
+        const juce::ScopedLock lock(namModelLibraryLock);
+        indexedNamModelRoot.clear();
+        namModelLibrary.clear();
+        return;
+    }
+    {
+        const juce::ScopedLock lock(namModelLibraryLock);
+        if (root == indexedNamModelRoot)
+            return;
+    }
+    rebuildNamModelLibrary();
+}
+
+std::vector<NamModelLibraryEntry>
+MegaDSPAudioProcessor::searchNamModels(
+    const juce::String& query, int maximumResults)
+{
+    ensureNamModelLibrary();
+    maximumResults = juce::jmax(0, maximumResults);
+    if (maximumResults == 0)
+        return {};
+    const auto tokens = juce::StringArray::fromTokens(
+        query.toLowerCase(), " \t\r\n", "\"");
+    std::vector<NamModelLibraryEntry> matches;
+    const juce::ScopedLock lock(namModelLibraryLock);
+    matches.reserve(juce::jmin(
+        static_cast<size_t>(maximumResults),
+        namModelLibrary.size()));
+    for (const auto& entry : namModelLibrary)
+    {
+        const auto searchable =
+            (entry.relativePath + " " + entry.displayName + " "
+             + entry.architecture + " " + entry.captureDescription)
+                .toLowerCase();
+        auto matched = true;
+        for (const auto& token : tokens)
+        {
+            if (token.isEmpty())
+                continue;
+            if (token == "a1")
+                matched = !entry.isA2;
+            else if (token == "a2")
+                matched = entry.isA2;
+            else if (token == "cab")
+                matched = entry.cabIncluded == 1;
+            else if (token == "nocab" || token == "amp")
+                matched = entry.cabIncluded == 0;
+            else if (token.startsWith("sr:")
+                     || token.startsWith("rate:"))
+            {
+                const auto requested = token.fromFirstOccurrenceOf(
+                    ":", false, false).getDoubleValue();
+                matched = requested > 0.0
+                    && std::abs(entry.sampleRate - requested) < 1.0;
+            }
+            else
+                matched = searchable.contains(token);
+            if (!matched)
+                break;
+        }
+        if (!matched)
+            continue;
+        matches.push_back(entry);
+        if (static_cast<int>(matches.size()) >= maximumResults)
+            break;
+    }
+    return matches;
+}
+
+int MegaDSPAudioProcessor::namModelLibrarySize()
+{
+    ensureNamModelLibrary();
+    const juce::ScopedLock lock(namModelLibraryLock);
+    return static_cast<int>(namModelLibrary.size());
+}
+
 juce::Result MegaDSPAudioProcessor::loadNamModel(
     int slot, const juce::File& file)
 {
@@ -2834,6 +3208,13 @@ void MegaDSPAudioProcessor::restoreParameterState(const juce::ValueTree& state)
             "ir-root-persist-failed",
             seeded.getErrorMessage());
     inheritGlobalImpulseResponseRoot(parameters.state);
+    const auto namSeeded =
+        seedGlobalNamModelRoot(parameters.state);
+    if (namSeeded.failed())
+        megadsp::Diagnostics::instance().log(
+            "nam-root-persist-failed",
+            namSeeded.getErrorMessage());
+    inheritGlobalNamModelRoot(parameters.state);
     liveSafeSnapshots.store(
         static_cast<bool>(
             parameters.state.getProperty(

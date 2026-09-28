@@ -58,7 +58,8 @@ public:
     void process(juce::AudioBuffer<float>& main,
                  const juce::AudioBuffer<float>* sidechain,
                  double bpm,
-                 RealtimeProcessProfile* profile = nullptr);
+                 RealtimeProcessProfile* profile = nullptr,
+                 bool nonRealtime = true);
 
     ModuleType moduleType(int slot) const;
     ModuleType activeModuleType(int slot) const;
@@ -182,7 +183,8 @@ private:
     void processChunk(juce::AudioBuffer<float>& main,
                       const juce::AudioBuffer<float>* sidechain,
                       double bpm,
-                      RealtimeProcessProfile* profile);
+                      RealtimeProcessProfile* profile,
+                      bool nonRealtime);
     ModuleType requestedType(const Slot&) const;
     DspModule* selectedModule(Slot&);
     const DspModule* selectedModule(const Slot&) const;

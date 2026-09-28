@@ -24,16 +24,37 @@ juce::String linearNamJson(double sr = 48000.0)
     return j;
 }
 
+juce::String metadataLinearNamJson(double sr = 48000.0)
+{
+    auto model = nlohmann::json::parse(
+        linearNamJson(sr).toStdString());
+    model["version"] = "0.7.0";
+    model["metadata"] = {
+        { "name", "Studio Lead" },
+        { "modeled_by", "Test Modeler" },
+        { "gear_make", "Example" },
+        { "gear_model", "Amp 50" },
+        { "tone_type", "crunch" },
+        { "with_cab", true },
+        { "input_level_dbu", 12.4 },
+        { "validation_esr", 0.0025 }
+    };
+    return juce::String(model.dump());
+}
+
 juce::String slimmableContainerNamJson(double sr = 48000.0)
 {
-    const auto child = nlohmann::json::parse(
+    auto slimChild = nlohmann::json::parse(
+        linearNamJson(sr).toStdString());
+    slimChild["weights"] = { 0.0, 0.0, 0.0, 0.0 };
+    const auto fullChild = nlohmann::json::parse(
         linearNamJson(sr).toStdString());
     nlohmann::json root;
     root["version"] = "0.5.4";
     root["architecture"] = "SlimmableContainer";
     root["config"]["submodels"] = nlohmann::json::array({
-        { { "max_value", 0.5 }, { "model", child } },
-        { { "max_value", 1.0 }, { "model", child } }
+        { { "max_value", 0.5 }, { "model", slimChild } },
+        { { "max_value", 1.0 }, { "model", fullChild } }
     });
     root["weights"] = nlohmann::json::array();
     root["sample_rate"] = sr;
@@ -345,6 +366,40 @@ public:
                 static_cast<int>(
                    m->namModelCapability()->namModelInfo().kind),
                 static_cast<int>(NamModelKind::container));
+            const auto info = m->namModelCapability()->namModelInfo();
+            expect(info.fullQuality);
+            expectEquals(info.submodelCount, 2);
+
+            juce::AudioBuffer<float> buffer(1, 128);
+            buffer.clear();
+            buffer.setSample(0, 0, 1.0f);
+            m->process(
+                buffer,
+                moduleDefaults(ModuleType::neuralAmpModeler), {});
+            expect(buffer.getMagnitude(0, 128) > 0.1f,
+                   "The highest-quality container model must be active");
+            f.deleteFile();
+        }
+
+        beginTest("Model metadata and A1 generation are reported");
+        {
+            auto m = createDspModule(ModuleType::neuralAmpModeler);
+            m->prepare({ 48000.0, 512, 1 });
+            auto f = writeNam(metadataLinearNamJson(), "metadata");
+            PreparedNamModelPtr prepared;
+            expect(m->namModelCapability()
+                       ->prepareNamModel(f, prepared).wasOk());
+            expect(m->namModelCapability()
+                       ->commitPreparedNamModel(prepared));
+            const auto info = m->namModelCapability()->namModelInfo();
+            expectEquals(info.name, juce::String("Studio Lead"));
+            expectEquals(info.formatVersion, juce::String("0.7.0"));
+            expect(
+                info.generation == NamArchitectureGeneration::a1);
+            expect(info.captureDescription.contains("Example Amp 50"));
+            expect(info.captureDescription.contains("Cab included"));
+            expectWithinAbsoluteError(info.inputLevelDbU, 12.4, 0.001);
+            expectWithinAbsoluteError(info.validationEsr, 0.0025, 0.00001);
             f.deleteFile();
         }
 
@@ -653,6 +708,70 @@ public:
                        && module->namModelCapability()->hasNamModel(),
                    "Serialized processor state must restore the NAM model");
             f.deleteFile();
+        }
+
+        beginTest("Recursive NAM library validates, searches, and persists");
+        {
+            const auto root =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getNonexistentChildFile(
+                        "megaDSP-nam-browser", {}, true);
+            const auto nested = root.getChildFile("High Gain");
+            expect(nested.createDirectory().wasOk());
+            const auto cabModel =
+                nested.getChildFile("studio-lead.nam");
+            const auto ampModel = root.getChildFile("clean-amp.NAM");
+            const auto invalid = root.getChildFile("broken.nam");
+            expect(cabModel.replaceWithText(metadataLinearNamJson()));
+            auto ampJson = nlohmann::json::parse(
+                linearNamJson().toStdString());
+            ampJson["metadata"] = {
+                { "display_name", "Clean Platform" },
+                { "gear_make", "Example" },
+                { "gear_model", "Clean 100" },
+                { "tone_type", "clean" },
+                { "with_cab", false }
+            };
+            expect(ampModel.replaceWithText(
+                juce::String(ampJson.dump())));
+            expect(invalid.replaceWithText("{ not a model }"));
+
+            MegaDSPAudioProcessor browser;
+            expect(browser.setNamModelRootDirectory(root).wasOk());
+            expectEquals(browser.namModelLibrarySize(), 2);
+            expectEquals(
+                static_cast<int>(
+                    browser.searchNamModels("linear").size()),
+                2);
+            expectEquals(
+                static_cast<int>(
+                    browser.searchNamModels("cab").size()),
+                1);
+            expectEquals(
+                static_cast<int>(
+                    browser.searchNamModels("amp").size()),
+                1);
+            expectEquals(
+                static_cast<int>(
+                    browser.searchNamModels(
+                        "studio a1 cab sr:48000").size()),
+                1);
+            expect(browser.searchNamModels("a2").empty());
+
+            MegaDSPAudioProcessor inherited;
+            expectEquals(
+                inherited.namModelRootDirectory().getFullPathName(),
+                root.getFullPathName());
+            expectEquals(inherited.namModelLibrarySize(), 2);
+            const auto clean =
+                inherited.searchNamModels("clean platform");
+            expectEquals(static_cast<int>(clean.size()), 1);
+            if (!clean.empty())
+                expectEquals(
+                    clean.front().file.getFullPathName(),
+                    ampModel.getFullPathName());
+            root.deleteRecursively();
         }
     }
 };

@@ -6,6 +6,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -31,13 +32,27 @@ enum class NamCpuCapability
     slimmable
 };
 
+enum class NamArchitectureGeneration
+{
+    unknown,
+    a1,
+    a2
+};
+
 struct NamModelInfo
 {
     juce::String name;
     juce::String path;
+    juce::String formatVersion;
+    juce::String captureDescription;
     NamModelKind kind = NamModelKind::unknown;
     NamCpuCapability cpuCapability = NamCpuCapability::fullOnly;
+    NamArchitectureGeneration generation = NamArchitectureGeneration::unknown;
     double expectedSampleRate = -1.0;
+    double inputLevelDbU = std::numeric_limits<double>::quiet_NaN();
+    double validationEsr = std::numeric_limits<double>::quiet_NaN();
+    int submodelCount = 1;
+    bool fullQuality = true;
     bool valid = false;
 };
 
@@ -118,7 +133,7 @@ private:
 
     static constexpr int maxChannels = 2;
 
-    // Per-channel: two model variants (full / slim) with independent state
+    // Each channel owns the full-quality model selected during non-RT loading.
     std::unique_ptr<ChannelState> channels[maxChannels];
     juce::AudioBuffer<float> wetBuffer;
     std::array<std::array<Biquad, 3>, maxChannels> toneFilters {};

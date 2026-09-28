@@ -287,11 +287,14 @@ Modes are Hall, Chamber, and Plate. The interactive early-reflection and stereo 
 ## Convolution Reverb
 
 Loads mono or stereo WAV, AIFF, and FLAC impulse responses from the **Load IR…**
-button or by dropping a file on the graph. Its lower-CPU partitioned engine
-offers 256, 512, 1024, and 2048-sample wet buffers. Smaller values reduce
-pre-delay; larger values reduce CPU pressure. Dry remains immediate and host PDC
-stays at zero. Changing the buffer reconstructs populated A/B/C engines off the
-audio thread. IR file work stays off the audio thread.
+button or by dropping a file on the graph. Its partitioned Wet engine runs on a
+dedicated worker so FFT bursts cannot block the host audio callback. The 256,
+512, 1024, and 2048-sample wet buffers set the worker's minimum scheduling
+headroom (the host's maximum block size is also respected): smaller values
+reduce pre-delay, while larger values are more resilient at very small host
+block sizes. Dry remains immediate and host PDC stays at zero.
+Changing the buffer reconstructs populated A/B/C engines off the audio thread.
+IR decoding, engine preparation, and Wet convolution stay off the audio thread.
 
 The module uses the rack's expanded 640 px card and gives its left-hand library
 larger text, controls, and ten visible results per page. The library sets a root
@@ -313,13 +316,16 @@ Clicking a result prepares it into the selected bank; clicking A, B, or C then
 switches among those already prepared convolution engines without decoding a
 file on the audio thread.
 
-The normalised IR envelope has an unobstructed waveform area. A dedicated strip
-below it owns draggable **Low Cut** (high-pass) and **High Cut** (low-pass)
-handles that shape only the wet convolution signal. A separate control deck
-keeps **Dry**, **Wet**, **Ducking**, and **Output Trim** together rather than
-covering the waveform. Ducking applies up to 18 dB of smooth input-responsive
-attenuation to the filtered wet response and releases naturally into the tail.
-Dry and Wet are adjacent, independent linear 0–100% amplitude rails. Output
+The center panel is one rolling four-second spectrogram of the measured wet
+convolution output. Low-to-high frequency energy runs from bottom to top, newest
+audio enters at the right edge, and display-only gain keeps quiet tails visible
+without changing the sound. A dedicated strip below it owns draggable
+**Low Cut** (high-pass) and **High Cut** (low-pass) handles that shape only the
+wet convolution signal. A separate control deck keeps **Dry**, **Wet**,
+**Ducking**, and **Output Trim** together. Ducking applies up to 18 dB of smooth
+input-responsive attenuation to the filtered wet response and releases
+naturally into the tail. Dry and Wet are adjacent, independent linear 0–100%
+amplitude rails. Output
 Trim adjusts their sum. With no available IR, Wet contributes no signal and the
 result is `Dry × input × Output`. The absolute IR path is stored with plugin and
 preset state and follows rack reordering; if the file moves, the graph
@@ -850,6 +856,16 @@ tones powered by machine learning. Supports all standard NAM architectures
 (Linear, LSTM, WaveNet, ConvNet, Container) plus the A2 Standard (8-channel)
 and A2 Nano (3-channel) fast-path models.
 
+The expanded module card includes a recursive model browser. Choose one root
+directory and megaDSP persists it in both project state and user settings so
+new instances inherit it across DAW restarts. The catalog accepts structurally
+valid supported `.nam` files and ignores malformed or unsupported entries.
+Search covers model names, relative paths, amp/capture metadata, authors, and
+architectures; queries also accept `sr:48000`. The **A1**, **A2**, **CAB**, and
+**AMP** pills filter architecture generation and whether capture metadata says
+the cabinet is included. Results show model, capture, architecture, sample
+rate, and cabinet status and load directly when clicked.
+
 ### Controls
 
 | # | Control | Range | Default | Description |
@@ -867,7 +883,8 @@ dry comparison. `SlimmableContainer` models load at their full-size setting.
 
 With no model loaded, the module produces silence—no synthetic model signal is
 generated.
-The UI shows "No model loaded" and prompts the user to drop a `.nam` file.
+The UI shows "No model loaded" and prompts the user to choose from the inline
+library or drop a `.nam` file.
 
 ### Model File Licensing
 

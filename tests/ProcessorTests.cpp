@@ -318,6 +318,21 @@ public:
             expect(editor->cardChildrenFitForTesting());
         }
 
+        beginTest("Neural Amp Modeler browser uses the maximum card height");
+        {
+            auto namProcessor =
+                std::make_unique<MegaDSPAudioProcessor>();
+            namProcessor->prepareToPlay(48000.0, 512);
+            namProcessor->addModule(
+                megadsp::ModuleType::neuralAmpModeler);
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
+                *namProcessor, 1100, 720);
+            expectEquals(
+                editor->cardHeightForTesting(0),
+                megadsp::ui::moduleCardMaximumHeight);
+            expect(editor->cardChildrenFitForTesting());
+        }
+
         beginTest("Chain navigator reorders and inserts at every boundary");
         {
             auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();

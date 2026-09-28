@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 
 struct ImpulseResponseLibraryEntry
 {
@@ -14,6 +15,20 @@ struct ImpulseResponseLibraryEntry
     double sampleRate = 0.0;
     double durationSeconds = 0.0;
     int channelCount = 0;
+};
+
+struct NamModelLibraryEntry
+{
+    juce::File file;
+    juce::String relativePath;
+    juce::String displayName;
+    juce::String architecture;
+    juce::String captureDescription;
+    double sampleRate = 0.0;
+    double inputLevelDbU = std::numeric_limits<double>::quiet_NaN();
+    int submodelCount = 1;
+    int cabIncluded = -1;
+    bool isA2 = false;
 };
 
 class MegaDSPAudioProcessor final : public juce::AudioProcessor,
@@ -130,6 +145,12 @@ public:
         return getRack().impulseResponsePath(slot, lane);
     }
     juce::Result loadNamModel(int slot, const juce::File& file);
+    juce::Result setNamModelRootDirectory(const juce::File&);
+    juce::Result rebuildNamModelLibrary();
+    std::vector<NamModelLibraryEntry> searchNamModels(
+        const juce::String& query, int maximumResults = 200);
+    int namModelLibrarySize();
+    juce::File namModelRootDirectory() const;
     juce::Result clearNamModel(int slot)
     {
         if (!beginTopologyMutation())
@@ -313,6 +334,7 @@ private:
         const juce::AudioBuffer<float>* sidechain,
         double bpm);
     void ensureImpulseResponseLibrary();
+    void ensureNamModelLibrary();
     void serializeSnapshots(juce::ValueTree&) const;
     void restoreSnapshots(const juce::ValueTree&, int sourceSchema);
     megadsp::RackState& selectedSnapshotState() noexcept
@@ -387,6 +409,9 @@ private:
     juce::CriticalSection impulseResponseLibraryLock;
     std::vector<ImpulseResponseLibraryEntry> impulseResponseLibrary;
     juce::String indexedImpulseResponseRoot;
+    juce::CriticalSection namModelLibraryLock;
+    std::vector<NamModelLibraryEntry> namModelLibrary;
+    juce::String indexedNamModelRoot;
     int hostBypassWritePosition = 0;
     int lastHostBypassLatency = 0;
     std::atomic<bool> topologyMutationInProgress { false };

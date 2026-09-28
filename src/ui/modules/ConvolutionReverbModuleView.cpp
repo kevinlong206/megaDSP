@@ -47,8 +47,6 @@ private:
         juce::Rectangle<float>);
     static juce::Rectangle<float> controlsBounds(
         juce::Rectangle<float>);
-    static juce::Rectangle<float> viewSelectorBounds(
-        juce::Rectangle<float>);
     static juce::Rectangle<float> railBounds(
         juce::Rectangle<float>, int);
     static juce::Rectangle<float> railTrackBounds(
@@ -71,7 +69,7 @@ private:
     void paintLibrary(
         juce::Graphics&, juce::Rectangle<float>);
 
-    static constexpr int spectrogramFrameCount = 72;
+    static constexpr int spectrogramFrameCount = 120;
     static constexpr int browserRowsPerPage = 10;
     using SpectrumFrame =
         std::array<float, ConvolutionReverbModule::spectrumBandCount>;
@@ -79,7 +77,7 @@ private:
     std::uint64_t lastTelemetrySequence = 0;
     int spectrogramWritePosition = 0;
     int spectrogramCount = 0;
-    ViewMode viewMode = ViewMode::room;
+    ViewMode viewMode = ViewMode::history;
     juce::String searchText;
     std::array<bool, 5> filters {};
     std::vector<ImpulseResponseLibraryEntry> results;
@@ -99,10 +97,9 @@ void ConvolutionReverbModuleView::configureAccessibility(
         "into the selected A, B, or C audition bank. Switching banks uses "
         "already prepared convolution engines. You can also drop a WAV, "
         "AIFF, or FLAC impulse response file here. "
-        "The live stereo chamber shows measured wet output as expanding "
-        "left and right reflection rings. Ring colour follows the measured "
-        "brightness of the reverberation. Switch between Room, an EQ-style "
-        "wet Analyzer, and a rolling wet-only History spectrograph. "
+        "The live wet spectrogram shows the reverb's measured frequency "
+        "energy over the last four seconds, independent of the Wet level. "
+        "Low frequencies are at the bottom and newest audio is at the right. "
         "It has a separate Low Cut and High Cut passband strip. "
         "The adjacent Dry, Wet, Ducking, and Output Trim rails are directly "
         "editable. Double-click any rail or passband handle to restore its "
@@ -145,13 +142,6 @@ juce::Rectangle<float> ConvolutionReverbModuleView::waveformBounds(
     column.removeFromTop(23.0f);
     column.removeFromBottom(42.0f);
     return column;
-}
-
-juce::Rectangle<float> ConvolutionReverbModuleView::viewSelectorBounds(
-    juce::Rectangle<float> area)
-{
-    auto header = waveformColumn(area).removeFromTop(20.0f);
-    return header.removeFromRight(216.0f).reduced(1.0f);
 }
 
 juce::Rectangle<float> ConvolutionReverbModuleView::passbandBounds(
@@ -399,18 +389,6 @@ void ConvolutionReverbModuleView::mouseDown(
         return;
     }
     searchFocused = false;
-    const auto selector = viewSelectorBounds(area);
-    if (selector.contains(event.position))
-    {
-        const auto index = juce::jlimit(
-            0, 2,
-            static_cast<int>(
-                (event.position.x - selector.getX())
-                / (selector.getWidth() / 3.0f)));
-        viewMode = static_cast<ViewMode>(index);
-        repaint();
-        return;
-    }
     const auto passband = passbandBounds(area);
     const auto frequencyX = [&passband](float frequency)
     {
@@ -493,8 +471,12 @@ void ConvolutionReverbModuleView::timerCallback()
     auto& frame = spectrogram[
         static_cast<size_t>(spectrogramWritePosition)];
     for (size_t band = 0; band < frame.size(); ++band)
-        frame[band] = telemetry.values[
+    {
+        const auto magnitude = telemetry.values[
             ConvolutionReverbModule::spectrumBandStart + band];
+        frame[band] = std::isfinite(magnitude)
+            ? juce::jmax(0.0f, magnitude) : 0.0f;
+    }
     spectrogramWritePosition =
         (spectrogramWritePosition + 1) % spectrogramFrameCount;
     spectrogramCount = juce::jmin(
@@ -672,7 +654,7 @@ void ConvolutionReverbModuleView::paintLibrary(
     graphics.setColour(juce::Colours::white.withAlpha(0.48f));
     graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
     graphics.drawText(
-        "WET BUFFER  /  LOWER = LESS PRE-DELAY",
+        "WET BUFFER  /  LOWER = LESS PRE-DELAY  /  HIGHER = MORE SAFETY",
         bufferLabel.toNearestInt(),
         juce::Justification::centredLeft);
     for (int choice = 0;
@@ -789,38 +771,19 @@ void ConvolutionReverbModuleView::paint(
     auto header = column.removeFromTop(20.0f);
     auto nameBounds = header;
     if (name.isNotEmpty())
-        nameBounds.removeFromRight(222.0f);
+        nameBounds.removeFromRight(150.0f);
     graphics.drawText(
         name.isNotEmpty() ? name : "IMPULSE RESPONSE",
         nameBounds.toNearestInt(),
         juce::Justification::centredLeft);
     if (name.isNotEmpty())
     {
-        const auto selector = viewSelectorBounds(area);
-        const auto pillWidth = selector.getWidth() / 3.0f;
-        graphics.setColour(juce::Colours::white.withAlpha(0.08f));
-        graphics.fillRoundedRectangle(selector, 5.0f);
-        graphics.setColour(accent.withAlpha(0.72f));
-        graphics.fillRoundedRectangle(
-            juce::Rectangle<float>(
-                selector.getX()
-                    + static_cast<float>(static_cast<int>(viewMode))
-                          * pillWidth,
-                selector.getY(), pillWidth, selector.getHeight()),
-            5.0f);
-        graphics.setColour(juce::Colours::white.withAlpha(0.92f));
-        graphics.setFont(juce::FontOptions(7.5f, juce::Font::bold));
-        static constexpr std::array<const char*, 3> viewNames {
-            "ROOM", "ANALYZER", "HISTORY"
-        };
-        for (int index = 0; index < 3; ++index)
-            graphics.drawText(
-                viewNames[static_cast<size_t>(index)],
-                juce::Rectangle<float>(
-                    selector.getX() + static_cast<float>(index) * pillWidth,
-                    selector.getY(), pillWidth,
-                    selector.getHeight()).toNearestInt(),
-                juce::Justification::centred);
+        graphics.setColour(juce::Colours::white.withAlpha(0.52f));
+        graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
+        graphics.drawText(
+            "LIVE WET SPECTROGRAM",
+            header.removeFromRight(146.0f).toNearestInt(),
+            juce::Justification::centredRight);
     }
 
     if (name.isEmpty())
@@ -843,19 +806,16 @@ void ConvolutionReverbModuleView::paint(
             readContinuousTelemetry(telemetry)
             && telemetry.sequence != 0
             && telemetry.valueCount
-                   >= ConvolutionReverbModule::telemetryValueCount
-            && telemetry.historyValueCount
-                   >= ConvolutionReverbModule::telemetryHistoryCount
-            && telemetry.historyCount > 0;
+                   >= ConvolutionReverbModule::telemetryValueCount;
         if (viewMode == ViewMode::history)
         {
             const auto graphArea = waveform.reduced(11.0f, 18.0f);
-            graphics.setColour(juce::Colours::white.withAlpha(0.045f));
-            for (int division = 1; division < 4; ++division)
+            graphics.setColour(juce::Colours::white.withAlpha(0.05f));
+            for (int division = 1; division < 6; ++division)
             {
                 const auto y = graphArea.getY()
                     + graphArea.getHeight() * static_cast<float>(division)
-                          / 4.0f;
+                          / 6.0f;
                 graphics.drawHorizontalLine(
                     juce::roundToInt(y),
                     graphArea.getX(), graphArea.getRight());
@@ -872,7 +832,7 @@ void ConvolutionReverbModuleView::paint(
                 ? 0 : spectrogramWritePosition;
             const auto startX = graphArea.getRight()
                 - cellWidth * static_cast<float>(spectrogramCount);
-            const auto dark = juce::Colour(0xff111827);
+            const auto dark = juce::Colour(0xff101721);
             const auto warm = juce::Colour(0xffd85b72);
             const auto bright = juce::Colour(0xff78ddff);
             for (int frame = 0; frame < spectrogramCount; ++frame)
@@ -881,12 +841,13 @@ void ConvolutionReverbModuleView::paint(
                     (oldest + frame) % spectrogramFrameCount)];
                 for (size_t band = 0; band < spectrum.size(); ++band)
                 {
-                    const auto intensity = juce::jlimit(
+                    constexpr auto displayGainDb = 24.0f;
+                    const auto db = juce::Decibels::gainToDecibels(
+                        spectrum[band], -96.0f) + displayGainDb;
+                    const auto normalized = juce::jlimit(
                         0.0f, 1.0f,
-                        (juce::Decibels::gainToDecibels(
-                             spectrum[band], -84.0f)
-                         + 84.0f)
-                            / 72.0f);
+                        (db + 72.0f) / 72.0f);
+                    const auto intensity = std::sqrt(normalized);
                     auto colour = dark.interpolatedWith(
                         warm, juce::jmin(1.0f, intensity * 1.7f));
                     if (intensity > 0.58f)
@@ -895,7 +856,7 @@ void ConvolutionReverbModuleView::paint(
                     const auto y = graphArea.getBottom()
                         - static_cast<float>(band + 1) * cellHeight;
                     graphics.setColour(colour.withAlpha(
-                        0.18f + intensity * 0.82f));
+                        0.12f + intensity * 0.88f));
                     graphics.fillRect(
                         startX + static_cast<float>(frame) * cellWidth,
                         y, cellWidth + 0.6f, cellHeight + 0.6f);
@@ -903,17 +864,29 @@ void ConvolutionReverbModuleView::paint(
             }
             graphics.setColour(juce::Colours::white.withAlpha(0.55f));
             graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
+            const auto labels = waveform.reduced(7.0f);
             graphics.drawText(
-                "AIR", waveform.reduced(7.0f).toNearestInt(),
+                "12 kHz", labels.toNearestInt(),
                 juce::Justification::topLeft);
             graphics.drawText(
-                "LOW", waveform.reduced(7.0f).toNearestInt(),
+                "80 Hz", labels.toNearestInt(),
                 juce::Justification::bottomLeft);
+            const auto wetLevel = hasTelemetry
+                ? juce::jmax(
+                      telemetry.values[
+                          ConvolutionReverbModule::leftWetLevel],
+                      telemetry.values[
+                          ConvolutionReverbModule::rightWetLevel])
+                : 0.0f;
+            const auto wetDb = juce::Decibels::gainToDecibels(
+                wetLevel, -96.0f);
             graphics.drawText(
                 spectrogramCount > 0
-                    ? "WET SPECTROGRAPH  /  NEWEST"
+                    ? "4 SEC WET HISTORY  /  "
+                          + juce::String(wetDb, 1)
+                          + " dB  /  NEWEST"
                     : "PLAY AUDIO TO EXCITE THE IR",
-                waveform.reduced(7.0f).toNearestInt(),
+                labels.toNearestInt(),
                 juce::Justification::bottomRight);
         }
         else if (viewMode == ViewMode::analyzer)

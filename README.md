@@ -210,7 +210,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | Module | What it does |
 |---|---|
 | **Guitar Cabinet** | Cabinet convolution with 23 bundled mono/stereo IRs, user IR loading, wet-path passband and tone shaping, drive, mix, and output |
-| **Neural Amp Modeler** | Loads standard, A2, and SlimmableContainer `.nam` models with Pre Gain, a familiar Bass/Mid/Treble guitar tone stack, and Post Gain |
+| **Neural Amp Modeler** | Loads standard, A2, and slimmable `.nam` models at full quality; its persistent recursive model library validates supported files and provides inline name/path/metadata search plus A1, A2, Cab, and Amp filters |
 | **Velvet Drive** | Purely modeled touch-sensitive boutique amplifier with cascaded tube-style overdrive, interactive tone stack, power-supply bloom, and analytic speaker loads |
 
 ### Time-Based
@@ -220,7 +220,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Delay** | Editable tap timeline plus a 2D Rate/Depth Movement field; Sync toggles between free Time and synced Division |
 | **Diffusion Delay** | Full-width Time/Division and Cloud Density field with DSP-synchronized primary/cloud activity, energy, progress, and stereo placement |
 | **Algorithmic Reverb** | 16-line Hall, Chamber, and Plate network with input high-pass/low-pass filtering, smooth wet ducking, Decay, Room Scale, and independent Dry/Wet |
-| **Convolution Reverb** | Adjustable lower-CPU wet buffering with immediate unaligned Dry and zero host PDC; its inline library globally persists the selected root across DAW restarts and new instances, recursively validates WAV/AIFF/FLAC files, and provides immediate search/filtering plus three prepared A/B/C audition banks |
+| **Convolution Reverb** | Dedicated asynchronous Wet convolution with adjustable scheduling headroom, immediate unaligned Dry, and zero host PDC; its inline library globally persists the selected root across DAW restarts and new instances, recursively validates WAV/AIFF/FLAC files, and provides immediate search/filtering plus three prepared A/B/C audition banks and one measured four-second Wet spectrogram |
 | **Wormhole Convolution** | Loads two WAV, AIFF, or FLAC reverb IRs in parallel, with independent crop windows, reverse switches, and wet levels plus shared filtering, Dry, and Output |
 | **Portal Permuter** | Rearranges recent tempo-locked input slices, then sends them through a focused, positionable, reversible region of one loaded IR |
 | **IR Mosaic** | Slices one IR into eight edge-faded chunks, repeatedly selects a loudness-normalized shuffled space at a knob-controlled or synced rate, and crossfades tails without clicks |

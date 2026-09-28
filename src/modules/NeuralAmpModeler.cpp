@@ -35,6 +35,110 @@ float linMap(float lo, float hi, float n)
     return lo + (hi - lo) * juce::jlimit(0.0f, 1.0f, n);
 }
 
+juce::String jsonString(
+    const nlohmann::json& object, const char* key)
+{
+    const auto found = object.find(key);
+    return found != object.end() && found->is_string()
+        ? juce::String(found->get<std::string>())
+        : juce::String();
+}
+
+double jsonNumber(
+    const nlohmann::json& object, const char* key) noexcept
+{
+    const auto found = object.find(key);
+    return found != object.end() && found->is_number()
+        ? found->get<double>()
+        : std::numeric_limits<double>::quiet_NaN();
+}
+
+const nlohmann::json* highestQualityModel(
+    const nam::dspData& config, int& submodelCount)
+{
+    if (config.architecture != "SlimmableContainer"
+        && config.architecture != "Container")
+        return nullptr;
+
+    const auto found = config.config.find("submodels");
+    if (found == config.config.end() || !found->is_array()
+        || found->empty())
+        return nullptr;
+
+    submodelCount = static_cast<int>(found->size());
+    const nlohmann::json* selected = nullptr;
+    double highest = -std::numeric_limits<double>::infinity();
+    for (const auto& entry : *found)
+    {
+        const auto maxValue = entry.find("max_value");
+        const auto model = entry.find("model");
+        if (maxValue == entry.end() || !maxValue->is_number()
+            || model == entry.end() || !model->is_object())
+            continue;
+        const auto value = maxValue->get<double>();
+        if (value > highest)
+        {
+            highest = value;
+            selected = &*model;
+        }
+    }
+    return selected;
+}
+
+bool isA2Config(const nam::dspData& config)
+{
+#if defined(NAM_ENABLE_A2_FAST)
+    if (config.architecture == "WaveNet")
+    {
+        int channels = 0;
+        return nam::wavenet::a2_fast::is_a2_shape(
+            config.config, &channels);
+    }
+
+    int ignored = 1;
+    if (const auto* model = highestQualityModel(config, ignored))
+    {
+        if (model->value("architecture", std::string()) != "WaveNet")
+            return false;
+        const auto modelConfig = model->find("config");
+        if (modelConfig == model->end() || !modelConfig->is_object())
+            return false;
+        int channels = 0;
+        return nam::wavenet::a2_fast::is_a2_shape(
+            *modelConfig, &channels);
+    }
+#else
+    juce::ignoreUnused(config);
+#endif
+    return false;
+}
+
+juce::String captureDescription(const nlohmann::json& metadata)
+{
+    juce::StringArray parts;
+    auto gear = jsonString(metadata, "gear_make");
+    const auto model = jsonString(metadata, "gear_model");
+    if (model.isNotEmpty())
+        gear += (gear.isNotEmpty() ? " " : "") + model;
+    if (gear.isEmpty())
+        gear = jsonString(metadata, "gear_type");
+    if (gear.isNotEmpty())
+        parts.add(gear);
+
+    auto tone = jsonString(metadata, "tone_type");
+    if (tone.isNotEmpty())
+        parts.add(tone.substring(0, 1).toUpperCase() + tone.substring(1));
+
+    const auto withCab = metadata.find("with_cab");
+    if (withCab != metadata.end() && withCab->is_boolean())
+        parts.add(withCab->get<bool>() ? "Cab included" : "No cab");
+
+    const auto modeler = jsonString(metadata, "modeled_by");
+    if (modeler.isNotEmpty())
+        parts.add("by " + modeler);
+    return parts.joinIntoString(" | ");
+}
+
 void ensureNamConfigParsersRegistered()
 {
     static std::once_flag flag;
@@ -57,7 +161,7 @@ void ensureNamConfigParsersRegistered()
 }
 } // namespace
 
-// One model variant (full or slim) with its own resampler and buffers
+// One full-quality model with its own resampler and buffers.
 struct NeuralAmpModelerModule::ModelVariant
 {
     std::unique_ptr<nam::DSP> model;
@@ -99,31 +203,22 @@ struct NeuralAmpModelerModule::ModelVariant
     }
 };
 
-// Per-channel state: owns full and slim variants
+// Per-channel state owns only the full-quality variant.
 struct NeuralAmpModelerModule::ChannelState
 {
     std::unique_ptr<ModelVariant> full;
-    std::unique_ptr<ModelVariant> slim;
-    bool slimmable = false;
 
     ChannelState()
     {
         full = std::make_unique<ModelVariant>();
-        slim = std::make_unique<ModelVariant>();
     }
     void allocate(int block)
     {
         full->allocate(block);
-        slim->allocate(block);
     }
     void clearBufs()
     {
         full->clearBufs();
-        slim->clearBufs();
-    }
-    ModelVariant* variant(int mode)
-    {
-        return (mode == 0 && slimmable && slim->model) ? slim.get() : full.get();
     }
 };
 
@@ -325,10 +420,41 @@ juce::Result NeuralAmpModelerModule::prepareNamModel(
 
         load->info.name = file.getFileNameWithoutExtension();
         load->info.path = file.getFullPathName();
+        load->info.formatVersion =
+            juce::String(config.version);
         load->info.expectedSampleRate = mdl->GetExpectedSampleRate();
         load->info.valid = true;
+        load->info.generation = isA2Config(config)
+            ? NamArchitectureGeneration::a2
+            : NamArchitectureGeneration::a1;
+        load->info.submodelCount = 1;
+        highestQualityModel(config, load->info.submodelCount);
+        load->info.fullQuality = true;
 
-        // --- detect kind (item 3: authoritative A2) ---
+        if (config.metadata.is_object())
+        {
+            const auto displayName =
+                jsonString(config.metadata, "display_name");
+            const auto metadataName =
+                jsonString(config.metadata, "name");
+            if (displayName.isNotEmpty())
+                load->info.name = displayName;
+            else if (metadataName.isNotEmpty())
+                load->info.name = metadataName;
+            load->info.captureDescription =
+                captureDescription(config.metadata);
+            load->info.inputLevelDbU =
+                jsonNumber(config.metadata, "input_level_dbu");
+            load->info.validationEsr =
+                jsonNumber(config.metadata, "validation_esr");
+            const auto training = config.metadata.find("training");
+            if (!std::isfinite(load->info.validationEsr)
+                && training != config.metadata.end()
+                && training->is_object())
+                load->info.validationEsr =
+                    jsonNumber(*training, "validation_esr");
+        }
+
         NamModelKind kind = NamModelKind::unknown;
         if (config.architecture == "Linear") kind = NamModelKind::linear;
         else if (config.architecture == "LSTM") kind = NamModelKind::lstm;
@@ -368,21 +494,14 @@ juce::Result NeuralAmpModelerModule::prepareNamModel(
         const bool resample = std::abs(modelRate - hostRate) > 1.0;
         const int blk = juce::jmax(1, preparedBlock);
 
-        auto makeVariant = [&](std::unique_ptr<nam::DSP> m, bool doSlim)
+        auto makeVariant = [&](std::unique_ptr<nam::DSP> m)
             -> std::unique_ptr<ModelVariant>
         {
             auto v = std::make_unique<ModelVariant>();
             v->allocate(blk);
-            if (doSlim)
-            {
-                if (auto* si = dynamic_cast<nam::SlimmableModel*>(m.get()))
-                    si->SetSlimmableSize(0.0);
-            }
-            else if (isSlim)
-            {
-                if (auto* si = dynamic_cast<nam::SlimmableModel*>(m.get()))
-                    si->SetSlimmableSize(1.0);
-            }
+            if (auto* slimmable =
+                    dynamic_cast<nam::SlimmableModel*>(m.get()))
+                slimmable->SetSlimmableSize(1.0);
             if (resample)
             {
                 v->needsResample = true;
@@ -418,11 +537,9 @@ juce::Result NeuralAmpModelerModule::prepareNamModel(
         for (int ch = 0; ch < maxChannels; ++ch)
         {
             auto cs = std::make_unique<ChannelState>();
-            cs->slimmable = false;
-            // full variant
             auto fm = ch == 0 ? std::move(mdl) : loadModel();
             if (!fm) return juce::Result::fail("Stereo model failed.");
-            cs->full = makeVariant(std::move(fm), false);
+            cs->full = makeVariant(std::move(fm));
             cs->allocate(blk);
             load->ch[ch] = std::move(cs);
         }

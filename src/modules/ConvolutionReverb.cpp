@@ -15,16 +15,251 @@ using detail::exponential;
 using detail::lerp;
 
 struct ConvolutionReverbModule::Engine
+    : private juce::Thread
 {
     explicit Engine(int wetProcessingLatency)
-        : processor(
-              juce::dsp::Convolution::Latency {
-                  wetProcessingLatency },
-              convolutionMessageQueue())
+        : juce::Thread("megaDSP convolution"),
+          processor(
+              juce::dsp::Convolution::NonUniform {
+                  processingBlockSize },
+              convolutionMessageQueue()),
+          latencySamples(wetProcessingLatency)
     {
     }
 
+    ~Engine() override
+    {
+        stopProcessing();
+    }
+
+    void prepare(const juce::dsp::ProcessSpec& spec)
+    {
+        stopProcessing();
+        channelCount = juce::jlimit(
+            1, 2, static_cast<int>(spec.numChannels));
+        inputRing.setSize(
+            channelCount, ringCapacity, false, true, false);
+        outputRing.setSize(
+            channelCount, ringCapacity, false, true, false);
+        workerBuffer.setSize(
+            channelCount, processingBlockSize, false, true, false);
+        auto workerSpec = spec;
+        workerSpec.maximumBlockSize = processingBlockSize;
+        processor.prepare(workerSpec);
+        effectiveLatencySamples = juce::jmax(
+            latencySamples,
+            static_cast<int>(spec.maximumBlockSize));
+        prepared = true;
+        resetState();
+    }
+
+    void startProcessing()
+    {
+        if (!prepared || isThreadRunning())
+            return;
+        resetState();
+        startThread(juce::Thread::Priority::high);
+    }
+
+    void stopProcessing()
+    {
+        if (isThreadRunning())
+        {
+            signalThreadShouldExit();
+            stopThread(2000);
+        }
+    }
+
+    void reset()
+    {
+        const auto wasRunning = isThreadRunning();
+        stopProcessing();
+        processor.reset();
+        resetState();
+        if (wasRunning)
+            startThread(juce::Thread::Priority::high);
+    }
+
+    void process(
+        juce::AudioBuffer<float>& buffer, int samples,
+        bool nonRealtime)
+    {
+        jassert(samples <= buffer.getNumSamples());
+        const auto channels = juce::jmin(
+            channelCount, buffer.getNumChannels());
+        const auto write = inputWrite.load(std::memory_order_relaxed);
+        const auto read = inputRead.load(std::memory_order_acquire);
+        if (write - read + static_cast<std::uint64_t>(samples)
+            < ringCapacity)
+        {
+            for (int channel = 0; channel < channels; ++channel)
+                copyToRing(
+                    inputRing.getWritePointer(channel), write,
+                    buffer.getReadPointer(channel), samples);
+            inputWrite.store(
+                write + static_cast<std::uint64_t>(samples),
+                std::memory_order_release);
+        }
+
+        buffer.clear(0, samples);
+        auto destinationOffset = 0;
+        if (startupSamplesRemaining > 0)
+        {
+            const auto silentSamples = juce::jmin(
+                startupSamplesRemaining, samples);
+            startupSamplesRemaining -= silentSamples;
+            destinationOffset += silentSamples;
+        }
+
+        auto outputReadPosition =
+            outputRead.load(std::memory_order_relaxed);
+        const auto wanted = samples - destinationOffset;
+        if (nonRealtime && wanted > 0)
+        {
+            const auto requiredEnd = outputReadPosition
+                + lateOutputSamples
+                + static_cast<std::uint64_t>(wanted);
+            const auto timeout =
+                juce::Time::getMillisecondCounterHiRes() + 5000.0;
+            while (outputWrite.load(std::memory_order_acquire)
+                       < requiredEnd
+                   && isThreadRunning()
+                   && juce::Time::getMillisecondCounterHiRes()
+                          < timeout)
+                juce::Thread::yield();
+        }
+        const auto availableEnd =
+            outputWrite.load(std::memory_order_acquire);
+        auto available = availableEnd - outputReadPosition;
+        const auto discard = juce::jmin(
+            lateOutputSamples, available);
+        outputReadPosition += discard;
+        available -= discard;
+        lateOutputSamples -= discard;
+
+        const auto ready = static_cast<int>(juce::jmin(
+            static_cast<std::uint64_t>(wanted), available));
+        for (int channel = 0; channel < channels; ++channel)
+            copyFromRing(
+                buffer.getWritePointer(channel) + destinationOffset,
+                outputRing.getReadPointer(channel),
+                outputReadPosition, ready);
+        outputRead.store(
+            outputReadPosition + static_cast<std::uint64_t>(ready),
+            std::memory_order_release);
+        lateOutputSamples +=
+            static_cast<std::uint64_t>(wanted - ready);
+    }
+
     juce::dsp::Convolution processor;
+
+private:
+    static constexpr int processingBlockSize = 256;
+    static constexpr int ringCapacity = 16384;
+    static constexpr std::uint64_t ringMask = ringCapacity - 1;
+    static_assert((ringCapacity & (ringCapacity - 1)) == 0);
+
+    static void copyToRing(
+        float* ring, std::uint64_t position,
+        const float* source, int samples)
+    {
+        const auto offset = static_cast<int>(position & ringMask);
+        const auto first = juce::jmin(samples, ringCapacity - offset);
+        juce::FloatVectorOperations::copy(
+            ring + offset, source, first);
+        if (first < samples)
+            juce::FloatVectorOperations::copy(
+                ring, source + first, samples - first);
+    }
+
+    static void copyFromRing(
+        float* destination, const float* ring,
+        std::uint64_t position, int samples)
+    {
+        const auto offset = static_cast<int>(position & ringMask);
+        const auto first = juce::jmin(samples, ringCapacity - offset);
+        juce::FloatVectorOperations::copy(
+            destination, ring + offset, first);
+        if (first < samples)
+            juce::FloatVectorOperations::copy(
+                destination + first, ring, samples - first);
+    }
+
+    void resetState()
+    {
+        inputRing.clear();
+        outputRing.clear();
+        workerBuffer.clear();
+        inputRead.store(0, std::memory_order_relaxed);
+        inputWrite.store(0, std::memory_order_relaxed);
+        outputRead.store(0, std::memory_order_relaxed);
+        outputWrite.store(0, std::memory_order_relaxed);
+        startupSamplesRemaining = effectiveLatencySamples;
+        lateOutputSamples = 0;
+    }
+
+    void run() override
+    {
+        while (!threadShouldExit())
+        {
+            const auto read =
+                inputRead.load(std::memory_order_relaxed);
+            const auto write =
+                inputWrite.load(std::memory_order_acquire);
+            const auto outputWritePosition =
+                outputWrite.load(std::memory_order_relaxed);
+            const auto outputReadPosition =
+                outputRead.load(std::memory_order_acquire);
+            const auto hasInput =
+                write - read >= processingBlockSize;
+            const auto hasOutputSpace =
+                outputWritePosition - outputReadPosition
+                    + processingBlockSize
+                < ringCapacity;
+            if (!hasInput || !hasOutputSpace)
+            {
+                wait(1);
+                continue;
+            }
+
+            for (int channel = 0; channel < channelCount; ++channel)
+                copyFromRing(
+                    workerBuffer.getWritePointer(channel),
+                    inputRing.getReadPointer(channel), read,
+                    processingBlockSize);
+            inputRead.store(
+                read + processingBlockSize,
+                std::memory_order_release);
+
+            juce::dsp::AudioBlock<float> block(workerBuffer);
+            juce::dsp::ProcessContextReplacing<float> context(block);
+            processor.process(context);
+
+            for (int channel = 0; channel < channelCount; ++channel)
+                copyToRing(
+                    outputRing.getWritePointer(channel),
+                    outputWritePosition,
+                    workerBuffer.getReadPointer(channel),
+                    processingBlockSize);
+            outputWrite.store(
+                outputWritePosition + processingBlockSize,
+                std::memory_order_release);
+        }
+    }
+
+    const int latencySamples;
+    int effectiveLatencySamples = latencySamples;
+    int channelCount = 2;
+    bool prepared = false;
+    juce::AudioBuffer<float> inputRing;
+    juce::AudioBuffer<float> outputRing;
+    juce::AudioBuffer<float> workerBuffer;
+    alignas(64) std::atomic<std::uint64_t> inputRead { 0 };
+    alignas(64) std::atomic<std::uint64_t> inputWrite { 0 };
+    alignas(64) std::atomic<std::uint64_t> outputRead { 0 };
+    alignas(64) std::atomic<std::uint64_t> outputWrite { 0 };
+    int startupSamplesRemaining = 0;
+    std::uint64_t lateOutputSamples = 0;
 };
 
 struct ConvolutionReverbModule::PreparedLoad final
@@ -79,7 +314,7 @@ void ConvolutionReverbModule::prepare(const juce::dsp::ProcessSpec& spec)
     preparedSpec = spec;
     sampleRate = spec.sampleRate;
     for (auto& bank : banks)
-        bank->engine->processor.prepare(spec);
+        bank->engine->prepare(spec);
     lowCut.prepare(spec);
     highCut.prepare(spec);
     lowCut.setType(juce::dsp::StateVariableTPTFilterType::highpass);
@@ -110,6 +345,10 @@ void ConvolutionReverbModule::prepare(const juce::dsp::ProcessSpec& spec)
             / static_cast<float>(sampleRate));
     }
     reset();
+    const auto bank = activeBank.load(std::memory_order_acquire);
+    if (banks[static_cast<size_t>(bank)]->available.load(
+            std::memory_order_acquire))
+        banks[static_cast<size_t>(bank)]->engine->startProcessing();
 }
 
 void ConvolutionReverbModule::reset()
@@ -185,7 +424,9 @@ void ConvolutionReverbModule::process(
         juce::dsp::ProcessContextReplacing<float> wetContext(wetBlock);
         banks[static_cast<size_t>(
             activeBank.load(std::memory_order_acquire))]
-            ->engine->processor.process(wetContext);
+            ->engine->process(
+                wetBuffer, buffer.getNumSamples(),
+                environment.nonRealtime);
         wetAvailable = true;
         lowCut.setCutoffFrequency(
             exponential(20.0f, 1000.0f, controls[0]));
@@ -486,7 +727,7 @@ juce::Result ConvolutionReverbModule::prepareImpulseResponseInternal(
         juce::dsp::Convolution::Stereo::yes,
         juce::dsp::Convolution::Trim::yes,
         juce::dsp::Convolution::Normalise::yes);
-    prepared->engine->processor.prepare(preparedSpec);
+    prepared->engine->prepare(preparedSpec);
     prepared->name = file.getFileName();
     prepared->preview = newPreview;
     prepared->lengthSeconds =
@@ -527,6 +768,7 @@ bool ConvolutionReverbModule::commitPreparedImpulseResponseToBank(
     }
     if (bankIndex == activeBank.load(std::memory_order_acquire))
     {
+        bank.engine->startProcessing();
         lowCut.reset();
         highCut.reset();
         wetBuffer.clear();
@@ -541,8 +783,13 @@ bool ConvolutionReverbModule::selectImpulseResponseBank(int bank)
 {
     if (!juce::isPositiveAndBelow(bank, impulseBankCount))
         return false;
+    const auto previous = activeBank.load(std::memory_order_acquire);
+    banks[static_cast<size_t>(previous)]->engine->stopProcessing();
     activeBank.store(bank, std::memory_order_release);
     banks[static_cast<size_t>(bank)]->engine->processor.reset();
+    if (banks[static_cast<size_t>(bank)]->available.load(
+            std::memory_order_acquire))
+        banks[static_cast<size_t>(bank)]->engine->startProcessing();
     lowCut.reset();
     highCut.reset();
     wetBuffer.clear();
@@ -556,6 +803,7 @@ void ConvolutionReverbModule::clearAllImpulseResponseBanks()
     const juce::ScopedLock lock(metadataLock);
     for (auto& bank : banks)
     {
+        bank->engine->stopProcessing();
         bank->engine->processor.reset();
         bank->name.clear();
         bank->preview.fill(0.0f);
@@ -592,6 +840,7 @@ void ConvolutionReverbModule::clearImpulseResponse()
         activeBank.load(std::memory_order_acquire))];
     {
         const juce::ScopedLock lock(metadataLock);
+        bank.engine->stopProcessing();
         bank.name.clear();
         bank.preview.fill(0.0f);
         bank.lengthSeconds.store(0.0, std::memory_order_relaxed);

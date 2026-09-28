@@ -21,6 +21,7 @@ struct ProcessEnvironment
     const juce::AudioBuffer<float>* sidechain = nullptr;
     double bpm = 120.0;
     bool captureTelemetry = false;
+    bool nonRealtime = false;
 };
 
 enum class DryPathTiming
