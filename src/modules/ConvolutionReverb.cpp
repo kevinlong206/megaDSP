@@ -17,7 +17,8 @@ struct ConvolutionReverbModule::Engine
 {
     Engine()
         : processor(
-              juce::dsp::Convolution::NonUniform { 256 },
+              juce::dsp::Convolution::Latency {
+                  wetProcessingLatencySamples },
               convolutionMessageQueue())
     {
     }
@@ -192,28 +193,42 @@ void ConvolutionReverbModule::process(
         const auto dryGain = drySmoothed.getNextValue();
         const auto duckAmountDb = duckAmountSmoothed.getNextValue();
         const auto output = outputSmoothed.getNextValue();
-        auto linkedInput = std::abs(buffer.getSample(0, sample));
-        if (buffer.getNumChannels() > 1)
-            linkedInput = juce::jmax(
-                linkedInput, std::abs(buffer.getSample(1, sample)));
-        const auto detectorCoefficient =
-            linkedInput > duckEnvelope ? detectorAttack : detectorRelease;
-        duckEnvelope = detectorCoefficient * duckEnvelope
-                       + (1.0f - detectorCoefficient) * linkedInput;
-        auto activity = juce::jlimit(
-            0.0f, 1.0f,
-            (juce::Decibels::gainToDecibels(
-                 duckEnvelope, -100.0f)
-             + 48.0f)
-                / 36.0f);
-        activity = activity * activity * (3.0f - 2.0f * activity);
-        const auto targetDuckGainDb = -duckAmountDb * activity;
-        const auto duckCoefficient =
-            targetDuckGainDb < duckGainDb ? gainAttack : gainRelease;
-        duckGainDb = duckCoefficient * duckGainDb
-                     + (1.0f - duckCoefficient) * targetDuckGainDb;
-        const auto duckGain =
-            juce::Decibels::decibelsToGain(duckGainDb);
+        auto duckGain = 1.0f;
+        if (duckAmountDb > 0.0001f || std::abs(duckGainDb) > 0.001f)
+        {
+            auto linkedInput = std::abs(buffer.getSample(0, sample));
+            if (buffer.getNumChannels() > 1)
+                linkedInput = juce::jmax(
+                    linkedInput, std::abs(buffer.getSample(1, sample)));
+            const auto detectorCoefficient =
+                linkedInput > duckEnvelope
+                    ? detectorAttack : detectorRelease;
+            duckEnvelope = detectorCoefficient * duckEnvelope
+                           + (1.0f - detectorCoefficient) * linkedInput;
+            auto activity = juce::jlimit(
+                0.0f, 1.0f,
+                (juce::Decibels::gainToDecibels(
+                     duckEnvelope, -100.0f)
+                 + 48.0f)
+                    / 36.0f);
+            activity = activity * activity
+                * (3.0f - 2.0f * activity);
+            const auto targetDuckGainDb =
+                -duckAmountDb * activity;
+            const auto duckCoefficient =
+                targetDuckGainDb < duckGainDb
+                    ? gainAttack : gainRelease;
+            duckGainDb = duckCoefficient * duckGainDb
+                         + (1.0f - duckCoefficient)
+                               * targetDuckGainDb;
+            duckGain =
+                juce::Decibels::decibelsToGain(duckGainDb);
+        }
+        else
+        {
+            duckEnvelope = 0.0f;
+            duckGainDb = 0.0f;
+        }
         std::array<float, 2> telemetryWet {};
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
         {

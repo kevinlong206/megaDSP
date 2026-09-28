@@ -12,6 +12,7 @@ class ConvolutionReverbModule final
 public:
     static constexpr int spectrumBandCount = 12;
     static constexpr int impulseBankCount = 3;
+    static constexpr int wetProcessingLatencySamples = 2048;
 
     enum TelemetryValue
     {

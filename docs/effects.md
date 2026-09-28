@@ -176,9 +176,12 @@ embedded IR.
 | 7 | Mix | 0–100% | 100% | Blends immediate source and cabinet signal |
 | 8 | Output | -18..+12 dB | 0 dB | Sets final level |
 
-Convolution uses the shared JUCE non-uniform engine with a 256-sample head.
-File decoding and engine construction stay off the audio thread, and prepared
-engines are committed while processing is suspended. Mono IRs preserve stereo
+Convolution uses the shared JUCE fixed-latency engine with a 2048-sample wet
+processing buffer to lower and stabilize audio-thread CPU. Dry remains
+immediate and the module reports zero host latency, so wet is intentionally
+unaligned and begins after the internal buffer. File decoding and engine
+construction stay off the audio thread, and prepared engines are committed
+while processing is suspended. Mono IRs preserve stereo
 input by applying the same response independently; stereo IRs preserve their
 encoded channel differences. Bundled and user-loaded IRs receive bounded
 pink-noise-weighted gain calibration so cabinet changes retain their tonal
@@ -286,7 +289,7 @@ Modes are Hall, Chamber, and Plate. The interactive early-reflection and stereo 
 
 ## Convolution Reverb
 
-Loads mono or stereo WAV, AIFF, and FLAC impulse responses from the **Load IR…** button or by dropping a file on the graph. Uses JUCE non-uniform partitioned convolution with a 256-sample head. IR file work stays off the audio thread.
+Loads mono or stereo WAV, AIFF, and FLAC impulse responses from the **Load IR…** button or by dropping a file on the graph. Its lower-CPU partitioned engine buffers only the wet path by at least 2048 samples; Dry remains immediate and host PDC stays at zero. IR file work stays off the audio thread.
 
 The module uses the rack's expanded 640 px card and gives its left-hand library
 larger text, controls, and ten visible results per page. The library sets a root

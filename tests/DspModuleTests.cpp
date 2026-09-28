@@ -1127,9 +1127,13 @@ public:
             convolutionBlock.clear();
             convolution.process(convolutionBlock, controls, environment);
         }
-        juce::AudioBuffer<float> stereoRender(2, 4096);
+        constexpr auto wetLatency =
+            ConvolutionReverbModule::wetProcessingLatencySamples;
+        juce::AudioBuffer<float> stereoRender(
+            2, 4096 + wetLatency);
         stereoRender.clear();
-        for (int block = 0; block < 8; ++block)
+        for (int block = 0;
+             block < stereoRender.getNumSamples() / 512; ++block)
         {
             convolutionBlock.clear();
             if (block == 0)
@@ -1143,10 +1147,14 @@ public:
                     channel, block * 512,
                     convolutionBlock, channel, 0, 512);
         }
-        expect(std::abs(stereoRender.getSample(0, 1200))
-               > std::abs(stereoRender.getSample(1, 1200)) + 0.01f);
-        expect(std::abs(stereoRender.getSample(1, 1800))
-               > std::abs(stereoRender.getSample(0, 1800)) + 0.01f);
+        expect(std::abs(stereoRender.getSample(0, 1200 + wetLatency))
+               > std::abs(
+                     stereoRender.getSample(1, 1200 + wetLatency))
+                     + 0.01f);
+        expect(std::abs(stereoRender.getSample(1, 1800 + wetLatency))
+               > std::abs(
+                     stereoRender.getSample(0, 1800 + wetLatency))
+                     + 0.01f);
 
         const auto renderConvolution =
             [&spec, &environment, &impulseFile](
@@ -1370,14 +1378,27 @@ public:
         expect(readinessConvolution.isImpulseReady());
         expectEquals(readinessConvolution.impulseName(),
                      replacementFile.getFileName());
-        pendingWetOnly.clear();
-        pendingWetOnly.setSample(0, 0, 1.0f);
-        pendingWetOnly.setSample(1, 0, 1.0f);
-        readinessConvolution.process(
-            pendingWetOnly, wetOnlyControls, environment);
-        expect(pendingWetOnly.findMinMax(
-                   0, 0, pendingWetOnly.getNumSamples())
-                   .getStart() < -0.01f);
+        auto minimumReplacementSample = 0.0f;
+        constexpr auto replacementBlocks =
+            ConvolutionReverbModule::wetProcessingLatencySamples
+                / 512
+            + 2;
+        for (int block = 0; block < replacementBlocks; ++block)
+        {
+            pendingWetOnly.clear();
+            if (block == 0)
+            {
+                pendingWetOnly.setSample(0, 0, 1.0f);
+                pendingWetOnly.setSample(1, 0, 1.0f);
+            }
+            readinessConvolution.process(
+                pendingWetOnly, wetOnlyControls, environment);
+            minimumReplacementSample = juce::jmin(
+                minimumReplacementSample,
+                pendingWetOnly.findMinMax(
+                    0, 0, pendingWetOnly.getNumSamples()).getStart());
+        }
+        expect(minimumReplacementSample < -0.01f);
 
         readinessConvolution.clearImpulseResponse();
         expect(!readinessConvolution.hasImpulseResponse());

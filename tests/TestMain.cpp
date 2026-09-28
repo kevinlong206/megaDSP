@@ -395,11 +395,23 @@ public:
         capabilityRack.process(
             rackConvolutionBlock, nullptr, 120.0);
         setCapabilityType(1, megadsp::ModuleType::equalizer);
-        rackConvolutionBlock.clear();
-        capabilityRack.process(
-            rackConvolutionBlock, nullptr, 120.0);
-        expect(rackConvolutionBlock.getMagnitude(
-                   0, rackConvolutionBlock.getNumSamples()) > 0.01f);
+        auto delayedWetMagnitude = 0.0f;
+        constexpr auto delayedWetBlocks =
+            megadsp::ConvolutionReverbModule::
+                wetProcessingLatencySamples
+                / 512
+            + 2;
+        for (int block = 0; block < delayedWetBlocks; ++block)
+        {
+            rackConvolutionBlock.clear();
+            capabilityRack.process(
+                rackConvolutionBlock, nullptr, 120.0);
+            delayedWetMagnitude = juce::jmax(
+                delayedWetMagnitude,
+                rackConvolutionBlock.getMagnitude(
+                    0, rackConvolutionBlock.getNumSamples()));
+        }
+        expect(delayedWetMagnitude > 0.01f);
         capabilityRack.clearSlot(1);
         capabilityRack.synchronizeModules();
 
