@@ -12,7 +12,10 @@ class ConvolutionReverbModule final
 public:
     static constexpr int spectrumBandCount = 12;
     static constexpr int impulseBankCount = 3;
-    static constexpr int wetProcessingLatencySamples = 2048;
+    static constexpr int defaultWetProcessingLatencySamples = 2048;
+    static constexpr std::array<int, 4> wetProcessingLatencyChoices {
+        256, 512, 1024, 2048
+    };
 
     enum TelemetryValue
     {
@@ -55,6 +58,12 @@ public:
         int bank, PreparedImpulseResponsePtr&);
     bool selectImpulseResponseBank(int bank);
     void clearAllImpulseResponseBanks();
+    void setWetProcessingLatencySamples(int samples) noexcept;
+    int getWetProcessingLatencySamples() const noexcept
+    {
+        return configuredWetProcessingLatencySamples.load(
+            std::memory_order_acquire);
+    }
     int activeImpulseResponseBank() const noexcept
     {
         return activeBank.load(std::memory_order_acquire);
@@ -109,6 +118,9 @@ private:
 
     std::array<std::unique_ptr<Bank>, impulseBankCount> banks;
     std::atomic<int> activeBank { 0 };
+    std::atomic<int> configuredWetProcessingLatencySamples {
+        defaultWetProcessingLatencySamples
+    };
     juce::dsp::StateVariableTPTFilter<float> lowCut;
     juce::dsp::StateVariableTPTFilter<float> highCut;
     juce::AudioBuffer<float> wetBuffer;

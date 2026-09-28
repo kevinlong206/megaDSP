@@ -792,6 +792,11 @@ void EffectRack::moveSlot(int source, int destination)
         ? state->slots[static_cast<size_t>(source)]
               .convolutionActiveBank
         : 0;
+    const auto movingConvolutionWetBuffer = state != nullptr
+        ? state->slots[static_cast<size_t>(source)]
+              .convolutionWetBufferSamples
+        : ConvolutionReverbModule::
+              defaultWetProcessingLatencySamples;
     const auto movingNam = readNam(source);
     if (source < destination)
         for (int index = source; index < destination; ++index)
@@ -809,6 +814,10 @@ void EffectRack::moveSlot(int source, int destination)
                     .convolutionActiveBank =
                         state->slots[static_cast<size_t>(index + 1)]
                             .convolutionActiveBank;
+                state->slots[static_cast<size_t>(index)]
+                    .convolutionWetBufferSamples =
+                        state->slots[static_cast<size_t>(index + 1)]
+                            .convolutionWetBufferSamples;
             }
             writeNam(index, readNam(index + 1));
         }
@@ -828,6 +837,10 @@ void EffectRack::moveSlot(int source, int destination)
                     .convolutionActiveBank =
                         state->slots[static_cast<size_t>(index - 1)]
                             .convolutionActiveBank;
+                state->slots[static_cast<size_t>(index)]
+                    .convolutionWetBufferSamples =
+                        state->slots[static_cast<size_t>(index - 1)]
+                            .convolutionWetBufferSamples;
             }
             writeNam(index, readNam(index - 1));
         }
@@ -840,6 +853,9 @@ void EffectRack::moveSlot(int source, int destination)
             .convolutionImpulseBankPaths = movingConvolutionBanks;
         state->slots[static_cast<size_t>(destination)]
             .convolutionActiveBank = movingConvolutionActive;
+        state->slots[static_cast<size_t>(destination)]
+            .convolutionWetBufferSamples =
+                movingConvolutionWetBuffer;
     }
     writeNam(destination, movingNam);
 }
@@ -866,6 +882,10 @@ void EffectRack::clearSlot(int slot)
             .convolutionImpulseBankPaths.fill({});
         state->slots[static_cast<size_t>(slot)]
             .convolutionActiveBank = 0;
+        state->slots[static_cast<size_t>(slot)]
+            .convolutionWetBufferSamples =
+                ConvolutionReverbModule::
+                    defaultWetProcessingLatencySamples;
     }
     setNamPath(slot, {});
 }
@@ -907,6 +927,10 @@ void EffectRack::clearModuleDataState()
                 .convolutionImpulseBankPaths.fill({});
             state->slots[static_cast<size_t>(slot)]
                 .convolutionActiveBank = 0;
+            state->slots[static_cast<size_t>(slot)]
+                .convolutionWetBufferSamples =
+                    ConvolutionReverbModule::
+                        defaultWetProcessingLatencySamples;
         }
         setNamPath(slot, {});
     }
@@ -1188,6 +1212,38 @@ juce::String EffectRack::convolutionImpulseResponseBankName(
                 selectedModule(rackSlot)))
         return convolution->impulseResponseBankName(bank);
     return {};
+}
+
+bool EffectRack::setConvolutionWetBufferSamples(
+    int slot, int samples)
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return false;
+    auto& rackSlot = slots[static_cast<size_t>(slot)];
+    auto* convolution = dynamic_cast<ConvolutionReverbModule*>(
+        selectedModule(rackSlot));
+    if (convolution == nullptr)
+        return false;
+    convolution->setWetProcessingLatencySamples(samples);
+    if (state != nullptr)
+        state->slots[static_cast<size_t>(slot)]
+            .convolutionWetBufferSamples =
+                convolution->getWetProcessingLatencySamples();
+    return true;
+}
+
+int EffectRack::convolutionWetBufferSamples(int slot) const
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return ConvolutionReverbModule::
+            defaultWetProcessingLatencySamples;
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (const auto* convolution =
+            dynamic_cast<const ConvolutionReverbModule*>(
+                selectedModule(rackSlot)))
+        return convolution->getWetProcessingLatencySamples();
+    return ConvolutionReverbModule::
+        defaultWetProcessingLatencySamples;
 }
 
 void EffectRack::cancelImpulseResponse(

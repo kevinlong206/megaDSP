@@ -176,12 +176,9 @@ embedded IR.
 | 7 | Mix | 0–100% | 100% | Blends immediate source and cabinet signal |
 | 8 | Output | -18..+12 dB | 0 dB | Sets final level |
 
-Convolution uses the shared JUCE fixed-latency engine with a 2048-sample wet
-processing buffer to lower and stabilize audio-thread CPU. Dry remains
-immediate and the module reports zero host latency, so wet is intentionally
-unaligned and begins after the internal buffer. File decoding and engine
-construction stay off the audio thread, and prepared engines are committed
-while processing is suspended. Mono IRs preserve stereo
+Convolution uses the shared JUCE non-uniform engine with a 256-sample head.
+File decoding and engine construction stay off the audio thread, and prepared
+engines are committed while processing is suspended. Mono IRs preserve stereo
 input by applying the same response independently; stereo IRs preserve their
 encoded channel differences. Bundled and user-loaded IRs receive bounded
 pink-noise-weighted gain calibration so cabinet changes retain their tonal
@@ -289,12 +286,21 @@ Modes are Hall, Chamber, and Plate. The interactive early-reflection and stereo 
 
 ## Convolution Reverb
 
-Loads mono or stereo WAV, AIFF, and FLAC impulse responses from the **Load IR…** button or by dropping a file on the graph. Its lower-CPU partitioned engine buffers only the wet path by at least 2048 samples; Dry remains immediate and host PDC stays at zero. IR file work stays off the audio thread.
+Loads mono or stereo WAV, AIFF, and FLAC impulse responses from the **Load IR…**
+button or by dropping a file on the graph. Its lower-CPU partitioned engine
+offers 256, 512, 1024, and 2048-sample wet buffers. Smaller values reduce
+pre-delay; larger values reduce CPU pressure. Dry remains immediate and host PDC
+stays at zero. Changing the buffer reconstructs populated A/B/C engines off the
+audio thread. IR file work stays off the audio thread.
 
 The module uses the rack's expanded 640 px card and gives its left-hand library
 larger text, controls, and ten visible results per page. The library sets a root
-directory that is saved with plugin state. megaDSP recursively indexes that
-tree and keeps only files that can be opened as valid audio. Search matches
+directory that is saved both with plugin state and in megaDSP's user-level
+settings. Project instances retain their own root, while new instances inherit
+the last explicitly selected valid root across DAW restarts. The validated
+catalog is rebuilt from that root when needed rather than serializing stale file
+metadata. megaDSP recursively indexes that tree and keeps only files that can be
+opened as valid audio. Search matches
 names and relative folder paths; direct filter pills select mono, stereo, under
 1 second, 1-3 seconds, or over 3 seconds. Text queries also accept exact
 sample-rate filters such as `sr:48000`. The inline result list shows channel

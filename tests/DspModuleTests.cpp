@@ -1128,7 +1128,8 @@ public:
             convolution.process(convolutionBlock, controls, environment);
         }
         constexpr auto wetLatency =
-            ConvolutionReverbModule::wetProcessingLatencySamples;
+            ConvolutionReverbModule::
+                defaultWetProcessingLatencySamples;
         juce::AudioBuffer<float> stereoRender(
             2, 4096 + wetLatency);
         stereoRender.clear();
@@ -1380,7 +1381,8 @@ public:
                      replacementFile.getFileName());
         auto minimumReplacementSample = 0.0f;
         constexpr auto replacementBlocks =
-            ConvolutionReverbModule::wetProcessingLatencySamples
+            ConvolutionReverbModule::
+                defaultWetProcessingLatencySamples
                 / 512
             + 2;
         for (int block = 0; block < replacementBlocks; ++block)

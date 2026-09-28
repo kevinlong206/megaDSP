@@ -99,6 +99,8 @@ public:
         int slot, int bank) const;
     juce::String convolutionImpulseResponseBankName(
         int slot, int bank) const;
+    bool setConvolutionWetBufferSamples(int slot, int samples);
+    int convolutionWetBufferSamples(int slot) const;
     void cancelImpulseResponse(PreparedImpulseResponseLoad&) noexcept;
     juce::Result loadImpulseResponse(int slot, const juce::File&);
     juce::Result loadImpulseResponse(int slot, int lane, const juce::File&);

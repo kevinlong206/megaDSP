@@ -1292,6 +1292,13 @@ public:
             expect(irBrowser.setImpulseResponseRootDirectory(
                 irDirectory).wasOk());
             expectEquals(irBrowser.impulseResponseLibrarySize(), 3);
+            MegaDSPAudioProcessor freshIrBrowser;
+            expectEquals(
+                freshIrBrowser.impulseResponseRootDirectory()
+                    .getFullPathName(),
+                irDirectory.getFullPathName());
+            expectEquals(
+                freshIrBrowser.impulseResponseLibrarySize(), 3);
             expectEquals(
                 static_cast<int>(
                     irBrowser.searchImpulseResponses("hall").size()),
@@ -1334,6 +1341,12 @@ public:
                 0, 1, secondIr).wasOk());
             expect(irBrowser.loadConvolutionImpulseResponseBank(
                 0, 2, nestedIr).wasOk());
+            expect(irBrowser.setConvolutionWetBufferSamples(
+                0, 512).wasOk());
+            expectEquals(
+                irBrowser.convolutionWetBufferSamples(0), 512);
+            expect(irBrowser.setConvolutionWetBufferSamples(
+                0, 123).failed());
             expect(irBrowser.selectConvolutionImpulseResponseBank(0, 1));
             expectEquals(
                 irBrowser.activeConvolutionImpulseResponseBank(0), 1);
@@ -1356,6 +1369,8 @@ public:
             restoredBanks.flushPendingUpdatesForTesting();
             expectEquals(
                 restoredBanks.activeConvolutionImpulseResponseBank(0), 1);
+            expectEquals(
+                restoredBanks.convolutionWetBufferSamples(0), 512);
             expectEquals(
                 restoredBanks.convolutionImpulseResponseBankName(0, 0),
                 firstIr.getFileName());

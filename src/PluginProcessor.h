@@ -99,6 +99,9 @@ public:
         int slot, int bank) const;
     juce::String convolutionImpulseResponseBankName(
         int slot, int bank) const;
+    juce::Result setConvolutionWetBufferSamples(
+        int slot, int samples);
+    int convolutionWetBufferSamples(int slot) const;
     juce::Result loadBuiltInImpulseResponse(int slot, int index);
     juce::Result loadAdjacentImpulseResponse(int slot, int direction);
     juce::Result setImpulseResponseRootDirectory(const juce::File&);

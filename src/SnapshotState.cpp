@@ -22,6 +22,7 @@ void RackSlotState::copyFrom(const RackSlotState& source)
     impulseResponsePath2 = source.impulseResponsePath2;
     convolutionImpulseBankPaths = source.convolutionImpulseBankPaths;
     convolutionActiveBank = source.convolutionActiveBank;
+    convolutionWetBufferSamples = source.convolutionWetBufferSamples;
     namModelPath = source.namModelPath;
 }
 
@@ -51,6 +52,7 @@ void RackState::clear()
         slot.impulseResponsePath2.clear();
         slot.convolutionImpulseBankPaths.fill({});
         slot.convolutionActiveBank = 0;
+        slot.convolutionWetBufferSamples = 2048;
         slot.namModelPath.clear();
     }
     inputGainDb.store(0.0f, std::memory_order_relaxed);
@@ -103,6 +105,9 @@ juce::ValueTree RackState::toValueTree(int index) const
         slot.setProperty(
             "convolutionActiveBank",
             juce::jlimit(0, 2, source.convolutionActiveBank), nullptr);
+        slot.setProperty(
+            "convolutionWetBuffer",
+            source.convolutionWetBufferSamples, nullptr);
         if (source.namModelPath.isNotEmpty())
             slot.setProperty("namModel", source.namModelPath, nullptr);
         snapshot.addChild(slot, -1, nullptr);
@@ -154,6 +159,8 @@ void RackState::fromValueTree(const juce::ValueTree& snapshot)
             0, 2,
             static_cast<int>(
                 child.getProperty("convolutionActiveBank", 0)));
+        destination.convolutionWetBufferSamples = static_cast<int>(
+            child.getProperty("convolutionWetBuffer", 2048));
         for (int bank = 0; bank < 3; ++bank)
             destination.convolutionImpulseBankPaths[
                 static_cast<size_t>(bank)] =

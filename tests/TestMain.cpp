@@ -398,7 +398,7 @@ public:
         auto delayedWetMagnitude = 0.0f;
         constexpr auto delayedWetBlocks =
             megadsp::ConvolutionReverbModule::
-                wetProcessingLatencySamples
+                defaultWetProcessingLatencySamples
                 / 512
             + 2;
         for (int block = 0; block < delayedWetBlocks; ++block)

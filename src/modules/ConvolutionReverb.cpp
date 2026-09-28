@@ -3,6 +3,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -15,10 +16,10 @@ using detail::lerp;
 
 struct ConvolutionReverbModule::Engine
 {
-    Engine()
+    explicit Engine(int wetProcessingLatency)
         : processor(
               juce::dsp::Convolution::Latency {
-                  wetProcessingLatencySamples },
+                  wetProcessingLatency },
               convolutionMessageQueue())
     {
     }
@@ -39,7 +40,12 @@ struct ConvolutionReverbModule::PreparedLoad final
 
 struct ConvolutionReverbModule::Bank
 {
-    std::unique_ptr<Engine> engine = std::make_unique<Engine>();
+    explicit Bank(int wetProcessingLatency)
+        : engine(std::make_unique<Engine>(wetProcessingLatency))
+    {
+    }
+
+    std::unique_ptr<Engine> engine;
     juce::String name;
     ImpulseResponsePreview preview {};
     std::atomic<double> lengthSeconds { 0.0 };
@@ -50,7 +56,20 @@ struct ConvolutionReverbModule::Bank
 ConvolutionReverbModule::ConvolutionReverbModule()
 {
     for (auto& bank : banks)
-        bank = std::make_unique<Bank>();
+        bank = std::make_unique<Bank>(
+            defaultWetProcessingLatencySamples);
+}
+
+void ConvolutionReverbModule::setWetProcessingLatencySamples(
+    int samples) noexcept
+{
+    const auto choice = std::find(
+        wetProcessingLatencyChoices.begin(),
+        wetProcessingLatencyChoices.end(), samples);
+    configuredWetProcessingLatencySamples.store(
+        choice != wetProcessingLatencyChoices.end()
+            ? samples : defaultWetProcessingLatencySamples,
+        std::memory_order_release);
 }
 
 ConvolutionReverbModule::~ConvolutionReverbModule() = default;
@@ -458,7 +477,9 @@ juce::Result ConvolutionReverbModule::prepareImpulseResponseInternal(
 
     auto prepared = std::make_unique<PreparedLoad>();
     prepared->generation = generation;
-    prepared->engine = std::make_unique<Engine>();
+    prepared->engine = std::make_unique<Engine>(
+        configuredWetProcessingLatencySamples.load(
+            std::memory_order_acquire));
     // Preparing an isolated engine after loading installs that IR before handoff.
     prepared->engine->processor.loadImpulseResponse(
         std::move(decoded), reader->sampleRate,

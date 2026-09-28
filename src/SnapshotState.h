@@ -20,6 +20,7 @@ struct RackSlotState
     juce::String impulseResponsePath2;
     std::array<juce::String, 3> convolutionImpulseBankPaths;
     int convolutionActiveBank = 0;
+    int convolutionWetBufferSamples = 2048;
     juce::String namModelPath;
 
     RackSlotState();

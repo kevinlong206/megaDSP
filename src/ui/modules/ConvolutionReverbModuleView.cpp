@@ -61,6 +61,8 @@ private:
         juce::Rectangle<float>, int) const;
     juce::Rectangle<float> filterBounds(
         juce::Rectangle<float>, int) const;
+    juce::Rectangle<float> bufferBounds(
+        juce::Rectangle<float>, int) const;
     juce::Rectangle<float> resultBounds(
         juce::Rectangle<float>, int) const;
     juce::String searchQuery() const;
@@ -220,7 +222,7 @@ juce::Rectangle<float> ConvolutionReverbModuleView::resultBounds(
     juce::Rectangle<float> area, int rowIndex) const
 {
     auto library = libraryBounds(area).reduced(10.0f);
-    library.removeFromTop(168.0f);
+    library.removeFromTop(218.0f);
     library.removeFromBottom(28.0f);
     const auto rowHeight =
         library.getHeight() / static_cast<float>(browserRowsPerPage);
@@ -228,6 +230,17 @@ juce::Rectangle<float> ConvolutionReverbModuleView::resultBounds(
              library.getY()
                  + rowHeight * static_cast<float>(rowIndex),
              library.getWidth(), juce::jmax(1.0f, rowHeight - 3.0f) };
+}
+
+juce::Rectangle<float> ConvolutionReverbModuleView::bufferBounds(
+    juce::Rectangle<float> area, int choice) const
+{
+    auto library = libraryBounds(area).reduced(10.0f);
+    library.removeFromTop(180.0f);
+    auto row = library.removeFromTop(30.0f);
+    const auto width = row.getWidth() / 4.0f;
+    return { row.getX() + width * static_cast<float>(choice),
+             row.getY(), width - 3.0f, row.getHeight() };
 }
 
 juce::String ConvolutionReverbModuleView::searchQuery() const
@@ -322,6 +335,28 @@ void ConvolutionReverbModuleView::mouseDown(
                     !filters[static_cast<size_t>(filter)];
                 resultPage = 0;
                 searchDirty = true;
+                repaint();
+                return;
+            }
+        for (int choice = 0;
+             choice < static_cast<int>(
+                 ConvolutionReverbModule::
+                     wetProcessingLatencyChoices.size());
+             ++choice)
+            if (bufferBounds(area, choice).contains(event.position))
+            {
+                const auto samples =
+                    ConvolutionReverbModule::
+                        wetProcessingLatencyChoices[
+                            static_cast<size_t>(choice)];
+                const auto result =
+                    processor.setConvolutionWetBufferSamples(
+                        slot, samples);
+                if (result.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not change wet buffer",
+                        result.getErrorMessage());
                 repaint();
                 return;
             }
@@ -627,6 +662,47 @@ void ConvolutionReverbModuleView::paintLibrary(
         graphics.drawText(
             filterNames[static_cast<size_t>(filter)],
             bounds.toNearestInt(), juce::Justification::centred);
+    }
+
+    const auto selectedBuffer =
+        processor.convolutionWetBufferSamples(slot);
+    auto bufferLabel = libraryBounds(area).reduced(10.0f);
+    bufferLabel.removeFromTop(162.0f);
+    bufferLabel = bufferLabel.removeFromTop(14.0f);
+    graphics.setColour(juce::Colours::white.withAlpha(0.48f));
+    graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
+    graphics.drawText(
+        "WET BUFFER  /  LOWER = LESS PRE-DELAY",
+        bufferLabel.toNearestInt(),
+        juce::Justification::centredLeft);
+    for (int choice = 0;
+         choice < static_cast<int>(
+             ConvolutionReverbModule::
+                 wetProcessingLatencyChoices.size());
+         ++choice)
+    {
+        const auto samples =
+            ConvolutionReverbModule::wetProcessingLatencyChoices[
+                static_cast<size_t>(choice)];
+        const auto bounds = bufferBounds(area, choice);
+        graphics.setColour(
+            samples == selectedBuffer
+                ? accent.withAlpha(0.60f)
+                : juce::Colours::white.withAlpha(0.06f));
+        graphics.fillRoundedRectangle(bounds, 4.0f);
+        graphics.setColour(juce::Colours::white.withAlpha(0.86f));
+        graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+        const auto milliseconds = processor.getSampleRate() > 0.0
+            ? static_cast<double>(samples)
+                  * 1000.0 / processor.getSampleRate()
+            : 0.0;
+        graphics.drawFittedText(
+            (samples >= 1024
+                 ? juce::String(samples / 1024) + "K"
+                 : juce::String(samples))
+                + "  " + juce::String(milliseconds, 0) + "ms",
+            bounds.reduced(3.0f, 1.0f).toNearestInt(),
+            juce::Justification::centred, 1, 0.72f);
     }
 
     for (int row = 0; row < browserRowsPerPage; ++row)

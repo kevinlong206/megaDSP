@@ -11,6 +11,95 @@ thread_local bool
 
 namespace
 {
+juce::File globalSettingsFile()
+{
+#if defined(MEGADSP_TESTS)
+    return juce::File::getSpecialLocation(
+               juce::File::tempDirectory)
+        .getChildFile("megaDSP-tests")
+        .getChildFile("settings.xml");
+#else
+    return juce::File::getSpecialLocation(
+               juce::File::userApplicationDataDirectory)
+        .getChildFile("megaDSP")
+        .getChildFile("settings.xml");
+#endif
+}
+
+juce::PropertiesFile::Options globalSettingsOptions()
+{
+    juce::PropertiesFile::Options options;
+    options.applicationName = "megaDSP";
+    options.filenameSuffix = ".xml";
+    options.folderName = "megaDSP";
+    options.osxLibrarySubFolder = "Application Support";
+    options.millisecondsBeforeSaving = 0;
+    options.storageFormat = juce::PropertiesFile::storeAsXML;
+    return options;
+}
+
+juce::CriticalSection& globalSettingsLock()
+{
+    static juce::CriticalSection lock;
+    return lock;
+}
+
+juce::String globalImpulseResponseRoot()
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    juce::PropertiesFile settings(
+        globalSettingsFile(), globalSettingsOptions());
+    return settings.getValue("impulseResponseRootDirectory");
+}
+
+void inheritGlobalImpulseResponseRoot(juce::ValueTree& state)
+{
+    if (state.getProperty(
+            "impulseResponseRootDirectory").toString().isNotEmpty())
+        return;
+    const auto root = juce::File(globalImpulseResponseRoot());
+    if (!root.isDirectory())
+        return;
+    state.setProperty(
+        "impulseResponseRootDirectory",
+        root.getFullPathName(), nullptr);
+    state.setProperty(
+        "impulseResponseDirectory",
+        root.getFullPathName(), nullptr);
+}
+
+juce::Result persistGlobalImpulseResponseRoot(const juce::File& root)
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto file = globalSettingsFile();
+    const auto directoryResult =
+        file.getParentDirectory().createDirectory();
+    if (directoryResult.failed())
+        return directoryResult;
+    juce::PropertiesFile settings(
+        file, globalSettingsOptions());
+    settings.setValue(
+        "impulseResponseRootDirectory",
+        root.getFullPathName());
+    return settings.saveIfNeeded()
+        ? juce::Result::ok()
+        : juce::Result::fail(
+              "Could not save the global IR library root.");
+}
+
+juce::Result seedGlobalImpulseResponseRoot(
+    const juce::ValueTree& state)
+{
+    if (juce::File(globalImpulseResponseRoot()).isDirectory())
+        return juce::Result::ok();
+    const auto instanceRoot = juce::File(
+        state.getProperty(
+            "impulseResponseRootDirectory").toString());
+    return instanceRoot.isDirectory()
+        ? persistGlobalImpulseResponseRoot(instanceRoot)
+        : juce::Result::ok();
+}
+
 float smoothSnapshotFade(float position) noexcept
 {
     position = juce::jlimit(0.0f, 1.0f, position);
@@ -87,6 +176,7 @@ MegaDSPAudioProcessor::MegaDSPAudioProcessor()
                          .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       parameters(*this, nullptr, "megaDSPState", megadsp::createParameterLayout())
 {
+    inheritGlobalImpulseResponseRoot(parameters.state);
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
         pendingBuiltInCabinetLoads[static_cast<size_t>(slot)].store(
@@ -862,6 +952,8 @@ void MegaDSPAudioProcessor::restoreSnapshotAssets(int index)
         {
             auto& slotState =
                 state.slots[static_cast<size_t>(slot)];
+            rack.setConvolutionWetBufferSamples(
+                slot, slotState.convolutionWetBufferSamples);
             for (int bank = 0;
                  bank < megadsp::ConvolutionReverbModule::
                             impulseBankCount;
@@ -2031,6 +2123,13 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
             file.getParentDirectory().getFullPathName(), nullptr);
         const juce::ScopedLock lock(impulseResponseLibraryLock);
         indexedImpulseResponseRoot.clear();
+        const auto persisted =
+            persistGlobalImpulseResponseRoot(
+                file.getParentDirectory());
+        if (persisted.failed())
+            megadsp::Diagnostics::instance().log(
+                "ir-root-persist-failed",
+                persisted.getErrorMessage());
     }
     publishSnapshotToParameters(getSelectedSnapshot());
     updateHostDisplay(
@@ -2090,6 +2189,13 @@ MegaDSPAudioProcessor::loadConvolutionImpulseResponseBank(
             file.getParentDirectory().getFullPathName(), nullptr);
         const juce::ScopedLock lock(impulseResponseLibraryLock);
         indexedImpulseResponseRoot.clear();
+        const auto persisted =
+            persistGlobalImpulseResponseRoot(
+                file.getParentDirectory());
+        if (persisted.failed())
+            megadsp::Diagnostics::instance().log(
+                "ir-root-persist-failed",
+                persisted.getErrorMessage());
     }
     publishSnapshotToParameters(getSelectedSnapshot());
     updateHostDisplay(
@@ -2131,6 +2237,83 @@ MegaDSPAudioProcessor::convolutionImpulseResponseBankName(
     int slot, int bank) const
 {
     return getRack().convolutionImpulseResponseBankName(slot, bank);
+}
+
+juce::Result MegaDSPAudioProcessor::setConvolutionWetBufferSamples(
+    int slot, int samples)
+{
+    if (std::find(
+            megadsp::ConvolutionReverbModule::
+                wetProcessingLatencyChoices.begin(),
+            megadsp::ConvolutionReverbModule::
+                wetProcessingLatencyChoices.end(),
+            samples)
+        == megadsp::ConvolutionReverbModule::
+               wetProcessingLatencyChoices.end())
+        return juce::Result::fail(
+            "Unsupported convolution wet buffer size.");
+
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "A topology update is already in progress.");
+    const auto finishDataMutation = [this]
+    {
+        topologyMutationInProgress.store(
+            false, std::memory_order_release);
+        if (topologyDirty.load(std::memory_order_acquire))
+            triggerAsyncUpdate();
+    };
+
+    auto& rack = getRack();
+    if (!rack.setConvolutionWetBufferSamples(slot, samples))
+    {
+        finishDataMutation();
+        return juce::Result::fail(
+            "The selected slot is not Convolution Reverb.");
+    }
+
+    for (int bank = 0;
+         bank < megadsp::ConvolutionReverbModule::impulseBankCount;
+         ++bank)
+    {
+        const auto path =
+            rack.convolutionImpulseResponseBankPath(slot, bank);
+        if (path.isEmpty())
+            continue;
+        megadsp::EffectRack::PreparedImpulseResponseLoad load;
+        auto result = rack.prepareConvolutionImpulseResponseBank(
+            slot, bank, juce::File(path), load);
+        if (result.failed())
+        {
+            finishDataMutation();
+            return result;
+        }
+        suspendProcessing(true);
+        const auto committed =
+            rack.commitConvolutionImpulseResponseBank(load);
+        suspendProcessing(false);
+        if (!committed)
+        {
+            rack.cancelImpulseResponse(load);
+            finishDataMutation();
+            return juce::Result::fail(
+                "The wet-buffer update was superseded.");
+        }
+    }
+
+    finishDataMutation();
+    publishSnapshotToParameters(getSelectedSnapshot());
+    updateHostDisplay(
+        ChangeDetails{}.withNonParameterStateChanged(true));
+    return juce::Result::ok();
+}
+
+int MegaDSPAudioProcessor::convolutionWetBufferSamples(
+    int slot) const
+{
+    return getRack().convolutionWetBufferSamples(slot);
 }
 
 juce::Result MegaDSPAudioProcessor::loadBuiltInImpulseResponse(
@@ -2196,7 +2379,10 @@ juce::File MegaDSPAudioProcessor::impulseResponseRootDirectory() const
     if (path.isEmpty())
         path = parameters.state.getProperty(
             "impulseResponseDirectory").toString();
-    const auto root = juce::File(path);
+    auto root = juce::File(path);
+    if (root.isDirectory())
+        return root;
+    root = juce::File(globalImpulseResponseRoot());
     return root.isDirectory() ? root : juce::File();
 }
 
@@ -2218,6 +2404,13 @@ juce::Result MegaDSPAudioProcessor::setImpulseResponseRootDirectory(
         impulseResponseLibrary.clear();
     }
     const auto result = rebuildImpulseResponseLibrary();
+    if (result.wasOk())
+    {
+        const auto persisted =
+            persistGlobalImpulseResponseRoot(directory);
+        if (persisted.failed())
+            return persisted;
+    }
     updateHostDisplay(
         ChangeDetails{}.withNonParameterStateChanged(true));
     return result;
@@ -2634,6 +2827,13 @@ void MegaDSPAudioProcessor::refreshLatency()
 void MegaDSPAudioProcessor::restoreParameterState(const juce::ValueTree& state)
 {
     parameters.replaceState(state);
+    const auto seeded =
+        seedGlobalImpulseResponseRoot(parameters.state);
+    if (seeded.failed())
+        megadsp::Diagnostics::instance().log(
+            "ir-root-persist-failed",
+            seeded.getErrorMessage());
+    inheritGlobalImpulseResponseRoot(parameters.state);
     liveSafeSnapshots.store(
         static_cast<bool>(
             parameters.state.getProperty(
