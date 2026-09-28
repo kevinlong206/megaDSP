@@ -4,6 +4,8 @@
 #include "ui/GraphStyle.h"
 #include "ui/GuiLayout.h"
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
 thread_local bool
     MegaDSPAudioProcessor::publishingSnapshotParameters = false;
 
@@ -210,9 +212,12 @@ bool MegaDSPAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) c
 void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                          juce::MidiBuffer& midi)
 {
-    const auto callbackStart = juce::Time::getHighResolutionTicks();
+    const auto diagnosticsEnabled =
+        megadsp::Diagnostics::instance().isEnabled();
+    const auto callbackStart = diagnosticsEnabled
+        ? juce::Time::getHighResolutionTicks() : 0;
     captureRealtimeProfile =
-        megadsp::Diagnostics::instance().isEnabled()
+        diagnosticsEnabled
         && (++diagnosticCallbackCount % 32u) == 0u;
     if (captureRealtimeProfile)
         realtimeProfile.reset();
@@ -323,11 +328,12 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             diagnosticInstanceId, lastDiagnosticBlockSize,
             lastDiagnosticChannelCount);
     }
-    const auto elapsedTicks =
-        juce::Time::getHighResolutionTicks() - callbackStart;
-    const auto elapsedMicros = static_cast<std::int64_t>(
-        juce::Time::highResolutionTicksToSeconds(elapsedTicks)
-        * 1000000.0);
+    const auto elapsedMicros = diagnosticsEnabled
+        ? static_cast<std::int64_t>(
+              juce::Time::highResolutionTicksToSeconds(
+                  juce::Time::getHighResolutionTicks() - callbackStart)
+              * 1000000.0)
+        : 0;
     if (recalledSnapshot)
     {
         snapshotRecallDurationMicros.store(
@@ -350,13 +356,8 @@ void MegaDSPAudioProcessor::processBlockBypassed(
     audioCallbackGeneration.fetch_add(1, std::memory_order_relaxed);
     for (auto& spill : spillSnapshots)
     {
-        if (spill.snapshot >= 0)
-            snapshotRacks[static_cast<size_t>(spill.snapshot)]->reset();
         spill = {};
     }
-    if (snapshotTransition.outgoing >= 0)
-        snapshotRacks[static_cast<size_t>(
-            snapshotTransition.outgoing)]->reset();
     snapshotTransition = {};
     snapshotTailSamples.store(0, std::memory_order_release);
 
@@ -856,6 +857,39 @@ void MegaDSPAudioProcessor::restoreSnapshotAssets(int index)
     auto& state = snapshotStates[static_cast<size_t>(index)];
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
+        if (rack.moduleType(slot)
+            == megadsp::ModuleType::convolutionReverb)
+        {
+            auto& slotState =
+                state.slots[static_cast<size_t>(slot)];
+            for (int bank = 0;
+                 bank < megadsp::ConvolutionReverbModule::
+                            impulseBankCount;
+                 ++bank)
+            {
+                const auto& path =
+                    slotState.convolutionImpulseBankPaths[
+                        static_cast<size_t>(bank)];
+                if (path.isEmpty())
+                    continue;
+                megadsp::EffectRack::PreparedImpulseResponseLoad load;
+                auto result =
+                    rack.prepareConvolutionImpulseResponseBank(
+                        slot, bank, juce::File(path), load);
+                if (result.wasOk()
+                    && !rack.commitConvolutionImpulseResponseBank(load))
+                    result = juce::Result::fail(
+                        "The impulse response was superseded.");
+                if (result.failed())
+                    state.error +=
+                        "IR bank " + juce::String(bank + 1)
+                        + " slot " + juce::String(slot + 1)
+                        + ": " + result.getErrorMessage() + " ";
+            }
+            rack.selectConvolutionImpulseResponseBank(
+                slot, slotState.convolutionActiveBank);
+            continue;
+        }
         const std::array<juce::String, 2> impulsePaths {
             state.slots[static_cast<size_t>(slot)].impulseResponsePath,
             state.slots[static_cast<size_t>(slot)].impulseResponsePath2
@@ -1052,11 +1086,7 @@ void MegaDSPAudioProcessor::addSpillSnapshot(int index) noexcept
                     ->snapshotSpillSeconds()
                 * preparedSampleRate)));
     if (tailSamples <= 0)
-    {
-        if (!liveSafeSnapshots.load(std::memory_order_acquire))
-            snapshotRacks[static_cast<size_t>(index)]->reset();
         return;
-    }
     snapshotTailSamples.store(
         juce::jmax(
             snapshotTailSamples.load(std::memory_order_relaxed),
@@ -1096,8 +1126,6 @@ void MegaDSPAudioProcessor::addSpillSnapshot(int index) noexcept
     for (auto& spill : spillSnapshots)
         if (spill.order < oldest->order)
             oldest = &spill;
-    if (!liveSafeSnapshots.load(std::memory_order_acquire))
-        snapshotRacks[static_cast<size_t>(oldest->snapshot)]->reset();
     *oldest = {
         index,
         tailSamples,
@@ -1143,7 +1171,6 @@ void MegaDSPAudioProcessor::processSpillSnapshots(
             || (spill.fadeSamplesTotal > 0
                 && spill.fadeSamplesRemaining <= 0))
         {
-            snapshotRacks[static_cast<size_t>(spill.snapshot)]->reset();
             spill = {};
         }
     }
@@ -1742,6 +1769,10 @@ void MegaDSPAudioProcessor::restoreSnapshots(
                 root.getProperty(
                     "impulseResponse" + juce::String(slot + 1)).toString();
             snapshotStates[0].slots[static_cast<size_t>(slot)]
+                .convolutionImpulseBankPaths[0] =
+                    snapshotStates[0].slots[static_cast<size_t>(slot)]
+                        .impulseResponsePath;
+            snapshotStates[0].slots[static_cast<size_t>(slot)]
                 .impulseResponsePath2 =
                 root.getProperty(
                     "impulseResponse2" + juce::String(slot + 1)).toString();
@@ -1941,6 +1972,14 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
 juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     int slot, int lane, const juce::File& file)
 {
+    if (lane == 0
+        && getRack().moduleType(slot)
+               == megadsp::ModuleType::convolutionReverb)
+        return loadConvolutionImpulseResponseBank(
+            slot,
+            getRack().activeConvolutionImpulseResponseBank(slot),
+            file);
+
     auto expected = false;
     if (!topologyMutationInProgress.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel))
@@ -1981,13 +2020,117 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     }
 
     finishDataMutation();
-    parameters.state.setProperty(
-        "impulseResponseDirectory",
-        file.getParentDirectory().getFullPathName(), nullptr);
+    if (parameters.state.getProperty(
+            "impulseResponseRootDirectory").toString().isEmpty())
+    {
+        parameters.state.setProperty(
+            "impulseResponseRootDirectory",
+            file.getParentDirectory().getFullPathName(), nullptr);
+        parameters.state.setProperty(
+            "impulseResponseDirectory",
+            file.getParentDirectory().getFullPathName(), nullptr);
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        indexedImpulseResponseRoot.clear();
+    }
     publishSnapshotToParameters(getSelectedSnapshot());
     updateHostDisplay(
         ChangeDetails{}.withNonParameterStateChanged(true));
     return juce::Result::ok();
+}
+
+juce::Result
+MegaDSPAudioProcessor::loadConvolutionImpulseResponseBank(
+    int slot, int bank, const juce::File& file)
+{
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "A topology update is already in progress.");
+    const auto finishDataMutation = [this]
+    {
+        topologyMutationInProgress.store(
+            false, std::memory_order_release);
+        if (topologyDirty.load(std::memory_order_acquire))
+            triggerAsyncUpdate();
+    };
+
+    megadsp::EffectRack::PreparedImpulseResponseLoad load;
+    auto result = getRack().prepareConvolutionImpulseResponseBank(
+        slot, bank, file, load);
+    if (result.failed())
+    {
+        finishDataMutation();
+        return result;
+    }
+
+    suspendProcessing(true);
+    const auto committed =
+        getRack().commitConvolutionImpulseResponseBank(load);
+    const auto selected = committed
+        && getRack().selectConvolutionImpulseResponseBank(slot, bank);
+    suspendProcessing(false);
+    if (!selected)
+    {
+        getRack().cancelImpulseResponse(load);
+        finishDataMutation();
+        return juce::Result::fail(
+            "The impulse response request was superseded.");
+    }
+    finishDataMutation();
+
+    if (parameters.state.getProperty(
+            "impulseResponseRootDirectory").toString().isEmpty())
+    {
+        parameters.state.setProperty(
+            "impulseResponseRootDirectory",
+            file.getParentDirectory().getFullPathName(), nullptr);
+        parameters.state.setProperty(
+            "impulseResponseDirectory",
+            file.getParentDirectory().getFullPathName(), nullptr);
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        indexedImpulseResponseRoot.clear();
+    }
+    publishSnapshotToParameters(getSelectedSnapshot());
+    updateHostDisplay(
+        ChangeDetails{}.withNonParameterStateChanged(true));
+    return juce::Result::ok();
+}
+
+bool MegaDSPAudioProcessor::selectConvolutionImpulseResponseBank(
+    int slot, int bank)
+{
+    suspendProcessing(true);
+    const auto selected =
+        getRack().selectConvolutionImpulseResponseBank(slot, bank);
+    suspendProcessing(false);
+    if (selected)
+    {
+        publishSnapshotToParameters(getSelectedSnapshot());
+        updateHostDisplay(
+            ChangeDetails{}.withNonParameterStateChanged(true));
+    }
+    return selected;
+}
+
+int MegaDSPAudioProcessor::activeConvolutionImpulseResponseBank(
+    int slot) const
+{
+    return getRack().activeConvolutionImpulseResponseBank(slot);
+}
+
+juce::String
+MegaDSPAudioProcessor::convolutionImpulseResponseBankPath(
+    int slot, int bank) const
+{
+    return getRack().convolutionImpulseResponseBankPath(slot, bank);
+}
+
+juce::String
+MegaDSPAudioProcessor::convolutionImpulseResponseBankName(
+    int slot, int bank) const
+{
+    return getRack().convolutionImpulseResponseBankName(slot, bank);
 }
 
 juce::Result MegaDSPAudioProcessor::loadBuiltInImpulseResponse(
@@ -2025,6 +2168,10 @@ juce::Result MegaDSPAudioProcessor::loadBuiltInImpulseResponse(
 
 juce::File MegaDSPAudioProcessor::impulseResponseDirectory(int slot) const
 {
+    const auto root = impulseResponseRootDirectory();
+    if (root.isDirectory())
+        return root;
+
     const auto currentPath = impulseResponsePath(slot);
     if (currentPath.isNotEmpty())
     {
@@ -2042,6 +2189,174 @@ juce::File MegaDSPAudioProcessor::impulseResponseDirectory(int slot) const
     return juce::File::getSpecialLocation(juce::File::userMusicDirectory);
 }
 
+juce::File MegaDSPAudioProcessor::impulseResponseRootDirectory() const
+{
+    auto path = parameters.state.getProperty(
+        "impulseResponseRootDirectory").toString();
+    if (path.isEmpty())
+        path = parameters.state.getProperty(
+            "impulseResponseDirectory").toString();
+    const auto root = juce::File(path);
+    return root.isDirectory() ? root : juce::File();
+}
+
+juce::Result MegaDSPAudioProcessor::setImpulseResponseRootDirectory(
+    const juce::File& directory)
+{
+    if (!directory.isDirectory())
+        return juce::Result::fail(
+            "Choose an existing impulse response directory.");
+    parameters.state.setProperty(
+        "impulseResponseRootDirectory",
+        directory.getFullPathName(), nullptr);
+    parameters.state.setProperty(
+        "impulseResponseDirectory",
+        directory.getFullPathName(), nullptr);
+    {
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        indexedImpulseResponseRoot.clear();
+        impulseResponseLibrary.clear();
+    }
+    const auto result = rebuildImpulseResponseLibrary();
+    updateHostDisplay(
+        ChangeDetails{}.withNonParameterStateChanged(true));
+    return result;
+}
+
+juce::Result MegaDSPAudioProcessor::rebuildImpulseResponseLibrary()
+{
+    const auto root = impulseResponseRootDirectory();
+    if (!root.isDirectory())
+        return juce::Result::fail(
+            "Choose an impulse response root directory first.");
+
+    juce::Array<juce::File> files;
+    root.findChildFiles(files, juce::File::findFiles, true);
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::vector<ImpulseResponseLibraryEntry> rebuilt;
+    rebuilt.reserve(static_cast<size_t>(files.size()));
+    for (const auto& file : files)
+    {
+        const auto extension = file.getFileExtension().toLowerCase();
+        if (extension != ".wav" && extension != ".aif"
+            && extension != ".aiff" && extension != ".flac")
+            continue;
+        std::unique_ptr<juce::AudioFormatReader> reader(
+            formats.createReaderFor(file));
+        if (reader == nullptr || reader->lengthInSamples <= 0
+            || reader->sampleRate <= 0.0 || reader->numChannels == 0)
+            continue;
+        rebuilt.push_back({
+            file,
+            file.getRelativePathFrom(root).replaceCharacter('\\', '/'),
+            reader->sampleRate,
+            static_cast<double>(reader->lengthInSamples)
+                / reader->sampleRate,
+            static_cast<int>(reader->numChannels)
+        });
+    }
+    std::sort(
+        rebuilt.begin(), rebuilt.end(),
+        [](const auto& left, const auto& right)
+        {
+            const auto order = left.relativePath.compareIgnoreCase(
+                right.relativePath);
+            return order != 0
+                ? order < 0
+                : left.file.getFullPathName()
+                      < right.file.getFullPathName();
+        });
+    {
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        impulseResponseLibrary = std::move(rebuilt);
+        indexedImpulseResponseRoot = root.getFullPathName();
+    }
+    return juce::Result::ok();
+}
+
+void MegaDSPAudioProcessor::ensureImpulseResponseLibrary()
+{
+    const auto root =
+        impulseResponseRootDirectory().getFullPathName();
+    if (root.isEmpty())
+    {
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        indexedImpulseResponseRoot.clear();
+        impulseResponseLibrary.clear();
+        return;
+    }
+    {
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        if (root.isNotEmpty() && root == indexedImpulseResponseRoot)
+            return;
+    }
+    rebuildImpulseResponseLibrary();
+}
+
+std::vector<ImpulseResponseLibraryEntry>
+MegaDSPAudioProcessor::searchImpulseResponses(
+    const juce::String& query, int maximumResults)
+{
+    ensureImpulseResponseLibrary();
+    maximumResults = juce::jmax(0, maximumResults);
+    if (maximumResults == 0)
+        return {};
+    const auto tokens = juce::StringArray::fromTokens(
+        query.toLowerCase(), " \t\r\n", "\"");
+    std::vector<ImpulseResponseLibraryEntry> matches;
+    const juce::ScopedLock lock(impulseResponseLibraryLock);
+    matches.reserve(juce::jmin(
+        static_cast<size_t>(maximumResults),
+        impulseResponseLibrary.size()));
+    for (const auto& entry : impulseResponseLibrary)
+    {
+        auto matched = true;
+        const auto searchable = entry.relativePath.toLowerCase();
+        for (const auto& token : tokens)
+        {
+            if (token.isEmpty())
+                continue;
+            if (token == "mono")
+                matched = entry.channelCount == 1;
+            else if (token == "stereo")
+                matched = entry.channelCount >= 2;
+            else if (token == "short")
+                matched = entry.durationSeconds < 1.0;
+            else if (token == "medium")
+                matched = entry.durationSeconds >= 1.0
+                    && entry.durationSeconds <= 3.0;
+            else if (token == "long")
+                matched = entry.durationSeconds > 3.0;
+            else if (token.startsWith("sr:")
+                     || token.startsWith("rate:"))
+            {
+                const auto requested = token.fromFirstOccurrenceOf(
+                    ":", false, false).getDoubleValue();
+                matched = requested > 0.0
+                    && std::abs(entry.sampleRate - requested) < 1.0;
+            }
+            else
+                matched = searchable.contains(token);
+            if (!matched)
+                break;
+        }
+        if (!matched)
+            continue;
+        matches.push_back(entry);
+        if (static_cast<int>(matches.size()) >= maximumResults)
+            break;
+    }
+    return matches;
+}
+
+int MegaDSPAudioProcessor::impulseResponseLibrarySize()
+{
+    ensureImpulseResponseLibrary();
+    const juce::ScopedLock lock(impulseResponseLibraryLock);
+    return static_cast<int>(impulseResponseLibrary.size());
+}
+
 juce::Result MegaDSPAudioProcessor::loadAdjacentImpulseResponse(
     int slot, int direction)
 {
@@ -2049,40 +2364,23 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentImpulseResponse(
         return juce::Result::fail(
             "Choose either the previous or next impulse response.");
 
-    const auto directory = impulseResponseDirectory(slot);
-    juce::Array<juce::File> directoryFiles;
-    directory.findChildFiles(
-        directoryFiles, juce::File::findFiles, false);
-    std::vector<juce::File> impulseResponses;
-    impulseResponses.reserve(static_cast<size_t>(directoryFiles.size()));
-    for (const auto& file : directoryFiles)
+    ensureImpulseResponseLibrary();
+    std::vector<ImpulseResponseLibraryEntry> impulseResponses;
     {
-        const auto extension = file.getFileExtension().toLowerCase();
-        if (extension == ".wav" || extension == ".aif"
-            || extension == ".aiff" || extension == ".flac")
-            impulseResponses.push_back(file);
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        impulseResponses = impulseResponseLibrary;
     }
-    std::sort(
-        impulseResponses.begin(), impulseResponses.end(),
-        [](const juce::File& left, const juce::File& right)
-        {
-            const auto nameOrder = left.getFileName().compareIgnoreCase(
-                right.getFileName());
-            return nameOrder != 0
-                ? nameOrder < 0
-                : left.getFullPathName() < right.getFullPathName();
-        });
     if (impulseResponses.empty())
         return juce::Result::fail(
-            "The impulse response directory contains no WAV, AIFF, or FLAC "
-            "files.");
+            "The impulse response library contains no valid WAV, AIFF, or "
+            "FLAC files.");
 
     const auto currentFile = juce::File(impulseResponsePath(slot));
     const auto current = std::find_if(
         impulseResponses.begin(), impulseResponses.end(),
-        [&currentFile](const juce::File& candidate)
+        [&currentFile](const ImpulseResponseLibraryEntry& candidate)
         {
-            return candidate == currentFile;
+            return candidate.file == currentFile;
         });
     int target = direction > 0
         ? 0 : static_cast<int>(impulseResponses.size()) - 1;
@@ -2094,7 +2392,7 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentImpulseResponse(
         target = (currentIndex + (direction > 0 ? 1 : count - 1)) % count;
     }
     return loadImpulseResponse(
-        slot, impulseResponses[static_cast<size_t>(target)]);
+        slot, impulseResponses[static_cast<size_t>(target)].file);
 }
 
 void MegaDSPAudioProcessor::clearImpulseResponse(int slot)

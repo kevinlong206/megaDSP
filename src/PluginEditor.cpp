@@ -681,6 +681,8 @@ public:
           supportsImpulseResponse(
               processor.getRack().activeModuleHasCapability(
                   slot, megadsp::ModuleCapability::impulseResponse)),
+          isConvolution(
+              type == megadsp::ModuleType::convolutionReverb),
           isWormhole(type == megadsp::ModuleType::wormholeConvolution),
           supportsNamModel(
               processor.getRack().activeModuleHasCapability(
@@ -783,6 +785,19 @@ public:
                 loadAdjacentImpulseResponse(1);
             };
             addAndMakeVisible(nextImpulse);
+            if (isConvolution)
+            {
+                impulseLibrary.setButtonText("IR Root...");
+                impulseLibrary.setTooltip(
+                    "Choose the persistent root directory or rebuild its "
+                    "validated recursive index. Search is available directly "
+                    "in the module.");
+                impulseLibrary.onClick = [this]
+                {
+                    showImpulseLibraryMenu();
+                };
+                addAndMakeVisible(impulseLibrary);
+            }
             clearImpulse.setButtonText("Clear IR");
             clearImpulse.setTooltip(
                 "Unload the current impulse response.");
@@ -1006,6 +1021,8 @@ public:
                     heading.removeFromRight(46).reduced(2));
                 clearImpulse.setBounds(
                     heading.removeFromRight(72).reduced(2));
+                impulseLibrary.setBounds(
+                    heading.removeFromRight(76).reduced(2));
                 loadImpulse.setBounds(
                     heading.removeFromRight(88).reduced(2));
             }
@@ -1107,7 +1124,15 @@ public:
                     .reduced(7, 10),
                 secondaryGroups[static_cast<size_t>(groupIndex)].second);
         }
+
         controlsOverlay.setFrames(std::move(frames));
+    }
+
+    int preferredHeight() const
+    {
+        return graph != nullptr
+            ? graph->preferredCardHeight()
+            : megadsp::ui::moduleCardHeight;
     }
 
     void setSelected(bool shouldBeSelected)
@@ -1337,6 +1362,72 @@ private:
         graph->repaint();
     }
 
+    void showImpulseLibraryMenu()
+    {
+        juce::PopupMenu menu;
+        const auto root =
+            processor.impulseResponseRootDirectory();
+        menu.addSectionHeader(
+            "IR LIBRARY  ·  "
+            + juce::String(processor.impulseResponseLibrarySize())
+            + " VALID");
+        menu.addItem(1, "Choose Root Directory...");
+        menu.addItem(3, "Rebuild Index");
+        if (root.isDirectory())
+        {
+            menu.addSeparator();
+            menu.addSectionHeader(root.getFullPathName());
+        }
+        juce::Component::SafePointer<ModuleCard> safeThis(this);
+        menu.showMenuAsync(
+            juce::PopupMenu::Options{}.withTargetComponent(&impulseLibrary),
+            [safeThis](int result)
+            {
+                if (safeThis == nullptr)
+                    return;
+                if (result == 1)
+                    safeThis->chooseImpulseResponseRoot();
+                else if (result == 3)
+                {
+                    const auto rebuilt =
+                        safeThis->processor.rebuildImpulseResponseLibrary();
+                    if (rebuilt.failed())
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::MessageBoxIconType::WarningIcon,
+                            "Could not index IR library",
+                            rebuilt.getErrorMessage());
+                }
+            });
+    }
+
+    void chooseImpulseResponseRoot()
+    {
+        impulseRootChooser = std::make_unique<juce::FileChooser>(
+            "Choose impulse response root directory",
+            processor.impulseResponseDirectory(slot));
+        const auto flags =
+            juce::FileBrowserComponent::openMode
+            | juce::FileBrowserComponent::canSelectDirectories;
+        juce::Component::SafePointer<ModuleCard> safeThis(this);
+        impulseRootChooser->launchAsync(
+            flags, [safeThis](const juce::FileChooser& chooser)
+            {
+                if (safeThis == nullptr)
+                    return;
+                const auto directory = chooser.getResult();
+                if (directory == juce::File())
+                    return;
+                const auto result =
+                    safeThis->processor.setImpulseResponseRootDirectory(
+                        directory);
+                if (result.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not index IR library",
+                        result.getErrorMessage());
+            });
+    }
+
     void updateToggle(int control, bool state)
     {
         auto& button = toggles[static_cast<size_t>(control)];
@@ -1511,6 +1602,7 @@ private:
     megadsp::ModuleType type;
     juce::String moduleName;
     bool supportsImpulseResponse = false;
+    bool isConvolution = false;
     bool isWormhole = false;
     bool supportsNamModel = false;
     juce::Label name;
@@ -1520,8 +1612,10 @@ private:
     juce::TextButton loadImpulse;
     juce::TextButton previousImpulse;
     juce::TextButton nextImpulse;
+    juce::TextButton impulseLibrary;
     juce::TextButton clearImpulse;
     std::unique_ptr<juce::FileChooser> impulseChooser;
+    std::unique_ptr<juce::FileChooser> impulseRootChooser;
     juce::TextButton loadImpulse2;
     juce::TextButton clearImpulse2;
     std::unique_ptr<juce::FileChooser> impulseChooser2;
@@ -2147,8 +2241,12 @@ void MegaDSPAudioProcessorEditor::resized()
     rackViewport.setBounds(bounds.reduced(10, 6));
     constexpr auto rackPadding = 8;
     const auto showAddButton = addButton.isVisible();
+    std::vector<int> moduleHeights;
+    moduleHeights.reserve(cards.size());
+    for (const auto& card : cards)
+        moduleHeights.push_back(card->preferredHeight());
     const auto contentHeight = megadsp::ui::calculateRackContentHeight(
-        static_cast<int>(cards.size()), showAddButton)
+        moduleHeights, showAddButton)
         + rackPadding * 2;
     const auto targetHeight =
         juce::jmax(rackViewport.getHeight(), contentHeight);
@@ -2161,7 +2259,7 @@ void MegaDSPAudioProcessorEditor::resized()
     {
         auto& card = cards[static_cast<size_t>(index)];
         card->setBounds(
-            cardBounds.removeFromTop(megadsp::ui::moduleCardHeight));
+            cardBounds.removeFromTop(card->preferredHeight()));
         if (index + 1 < static_cast<int>(cards.size()) || showAddButton)
             cardBounds.removeFromTop(megadsp::ui::moduleCardGap);
     }
@@ -2387,7 +2485,10 @@ void MegaDSPAudioProcessorEditor::revealSelectedCard(bool focus)
     auto* card = cards[static_cast<size_t>(selectedSlot)].get();
     const auto viewTop = rackViewport.getViewPositionY();
     const auto viewBottom = viewTop + rackViewport.getViewHeight();
-    if (card->getY() < viewTop)
+    if (card->getHeight() > rackViewport.getViewHeight())
+        rackViewport.setViewPosition(
+            rackViewport.getViewPositionX(), card->getY());
+    else if (card->getY() < viewTop)
         rackViewport.setViewPosition(
             rackViewport.getViewPositionX(), card->getY());
     else if (card->getBottom() > viewBottom)
@@ -2463,7 +2564,17 @@ bool MegaDSPAudioProcessorEditor::selectedCardVisibleForTesting() const
     const auto* card = cards[static_cast<size_t>(selectedSlot)].get();
     const auto viewTop = rackViewport.getViewPositionY();
     const auto viewBottom = viewTop + rackViewport.getViewHeight();
+    if (card->getHeight() > rackViewport.getViewHeight())
+        return card->getY() >= viewTop && card->getY() < viewBottom;
     return card->getY() >= viewTop && card->getBottom() <= viewBottom;
+}
+
+int MegaDSPAudioProcessorEditor::cardHeightForTesting(int slot) const
+{
+    return juce::isPositiveAndBelow(
+               slot, static_cast<int>(cards.size()))
+        ? cards[static_cast<size_t>(slot)]->getHeight()
+        : 0;
 }
 
 int MegaDSPAudioProcessorEditor::activeVisualizationCardCountForTesting() const
@@ -2501,13 +2612,14 @@ bool MegaDSPAudioProcessorEditor::cardGraphsAvoidControlsForTesting() const
         });
 }
 
-bool MegaDSPAudioProcessorEditor::cardHeightsAreUniformForTesting() const
+bool MegaDSPAudioProcessorEditor::
+    cardHeightsMatchPreferencesForTesting() const
 {
     return std::all_of(
         cards.begin(), cards.end(),
         [](const auto& card)
         {
-            return card->getHeight() == megadsp::ui::moduleCardHeight;
+            return card->getHeight() == card->preferredHeight();
         });
 }
 

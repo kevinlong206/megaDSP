@@ -15,6 +15,8 @@ inline constexpr int editorMaximumWidth = 1800;
 inline constexpr int editorMaximumHeight = 1200;
 inline constexpr int instanceNameMaximumLength = 32;
 inline constexpr int moduleCardHeight = 320;
+inline constexpr int fullPanelModuleCardHeight = 480;
+inline constexpr int moduleCardMaximumHeight = 640;
 inline constexpr int moduleCardGap = 8;
 inline constexpr int addModuleCardHeight = 42;
 
@@ -61,7 +63,8 @@ struct TabLayout
 
 TabLayout calculateTabLayout(
     int availableWidth, int activeTabs, bool showAddButton);
-int calculateRackContentHeight(int activeModules, bool showAddButton);
+int calculateRackContentHeight(
+    const std::vector<int>& moduleHeights, bool showAddButton);
 juce::String compactTabName(ModuleType);
 
 struct StereoBalanceMeasurement

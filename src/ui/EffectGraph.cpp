@@ -305,6 +305,8 @@ bool EffectGraph::keyPressed(const juce::KeyPress& key)
 {
     if (!usesFullPanel())
         return false;
+    if (moduleView != nullptr && moduleView->keyPressed(key))
+        return true;
     const auto modifiers = key.getModifiers();
     if (modifiers.isCommandDown() || modifiers.isCtrlDown()
         || modifiers.isAltDown())
@@ -380,6 +382,15 @@ void EffectGraph::filesDropped(
 bool EffectGraph::usesFullPanel() const
 {
     return moduleView != nullptr && moduleView->usesFullPanel();
+}
+
+int EffectGraph::preferredCardHeight() const
+{
+    return moduleView != nullptr
+        ? juce::jlimit(
+              moduleCardHeight, moduleCardMaximumHeight,
+              moduleView->preferredCardHeight())
+        : moduleCardHeight;
 }
 
 void EffectGraph::setVisualizationActive(bool active)

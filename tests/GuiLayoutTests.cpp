@@ -354,18 +354,27 @@ public:
         expect(withAdd.usedWidth <= 800);
         expect(withAdd.tabWidth < 180);
 
-        beginTest("Rack cards have uniform deterministic height");
-        expectEquals(calculateRackContentHeight(0, false), 0);
+        beginTest("Rack cards use bounded per-module heights");
         expectEquals(
-            calculateRackContentHeight(0, true), addModuleCardHeight);
+            moduleCardMaximumHeight, moduleCardHeight * 2);
         expectEquals(
-            calculateRackContentHeight(1, false), moduleCardHeight);
+            calculateRackContentHeight({}, false), 0);
         expectEquals(
-            calculateRackContentHeight(2, false),
-            moduleCardHeight * 2 + moduleCardGap);
+            calculateRackContentHeight({}, true), addModuleCardHeight);
         expectEquals(
-            calculateRackContentHeight(8, true),
-            moduleCardHeight * 8 + moduleCardGap * 8
+            calculateRackContentHeight(
+                { moduleCardHeight }, false),
+            moduleCardHeight);
+        expectEquals(
+            calculateRackContentHeight(
+                { moduleCardHeight, fullPanelModuleCardHeight }, false),
+            moduleCardHeight + fullPanelModuleCardHeight
+                + moduleCardGap);
+        expectEquals(
+            calculateRackContentHeight(
+                { 100, moduleCardMaximumHeight + 100 }, true),
+            moduleCardHeight + moduleCardMaximumHeight
+                + moduleCardGap * 2
                 + addModuleCardHeight);
 
         beginTest("Stereo balance measurement follows channel energy");

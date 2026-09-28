@@ -288,10 +288,21 @@ Modes are Hall, Chamber, and Plate. The interactive early-reflection and stereo 
 
 Loads mono or stereo WAV, AIFF, and FLAC impulse responses from the **Load IR…** button or by dropping a file on the graph. Uses JUCE non-uniform partitioned convolution with a 256-sample head. IR file work stays off the audio thread.
 
-The last successfully loaded IR directory is saved with plugin state. **< IR**
-and **IR >** browse supported files in case-insensitive filename order and wrap
-at either end; after clearing an IR, **Load IR…** and directory browsing retain
-that location.
+The module uses the rack's expanded 640 px card and gives its left-hand library
+larger text, controls, and ten visible results per page. The library sets a root
+directory that is saved with plugin state. megaDSP recursively indexes that
+tree and keeps only files that can be opened as valid audio. Search matches
+names and relative folder paths; direct filter pills select mono, stereo, under
+1 second, 1-3 seconds, or over 3 seconds. Text queries also accept exact
+sample-rate filters such as `sr:48000`. The inline result list shows channel
+layout, sample rate, and duration.
+**< IR** and **IR >** browse the same validated recursive index in
+case-insensitive path order and wrap at either end.
+
+Three prepared **A/B/C** banks persist independently with each snapshot.
+Clicking a result prepares it into the selected bank; clicking A, B, or C then
+switches among those already prepared convolution engines without decoding a
+file on the audio thread.
 
 The normalised IR envelope has an unobstructed waveform area. A dedicated strip
 below it owns draggable **Low Cut** (high-pass) and **High Cut** (low-pass)

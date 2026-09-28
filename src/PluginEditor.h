@@ -35,6 +35,7 @@ public:
     bool cardAcceptsAssetDropForTesting(
         int slot, const juce::String& path) const;
     int cardCountForTesting() const { return static_cast<int>(cards.size()); }
+    int cardHeightForTesting(int slot) const;
     int selectedCardForTesting() const { return selectedSlot; }
     int chainNavigatorButtonCountForTesting() const;
     int chainInsertButtonCountForTesting() const;
@@ -43,7 +44,7 @@ public:
     void setCardsEditorVisibleForTesting(bool);
     bool cardChildrenFitForTesting() const;
     bool cardGraphsAvoidControlsForTesting() const;
-    bool cardHeightsAreUniformForTesting() const;
+    bool cardHeightsMatchPreferencesForTesting() const;
     bool rackOverflowsVerticallyForTesting() const;
     juce::String commitHashForTesting() const
     {

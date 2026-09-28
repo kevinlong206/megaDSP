@@ -36,9 +36,20 @@ struct ConvolutionReverbModule::PreparedLoad final
     bool isMono = false;
 };
 
-ConvolutionReverbModule::ConvolutionReverbModule()
-    : convolution(std::make_unique<Engine>())
+struct ConvolutionReverbModule::Bank
 {
+    std::unique_ptr<Engine> engine = std::make_unique<Engine>();
+    juce::String name;
+    ImpulseResponsePreview preview {};
+    std::atomic<double> lengthSeconds { 0.0 };
+    std::atomic<bool> isMono { false };
+    std::atomic<bool> available { false };
+};
+
+ConvolutionReverbModule::ConvolutionReverbModule()
+{
+    for (auto& bank : banks)
+        bank = std::make_unique<Bank>();
 }
 
 ConvolutionReverbModule::~ConvolutionReverbModule() = default;
@@ -47,7 +58,8 @@ void ConvolutionReverbModule::prepare(const juce::dsp::ProcessSpec& spec)
 {
     preparedSpec = spec;
     sampleRate = spec.sampleRate;
-    convolution->processor.prepare(spec);
+    for (auto& bank : banks)
+        bank->engine->processor.prepare(spec);
     lowCut.prepare(spec);
     highCut.prepare(spec);
     lowCut.setType(juce::dsp::StateVariableTPTFilterType::highpass);
@@ -82,7 +94,8 @@ void ConvolutionReverbModule::prepare(const juce::dsp::ProcessSpec& spec)
 
 void ConvolutionReverbModule::reset()
 {
-    convolution->processor.reset();
+    for (auto& bank : banks)
+        bank->engine->processor.reset();
     lowCut.reset();
     highCut.reset();
     wetBuffer.clear();
@@ -132,7 +145,9 @@ void ConvolutionReverbModule::process(
             wetBuffer.copyFrom(channel, 0, buffer, channel, 0,
                                buffer.getNumSamples());
         if (buffer.getNumChannels() == 2
-            && committedImpulseIsMono.load(std::memory_order_relaxed))
+            && banks[static_cast<size_t>(
+                activeBank.load(std::memory_order_relaxed))]
+                   ->isMono.load(std::memory_order_relaxed))
         {
             for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
             {
@@ -148,7 +163,9 @@ void ConvolutionReverbModule::process(
         auto wetBlock = preparedWetBlock.getSubBlock(
             0, static_cast<size_t>(buffer.getNumSamples()));
         juce::dsp::ProcessContextReplacing<float> wetContext(wetBlock);
-        convolution->processor.process(wetContext);
+        banks[static_cast<size_t>(
+            activeBank.load(std::memory_order_acquire))]
+            ->engine->processor.process(wetContext);
         wetAvailable = true;
         lowCut.setCutoffFrequency(
             exponential(20.0f, 1000.0f, controls[0]));
@@ -333,25 +350,46 @@ ConvolutionReverbModule::beginImpulseResponseRequest() noexcept
 
 bool ConvolutionReverbModule::hasCurrentImpulseResponse() const noexcept
 {
-    const auto requested =
-        requestedGeneration.load(std::memory_order_acquire);
-    return committedImpulseAvailable.load(std::memory_order_acquire)
-           && committedGeneration.load(std::memory_order_acquire)
-                  == requested;
+    const auto bank = activeBank.load(std::memory_order_acquire);
+    return juce::isPositiveAndBelow(bank, impulseBankCount)
+        && banks[static_cast<size_t>(bank)]->available.load(
+            std::memory_order_acquire)
+        && !activeReplacementPending.load(std::memory_order_acquire);
+}
+
+double ConvolutionReverbModule::currentImpulseResponseTailSeconds()
+    const noexcept
+{
+    const auto bank = activeBank.load(std::memory_order_acquire);
+    return hasCurrentImpulseResponse()
+        ? banks[static_cast<size_t>(bank)]->lengthSeconds.load(
+              std::memory_order_relaxed)
+        : 0.0;
 }
 
 juce::Result ConvolutionReverbModule::prepareImpulseResponse(
     const juce::File& file, PreparedImpulseResponsePtr& destination)
 {
+    return prepareImpulseResponseInternal(file, destination, true);
+}
+
+juce::Result ConvolutionReverbModule::prepareImpulseResponseForBank(
+    const juce::File& file, PreparedImpulseResponsePtr& destination)
+{
+    return prepareImpulseResponseInternal(file, destination, false);
+}
+
+juce::Result ConvolutionReverbModule::prepareImpulseResponseInternal(
+    const juce::File& file, PreparedImpulseResponsePtr& destination,
+    bool markActivePending)
+{
     destination.reset();
     const auto generation = beginImpulseResponseRequest();
-    const auto fail = [this, generation](const juce::String& message)
+    activeReplacementPending.store(
+        markActivePending, std::memory_order_release);
+    const auto fail = [this](const juce::String& message)
     {
-        auto expected = generation;
-        requestedGeneration.compare_exchange_strong(
-            expected,
-            committedGeneration.load(std::memory_order_acquire),
-            std::memory_order_release, std::memory_order_relaxed);
+        activeReplacementPending.store(false, std::memory_order_release);
         return juce::Result::fail(message);
     };
 
@@ -425,31 +463,74 @@ juce::Result ConvolutionReverbModule::prepareImpulseResponse(
 bool ConvolutionReverbModule::commitPreparedImpulseResponse(
     PreparedImpulseResponsePtr& preparedBase)
 {
+    return commitPreparedImpulseResponseToBank(
+        activeBank.load(std::memory_order_acquire), preparedBase);
+}
+
+bool ConvolutionReverbModule::commitPreparedImpulseResponseToBank(
+    int bankIndex, PreparedImpulseResponsePtr& preparedBase)
+{
     auto* prepared = dynamic_cast<PreparedLoad*>(preparedBase.get());
-    if (prepared == nullptr || prepared->engine == nullptr
+    if (!juce::isPositiveAndBelow(bankIndex, impulseBankCount)
+        || prepared == nullptr || prepared->engine == nullptr
         || prepared->generation
                != requestedGeneration.load(std::memory_order_acquire))
         return false;
 
-    std::swap(convolution, prepared->engine);
-    convolution->processor.reset();
+    auto& bank = *banks[static_cast<size_t>(bankIndex)];
+    bank.engine = std::move(prepared->engine);
+    bank.engine->processor.reset();
+    {
+        const juce::ScopedLock lock(metadataLock);
+        bank.name = prepared->name;
+        bank.preview = prepared->preview;
+        bank.lengthSeconds.store(
+            prepared->lengthSeconds, std::memory_order_relaxed);
+        bank.isMono.store(prepared->isMono, std::memory_order_relaxed);
+        bank.available.store(true, std::memory_order_release);
+    }
+    if (bankIndex == activeBank.load(std::memory_order_acquire))
+    {
+        lowCut.reset();
+        highCut.reset();
+        wetBuffer.clear();
+    }
+    activeReplacementPending.store(false, std::memory_order_release);
+    prepared->generation = 0;
+    preparedBase.reset();
+    return true;
+}
+
+bool ConvolutionReverbModule::selectImpulseResponseBank(int bank)
+{
+    if (!juce::isPositiveAndBelow(bank, impulseBankCount))
+        return false;
+    activeBank.store(bank, std::memory_order_release);
+    banks[static_cast<size_t>(bank)]->engine->processor.reset();
     lowCut.reset();
     highCut.reset();
     wetBuffer.clear();
-    {
-        const juce::ScopedLock lock(metadataLock);
-        loadedImpulseName = prepared->name;
-        preview = prepared->preview;
-    }
-    impulseLengthSeconds.store(
-        prepared->lengthSeconds, std::memory_order_relaxed);
-    committedImpulseIsMono.store(
-        prepared->isMono, std::memory_order_relaxed);
-    committedGeneration.store(
-        prepared->generation, std::memory_order_relaxed);
-    committedImpulseAvailable.store(true, std::memory_order_release);
-    prepared->generation = 0;
     return true;
+}
+
+void ConvolutionReverbModule::clearAllImpulseResponseBanks()
+{
+    beginImpulseResponseRequest();
+    activeReplacementPending.store(false, std::memory_order_release);
+    const juce::ScopedLock lock(metadataLock);
+    for (auto& bank : banks)
+    {
+        bank->engine->processor.reset();
+        bank->name.clear();
+        bank->preview.fill(0.0f);
+        bank->lengthSeconds.store(0.0, std::memory_order_relaxed);
+        bank->isMono.store(false, std::memory_order_relaxed);
+        bank->available.store(false, std::memory_order_release);
+    }
+    activeBank.store(0, std::memory_order_release);
+    lowCut.reset();
+    highCut.reset();
+    wetBuffer.clear();
 }
 
 void ConvolutionReverbModule::cancelPreparedImpulseResponse(
@@ -460,23 +541,26 @@ void ConvolutionReverbModule::cancelPreparedImpulseResponse(
         auto expected = prepared->generation;
         requestedGeneration.compare_exchange_strong(
             expected,
-            committedGeneration.load(std::memory_order_acquire),
+            0,
             std::memory_order_release, std::memory_order_relaxed);
     }
+    activeReplacementPending.store(false, std::memory_order_release);
     preparedBase.reset();
 }
 
 void ConvolutionReverbModule::clearImpulseResponse()
 {
-    const auto generation = beginImpulseResponseRequest();
-    committedImpulseAvailable.store(false, std::memory_order_release);
-    committedImpulseIsMono.store(false, std::memory_order_relaxed);
-    committedGeneration.store(generation, std::memory_order_release);
-    impulseLengthSeconds.store(0.0, std::memory_order_relaxed);
+    beginImpulseResponseRequest();
+    activeReplacementPending.store(false, std::memory_order_release);
+    auto& bank = *banks[static_cast<size_t>(
+        activeBank.load(std::memory_order_acquire))];
     {
         const juce::ScopedLock lock(metadataLock);
-        loadedImpulseName.clear();
-        preview.fill(0.0f);
+        bank.name.clear();
+        bank.preview.fill(0.0f);
+        bank.lengthSeconds.store(0.0, std::memory_order_relaxed);
+        bank.isMono.store(false, std::memory_order_relaxed);
+        bank.available.store(false, std::memory_order_release);
     }
 }
 
@@ -485,7 +569,8 @@ juce::String ConvolutionReverbModule::impulseResponseName() const
     if (!hasCurrentImpulseResponse())
         return {};
     const juce::ScopedLock lock(metadataLock);
-    return loadedImpulseName;
+    return banks[static_cast<size_t>(
+        activeBank.load(std::memory_order_acquire))]->name;
 }
 
 ImpulseResponsePreview
@@ -494,6 +579,16 @@ ConvolutionReverbModule::impulseResponsePreview() const
     if (!hasCurrentImpulseResponse())
         return {};
     const juce::ScopedLock lock(metadataLock);
-    return preview;
+    return banks[static_cast<size_t>(
+        activeBank.load(std::memory_order_acquire))]->preview;
+}
+
+juce::String ConvolutionReverbModule::impulseResponseBankName(
+    int bank) const
+{
+    if (!juce::isPositiveAndBelow(bank, impulseBankCount))
+        return {};
+    const juce::ScopedLock lock(metadataLock);
+    return banks[static_cast<size_t>(bank)]->name;
 }
 } // namespace megadsp

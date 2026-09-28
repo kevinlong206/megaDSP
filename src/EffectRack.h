@@ -34,6 +34,7 @@ public:
         ModuleType type = ModuleType::empty;
         DspModule* module = nullptr;
         int lane = 0;
+        int convolutionBank = -1;
         juce::String path;
         PreparedImpulseResponsePtr prepared;
     };
@@ -87,6 +88,17 @@ public:
     juce::Result prepareBuiltInImpulseResponse(
         int slot, int index, PreparedImpulseResponseLoad&);
     bool commitImpulseResponse(PreparedImpulseResponseLoad&);
+    juce::Result prepareConvolutionImpulseResponseBank(
+        int slot, int bank, const juce::File&,
+        PreparedImpulseResponseLoad&);
+    bool commitConvolutionImpulseResponseBank(
+        PreparedImpulseResponseLoad&);
+    bool selectConvolutionImpulseResponseBank(int slot, int bank);
+    int activeConvolutionImpulseResponseBank(int slot) const;
+    juce::String convolutionImpulseResponseBankPath(
+        int slot, int bank) const;
+    juce::String convolutionImpulseResponseBankName(
+        int slot, int bank) const;
     void cancelImpulseResponse(PreparedImpulseResponseLoad&) noexcept;
     juce::Result loadImpulseResponse(int slot, const juce::File&);
     juce::Result loadImpulseResponse(int slot, int lane, const juce::File&);
@@ -176,6 +188,8 @@ private:
     void synchronizeModuleDataState(int slot);
     juce::String impulsePath(int slot, int lane = 0) const;
     void setImpulsePath(int slot, int lane, const juce::String&);
+    void setConvolutionImpulseBankPath(
+        int slot, int bank, const juce::String&);
     juce::String namPath(int slot) const;
     void setNamPath(int slot, const juce::String&);
 };

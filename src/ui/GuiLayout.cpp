@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <numeric>
 
 namespace megadsp::ui
 {
@@ -130,10 +131,18 @@ TabLayout calculateTabLayout(
     return result;
 }
 
-int calculateRackContentHeight(int activeModules, bool showAddButton)
+int calculateRackContentHeight(
+    const std::vector<int>& moduleHeights, bool showAddButton)
 {
-    const auto modules = juce::jmax(0, activeModules);
-    auto height = modules * moduleCardHeight;
+    const auto modules = static_cast<int>(moduleHeights.size());
+    auto height = std::accumulate(
+        moduleHeights.begin(), moduleHeights.end(), 0,
+        [](int total, int moduleHeight)
+        {
+            return total + juce::jlimit(
+                moduleCardHeight, moduleCardMaximumHeight,
+                moduleHeight);
+        });
     if (modules > 1)
         height += (modules - 1) * moduleCardGap;
     if (showAddButton)

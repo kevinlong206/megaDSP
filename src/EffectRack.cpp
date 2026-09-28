@@ -145,6 +145,23 @@ void EffectRack::setImpulsePath(
         rackSlot.impulseResponsePath2 = path;
 }
 
+void EffectRack::setConvolutionImpulseBankPath(
+    int slot, int bank, const juce::String& path)
+{
+    if (!juce::isPositiveAndBelow(
+            bank, ConvolutionReverbModule::impulseBankCount))
+        return;
+    if (state != nullptr)
+    {
+        state->slots[static_cast<size_t>(slot)]
+            .convolutionImpulseBankPaths[static_cast<size_t>(bank)] =
+                path;
+        return;
+    }
+    if (bank == 0)
+        setImpulsePath(slot, 0, path);
+}
+
 juce::String EffectRack::namPath(int slot) const
 {
     if (legacyParameters != nullptr)
@@ -592,7 +609,6 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
         if (bypassRequested && !slot.wet.isSmoothing()
             && slot.wet.getCurrentValue() <= 0.0f)
         {
-            module->reset();
             slot.dspSuspended = true;
             slot.reactivationSamplesRemaining = 0;
         }
@@ -766,6 +782,16 @@ void EffectRack::moveSlot(int source, int destination)
     const std::array<juce::String, 2> movingIr {
         readIr(source, 0), readIr(source, 1)
     };
+    std::array<juce::String, ConvolutionReverbModule::impulseBankCount>
+        movingConvolutionBanks;
+    for (int bank = 0;
+         bank < ConvolutionReverbModule::impulseBankCount; ++bank)
+        movingConvolutionBanks[static_cast<size_t>(bank)] =
+            convolutionImpulseResponseBankPath(source, bank);
+    const auto movingConvolutionActive = state != nullptr
+        ? state->slots[static_cast<size_t>(source)]
+              .convolutionActiveBank
+        : 0;
     const auto movingNam = readNam(source);
     if (source < destination)
         for (int index = source; index < destination; ++index)
@@ -773,6 +799,17 @@ void EffectRack::moveSlot(int source, int destination)
             write(index, read(index + 1));
             for (int lane = 0; lane < 2; ++lane)
                 writeIr(index, lane, readIr(index + 1, lane));
+            if (state != nullptr)
+            {
+                state->slots[static_cast<size_t>(index)]
+                    .convolutionImpulseBankPaths =
+                        state->slots[static_cast<size_t>(index + 1)]
+                            .convolutionImpulseBankPaths;
+                state->slots[static_cast<size_t>(index)]
+                    .convolutionActiveBank =
+                        state->slots[static_cast<size_t>(index + 1)]
+                            .convolutionActiveBank;
+            }
             writeNam(index, readNam(index + 1));
         }
     else
@@ -781,11 +818,29 @@ void EffectRack::moveSlot(int source, int destination)
             write(index, read(index - 1));
             for (int lane = 0; lane < 2; ++lane)
                 writeIr(index, lane, readIr(index - 1, lane));
+            if (state != nullptr)
+            {
+                state->slots[static_cast<size_t>(index)]
+                    .convolutionImpulseBankPaths =
+                        state->slots[static_cast<size_t>(index - 1)]
+                            .convolutionImpulseBankPaths;
+                state->slots[static_cast<size_t>(index)]
+                    .convolutionActiveBank =
+                        state->slots[static_cast<size_t>(index - 1)]
+                            .convolutionActiveBank;
+            }
             writeNam(index, readNam(index - 1));
         }
     write(destination, moving);
     for (int lane = 0; lane < 2; ++lane)
         writeIr(destination, lane, movingIr[static_cast<size_t>(lane)]);
+    if (state != nullptr)
+    {
+        state->slots[static_cast<size_t>(destination)]
+            .convolutionImpulseBankPaths = movingConvolutionBanks;
+        state->slots[static_cast<size_t>(destination)]
+            .convolutionActiveBank = movingConvolutionActive;
+    }
     writeNam(destination, movingNam);
 }
 
@@ -805,6 +860,13 @@ void EffectRack::clearSlot(int slot)
             0.5f, std::memory_order_relaxed);
     setImpulsePath(slot, 0, {});
     setImpulsePath(slot, 1, {});
+    if (state != nullptr)
+    {
+        state->slots[static_cast<size_t>(slot)]
+            .convolutionImpulseBankPaths.fill({});
+        state->slots[static_cast<size_t>(slot)]
+            .convolutionActiveBank = 0;
+    }
     setNamPath(slot, {});
 }
 
@@ -815,7 +877,11 @@ void EffectRack::clearModuleDataState()
         auto& rackSlot = slots[static_cast<size_t>(slot)];
         if (rackSlot.activeModule != nullptr)
         {
-            if (auto* impulseResponse =
+            if (auto* convolution =
+                    dynamic_cast<ConvolutionReverbModule*>(
+                        rackSlot.activeModule.get()))
+                convolution->clearAllImpulseResponseBanks();
+            else if (auto* impulseResponse =
                     rackSlot.activeModule->impulseResponseCapability())
                 for (int lane = 0;
                      lane < impulseResponse->impulseResponseLaneCount();
@@ -835,6 +901,13 @@ void EffectRack::clearModuleDataState()
         rackSlot.namRestorePending = false;
         setImpulsePath(slot, 0, {});
         setImpulsePath(slot, 1, {});
+        if (state != nullptr)
+        {
+            state->slots[static_cast<size_t>(slot)]
+                .convolutionImpulseBankPaths.fill({});
+            state->slots[static_cast<size_t>(slot)]
+                .convolutionActiveBank = 0;
+        }
         setNamPath(slot, {});
     }
 }
@@ -990,6 +1063,133 @@ bool EffectRack::commitImpulseResponse(
     return true;
 }
 
+juce::Result EffectRack::prepareConvolutionImpulseResponseBank(
+    int slot, int bank, const juce::File& file,
+    PreparedImpulseResponseLoad& load)
+{
+    if (!juce::isPositiveAndBelow(
+            bank, ConvolutionReverbModule::impulseBankCount))
+        return juce::Result::fail("Invalid convolution audition bank.");
+    load = {};
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return juce::Result::fail("Invalid impulse-response slot.");
+    auto& rackSlot = slots[static_cast<size_t>(slot)];
+    auto* module = selectedModule(rackSlot);
+    auto* convolution =
+        dynamic_cast<ConvolutionReverbModule*>(module);
+    if (convolution == nullptr)
+        return juce::Result::fail(
+            "The selected slot is not Convolution Reverb.");
+    load.slot = slot;
+    load.type = rackSlot.activeType;
+    load.module = module;
+    load.lane = 0;
+    load.convolutionBank = bank;
+    load.path = file.getFullPathName();
+    auto result = convolution->prepareImpulseResponseForBank(
+        file, load.prepared);
+    if (result.failed())
+        load = {};
+    return result;
+}
+
+bool EffectRack::commitConvolutionImpulseResponseBank(
+    PreparedImpulseResponseLoad& load)
+{
+    if (!juce::isPositiveAndBelow(load.slot, slotCount)
+        || !juce::isPositiveAndBelow(
+            load.convolutionBank,
+            ConvolutionReverbModule::impulseBankCount)
+        || load.prepared == nullptr)
+        return false;
+
+    auto& rackSlot = slots[static_cast<size_t>(load.slot)];
+    auto* module = selectedModule(rackSlot);
+    auto* convolution =
+        dynamic_cast<ConvolutionReverbModule*>(module);
+    if (convolution == nullptr || module != load.module
+        || rackSlot.activeType != load.type
+        || !convolution->commitPreparedImpulseResponseToBank(
+            load.convolutionBank, load.prepared))
+        return false;
+
+    setConvolutionImpulseBankPath(
+        load.slot, load.convolutionBank, load.path);
+    if (load.convolutionBank
+        == convolution->activeImpulseResponseBank())
+    {
+        rackSlot.synchronizedImpulsePath = load.path;
+        rackSlot.observedImpulsePath = load.path;
+        rackSlot.impulseRestorePending = false;
+        setImpulsePath(load.slot, 0, load.path);
+    }
+    return true;
+}
+
+bool EffectRack::selectConvolutionImpulseResponseBank(
+    int slot, int bank)
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount)
+        || !juce::isPositiveAndBelow(
+            bank, ConvolutionReverbModule::impulseBankCount))
+        return false;
+    auto& rackSlot = slots[static_cast<size_t>(slot)];
+    auto* convolution = dynamic_cast<ConvolutionReverbModule*>(
+        selectedModule(rackSlot));
+    if (convolution == nullptr
+        || !convolution->selectImpulseResponseBank(bank))
+        return false;
+    if (state != nullptr)
+        state->slots[static_cast<size_t>(slot)]
+            .convolutionActiveBank = bank;
+    const auto path = convolutionImpulseResponseBankPath(slot, bank);
+    rackSlot.synchronizedImpulsePath = path;
+    rackSlot.observedImpulsePath = path;
+    rackSlot.impulseRestorePending = false;
+    setImpulsePath(slot, 0, path);
+    return true;
+}
+
+int EffectRack::activeConvolutionImpulseResponseBank(int slot) const
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return 0;
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (const auto* convolution =
+            dynamic_cast<const ConvolutionReverbModule*>(
+                selectedModule(rackSlot)))
+        return convolution->activeImpulseResponseBank();
+    return 0;
+}
+
+juce::String EffectRack::convolutionImpulseResponseBankPath(
+    int slot, int bank) const
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount)
+        || !juce::isPositiveAndBelow(
+            bank, ConvolutionReverbModule::impulseBankCount))
+        return {};
+    if (state != nullptr)
+        return state->slots[static_cast<size_t>(slot)]
+            .convolutionImpulseBankPaths[static_cast<size_t>(bank)];
+    return bank == 0 ? impulsePath(slot) : juce::String{};
+}
+
+juce::String EffectRack::convolutionImpulseResponseBankName(
+    int slot, int bank) const
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount)
+        || !juce::isPositiveAndBelow(
+            bank, ConvolutionReverbModule::impulseBankCount))
+        return {};
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (const auto* convolution =
+            dynamic_cast<const ConvolutionReverbModule*>(
+                selectedModule(rackSlot)))
+        return convolution->impulseResponseBankName(bank);
+    return {};
+}
+
 void EffectRack::cancelImpulseResponse(
     PreparedImpulseResponseLoad& load) noexcept
 {
@@ -1089,6 +1289,11 @@ juce::Result EffectRack::clearImpulseResponse(int slot, int lane)
     observed.clear();
     pending = false;
     setImpulsePath(slot, lane, {});
+    if (lane == 0)
+        if (const auto* convolution =
+                dynamic_cast<const ConvolutionReverbModule*>(module))
+            setConvolutionImpulseBankPath(
+                slot, convolution->activeImpulseResponseBank(), {});
     return juce::Result::ok();
 }
 

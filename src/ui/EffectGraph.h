@@ -38,6 +38,7 @@ public:
     bool isInterestedInFileDrag(const juce::StringArray&) override;
     void filesDropped(const juce::StringArray&, int x, int y) override;
     bool usesFullPanel() const;
+    int preferredCardHeight() const;
     void setVisualizationActive(bool);
     bool isVisualizationActive() const { return visualizationActive; }
 

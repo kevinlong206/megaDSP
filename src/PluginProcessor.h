@@ -7,6 +7,15 @@
 #include <algorithm>
 #include <cstdint>
 
+struct ImpulseResponseLibraryEntry
+{
+    juce::File file;
+    juce::String relativePath;
+    double sampleRate = 0.0;
+    double durationSeconds = 0.0;
+    int channelCount = 0;
+};
+
 class MegaDSPAudioProcessor final : public juce::AudioProcessor,
                                     private juce::Timer,
                                     private juce::AsyncUpdater,
@@ -82,8 +91,22 @@ public:
     juce::Result loadImpulseResponse(int slot, const juce::File& file);
     juce::Result loadImpulseResponse(
         int slot, int lane, const juce::File& file);
+    juce::Result loadConvolutionImpulseResponseBank(
+        int slot, int bank, const juce::File& file);
+    bool selectConvolutionImpulseResponseBank(int slot, int bank);
+    int activeConvolutionImpulseResponseBank(int slot) const;
+    juce::String convolutionImpulseResponseBankPath(
+        int slot, int bank) const;
+    juce::String convolutionImpulseResponseBankName(
+        int slot, int bank) const;
     juce::Result loadBuiltInImpulseResponse(int slot, int index);
     juce::Result loadAdjacentImpulseResponse(int slot, int direction);
+    juce::Result setImpulseResponseRootDirectory(const juce::File&);
+    juce::Result rebuildImpulseResponseLibrary();
+    std::vector<ImpulseResponseLibraryEntry> searchImpulseResponses(
+        const juce::String& query, int maximumResults = 200);
+    int impulseResponseLibrarySize();
+    juce::File impulseResponseRootDirectory() const;
     void clearImpulseResponse(int slot);
     void clearImpulseResponse(int slot, int lane);
     juce::File impulseResponseDirectory(int slot) const;
@@ -286,6 +309,7 @@ private:
         juce::AudioBuffer<float>& main,
         const juce::AudioBuffer<float>* sidechain,
         double bpm);
+    void ensureImpulseResponseLibrary();
     void serializeSnapshots(juce::ValueTree&) const;
     void restoreSnapshots(const juce::ValueTree&, int sourceSchema);
     megadsp::RackState& selectedSnapshotState() noexcept
@@ -357,6 +381,9 @@ private:
     int editorWidth = 1100;
     int editorHeight = 720;
     std::array<std::vector<float>, 2> hostBypassDelay;
+    juce::CriticalSection impulseResponseLibraryLock;
+    std::vector<ImpulseResponseLibraryEntry> impulseResponseLibrary;
+    juce::String indexedImpulseResponseRoot;
     int hostBypassWritePosition = 0;
     int lastHostBypassLatency = 0;
     std::atomic<bool> topologyMutationInProgress { false };

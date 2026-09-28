@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EffectGraph.h"
+#include "GuiLayout.h"
 
 #include <array>
 #include <vector>
@@ -15,6 +16,11 @@ public:
 
     virtual void configureAccessibility(juce::Component&) const {}
     virtual bool usesFullPanel() const { return false; }
+    virtual int preferredCardHeight() const
+    {
+        return usesFullPanel() ? fullPanelModuleCardHeight
+                               : moduleCardHeight;
+    }
     virtual bool showsSharedControlReadout() const
     {
         return !usesFullPanel();
@@ -24,6 +30,7 @@ public:
     virtual void mouseDown(const juce::MouseEvent&) {}
     virtual void mouseDrag(const juce::MouseEvent&) {}
     virtual void mouseDoubleClick(const juce::MouseEvent&) {}
+    virtual bool keyPressed(const juce::KeyPress&) { return false; }
     virtual void timerCallback() {}
     virtual bool isInterestedInFileDrag(const juce::StringArray&) const
     {

@@ -20,6 +20,8 @@ void RackSlotState::copyFrom(const RackSlotState& source)
             std::memory_order_relaxed);
     impulseResponsePath = source.impulseResponsePath;
     impulseResponsePath2 = source.impulseResponsePath2;
+    convolutionImpulseBankPaths = source.convolutionImpulseBankPaths;
+    convolutionActiveBank = source.convolutionActiveBank;
     namModelPath = source.namModelPath;
 }
 
@@ -47,6 +49,8 @@ void RackState::clear()
             control.store(0.5f, std::memory_order_relaxed);
         slot.impulseResponsePath.clear();
         slot.impulseResponsePath2.clear();
+        slot.convolutionImpulseBankPaths.fill({});
+        slot.convolutionActiveBank = 0;
         slot.namModelPath.clear();
     }
     inputGainDb.store(0.0f, std::memory_order_relaxed);
@@ -88,6 +92,17 @@ juce::ValueTree RackState::toValueTree(int index) const
         if (source.impulseResponsePath2.isNotEmpty())
             slot.setProperty(
                 "impulseResponse2", source.impulseResponsePath2, nullptr);
+        for (int bank = 0; bank < 3; ++bank)
+            if (source.convolutionImpulseBankPaths[
+                    static_cast<size_t>(bank)].isNotEmpty())
+                slot.setProperty(
+                    "convolutionBank" + juce::String(bank + 1),
+                    source.convolutionImpulseBankPaths[
+                        static_cast<size_t>(bank)],
+                    nullptr);
+        slot.setProperty(
+            "convolutionActiveBank",
+            juce::jlimit(0, 2, source.convolutionActiveBank), nullptr);
         if (source.namModelPath.isNotEmpty())
             slot.setProperty("namModel", source.namModelPath, nullptr);
         snapshot.addChild(slot, -1, nullptr);
@@ -135,6 +150,19 @@ void RackState::fromValueTree(const juce::ValueTree& snapshot)
             child.getProperty("impulseResponse").toString();
         destination.impulseResponsePath2 =
             child.getProperty("impulseResponse2").toString();
+        destination.convolutionActiveBank = juce::jlimit(
+            0, 2,
+            static_cast<int>(
+                child.getProperty("convolutionActiveBank", 0)));
+        for (int bank = 0; bank < 3; ++bank)
+            destination.convolutionImpulseBankPaths[
+                static_cast<size_t>(bank)] =
+                    child.getProperty(
+                        "convolutionBank" + juce::String(bank + 1))
+                        .toString();
+        if (destination.convolutionImpulseBankPaths[0].isEmpty())
+            destination.convolutionImpulseBankPaths[0] =
+                destination.impulseResponsePath;
         destination.namModelPath =
             child.getProperty("namModel").toString();
     }

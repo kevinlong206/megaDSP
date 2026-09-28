@@ -11,6 +11,7 @@ class ConvolutionReverbModule final
 {
 public:
     static constexpr int spectrumBandCount = 12;
+    static constexpr int impulseBankCount = 3;
 
     enum TelemetryValue
     {
@@ -45,8 +46,19 @@ public:
     juce::Result loadImpulseResponse(const juce::File&) override;
     juce::Result prepareImpulseResponse(
         const juce::File&, PreparedImpulseResponsePtr&) override;
+    juce::Result prepareImpulseResponseForBank(
+        const juce::File&, PreparedImpulseResponsePtr&);
     bool commitPreparedImpulseResponse(
         PreparedImpulseResponsePtr&) override;
+    bool commitPreparedImpulseResponseToBank(
+        int bank, PreparedImpulseResponsePtr&);
+    bool selectImpulseResponseBank(int bank);
+    void clearAllImpulseResponseBanks();
+    int activeImpulseResponseBank() const noexcept
+    {
+        return activeBank.load(std::memory_order_acquire);
+    }
+    juce::String impulseResponseBankName(int bank) const;
     void cancelPreparedImpulseResponse(
         PreparedImpulseResponsePtr&) noexcept override;
     void clearImpulseResponse() override;
@@ -66,12 +78,7 @@ public:
     {
         return impulseResponsePreview();
     }
-    double currentImpulseResponseTailSeconds() const noexcept override
-    {
-        return hasCurrentImpulseResponse()
-                   ? impulseLengthSeconds.load(std::memory_order_relaxed)
-                   : 0.0;
-    }
+    double currentImpulseResponseTailSeconds() const noexcept override;
     ImpulseResponseCapability* impulseResponseCapability() noexcept override
     {
         return this;
@@ -90,12 +97,17 @@ public:
 
 private:
     struct Engine;
+    struct Bank;
     struct PreparedLoad;
 
     bool hasCurrentImpulseResponse() const noexcept;
     std::uint64_t beginImpulseResponseRequest() noexcept;
+    juce::Result prepareImpulseResponseInternal(
+        const juce::File&, PreparedImpulseResponsePtr&,
+        bool markActivePending);
 
-    std::unique_ptr<Engine> convolution;
+    std::array<std::unique_ptr<Bank>, impulseBankCount> banks;
+    std::atomic<int> activeBank { 0 };
     juce::dsp::StateVariableTPTFilter<float> lowCut;
     juce::dsp::StateVariableTPTFilter<float> highCut;
     juce::AudioBuffer<float> wetBuffer;
@@ -109,10 +121,7 @@ private:
     juce::dsp::ProcessSpec preparedSpec { 44100.0, 512, 2 };
     std::atomic<std::uint64_t> requestCounter { 0 };
     std::atomic<std::uint64_t> requestedGeneration { 0 };
-    std::atomic<std::uint64_t> committedGeneration { 0 };
-    std::atomic<bool> committedImpulseAvailable { false };
-    std::atomic<bool> committedImpulseIsMono { false };
-    std::atomic<double> impulseLengthSeconds { 0.0 };
+    std::atomic<bool> activeReplacementPending { false };
     float duckEnvelope = 0.0f;
     float duckGainDb = 0.0f;
     ContinuousTelemetrySnapshot telemetryState;
@@ -130,7 +139,5 @@ private:
     int telemetryInterval = 1;
     bool telemetryWasCapturing = false;
     mutable juce::CriticalSection metadataLock;
-    juce::String loadedImpulseName;
-    ImpulseResponsePreview preview {};
 };
 } // namespace megadsp

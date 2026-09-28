@@ -18,6 +18,8 @@ struct RackSlotState
     std::array<std::atomic<float>, controlsPerSlot> controls;
     juce::String impulseResponsePath;
     juce::String impulseResponsePath2;
+    std::array<juce::String, 3> convolutionImpulseBankPaths;
+    int convolutionActiveBank = 0;
     juce::String namModelPath;
 
     RackSlotState();

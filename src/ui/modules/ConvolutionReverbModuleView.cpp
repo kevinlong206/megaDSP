@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <memory>
 
 namespace megadsp::ui
 {
@@ -17,11 +18,16 @@ public:
     using ModuleView::ModuleView;
     void configureAccessibility(juce::Component&) const override;
     bool usesFullPanel() const override { return true; }
+    int preferredCardHeight() const override
+    {
+        return moduleCardMaximumHeight;
+    }
     void paint(juce::Graphics&, juce::Rectangle<float>) override;
     void timerCallback() override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
+    bool keyPressed(const juce::KeyPress&) override;
 
 private:
     enum class ViewMode
@@ -32,6 +38,8 @@ private:
     };
 
     static juce::Rectangle<float> waveformColumn(
+        juce::Rectangle<float>);
+    static juce::Rectangle<float> libraryBounds(
         juce::Rectangle<float>);
     static juce::Rectangle<float> waveformBounds(
         juce::Rectangle<float>);
@@ -45,8 +53,24 @@ private:
         juce::Rectangle<float>, int);
     static juce::Rectangle<float> railTrackBounds(
         juce::Rectangle<float>, int);
+    juce::Rectangle<float> searchBounds(
+        juce::Rectangle<float>) const;
+    juce::Rectangle<float> rootBounds(
+        juce::Rectangle<float>) const;
+    juce::Rectangle<float> bankBounds(
+        juce::Rectangle<float>, int) const;
+    juce::Rectangle<float> filterBounds(
+        juce::Rectangle<float>, int) const;
+    juce::Rectangle<float> resultBounds(
+        juce::Rectangle<float>, int) const;
+    juce::String searchQuery() const;
+    void refreshResults();
+    void chooseRootDirectory();
+    void paintLibrary(
+        juce::Graphics&, juce::Rectangle<float>);
 
     static constexpr int spectrogramFrameCount = 72;
+    static constexpr int browserRowsPerPage = 10;
     using SpectrumFrame =
         std::array<float, ConvolutionReverbModule::spectrumBandCount>;
     std::array<SpectrumFrame, spectrogramFrameCount> spectrogram {};
@@ -54,6 +78,13 @@ private:
     int spectrogramWritePosition = 0;
     int spectrogramCount = 0;
     ViewMode viewMode = ViewMode::room;
+    juce::String searchText;
+    std::array<bool, 5> filters {};
+    std::vector<ImpulseResponseLibraryEntry> results;
+    std::unique_ptr<juce::FileChooser> rootChooser;
+    int resultPage = 0;
+    bool searchFocused = false;
+    bool searchDirty = true;
 };
 
 void ConvolutionReverbModuleView::configureAccessibility(
@@ -61,9 +92,11 @@ void ConvolutionReverbModuleView::configureAccessibility(
 {
     component.setTitle("Convolution reverb impulse response");
     component.setHelpText(
-        "Drop a WAV, AIFF, or FLAC impulse response file here. "
-        "Use the previous and next header buttons to browse the persisted IR "
-        "directory. "
+        "Set a persisted root directory, type in the inline search field, "
+        "filter by channel layout or duration, and click a result to load it "
+        "into the selected A, B, or C audition bank. Switching banks uses "
+        "already prepared convolution engines. You can also drop a WAV, "
+        "AIFF, or FLAC impulse response file here. "
         "The live stereo chamber shows measured wet output as expanding "
         "left and right reflection rings. Ring colour follows the measured "
         "brightness of the reverberation. Switch between Room, an EQ-style "
@@ -87,7 +120,20 @@ juce::Rectangle<float> ConvolutionReverbModuleView::waveformColumn(
 {
     const auto controls = controlsBounds(area);
     area.removeFromRight(controls.getWidth() + 10.0f);
+    const auto browserWidth = juce::jlimit(
+        260.0f, 340.0f, area.getWidth() * 0.38f);
+    area.removeFromLeft(browserWidth + 10.0f);
     return area;
+}
+
+juce::Rectangle<float> ConvolutionReverbModuleView::libraryBounds(
+    juce::Rectangle<float> area)
+{
+    const auto controls = controlsBounds(area);
+    area.removeFromRight(controls.getWidth() + 10.0f);
+    const auto browserWidth = juce::jlimit(
+        260.0f, 340.0f, area.getWidth() * 0.38f);
+    return area.removeFromLeft(browserWidth);
 }
 
 juce::Rectangle<float> ConvolutionReverbModuleView::waveformBounds(
@@ -133,10 +179,191 @@ juce::Rectangle<float> ConvolutionReverbModuleView::railTrackBounds(
     return rail.reduced(rail.getWidth() * 0.34f, 2.0f);
 }
 
+juce::Rectangle<float> ConvolutionReverbModuleView::rootBounds(
+    juce::Rectangle<float> area) const
+{
+    auto library = libraryBounds(area).reduced(10.0f);
+    return library.removeFromTop(30.0f);
+}
+
+juce::Rectangle<float> ConvolutionReverbModuleView::bankBounds(
+    juce::Rectangle<float> area, int bank) const
+{
+    auto library = libraryBounds(area).reduced(10.0f);
+    library.removeFromTop(38.0f);
+    auto row = library.removeFromTop(38.0f);
+    const auto width = row.getWidth() / 3.0f;
+    return { row.getX() + width * static_cast<float>(bank),
+             row.getY(), width - 3.0f, row.getHeight() };
+}
+
+juce::Rectangle<float> ConvolutionReverbModuleView::searchBounds(
+    juce::Rectangle<float> area) const
+{
+    auto library = libraryBounds(area).reduced(10.0f);
+    library.removeFromTop(84.0f);
+    return library.removeFromTop(38.0f);
+}
+
+juce::Rectangle<float> ConvolutionReverbModuleView::filterBounds(
+    juce::Rectangle<float> area, int filter) const
+{
+    auto library = libraryBounds(area).reduced(10.0f);
+    library.removeFromTop(130.0f);
+    auto row = library.removeFromTop(30.0f);
+    const auto width = row.getWidth() / 5.0f;
+    return { row.getX() + width * static_cast<float>(filter),
+             row.getY(), width - 2.0f, row.getHeight() };
+}
+
+juce::Rectangle<float> ConvolutionReverbModuleView::resultBounds(
+    juce::Rectangle<float> area, int rowIndex) const
+{
+    auto library = libraryBounds(area).reduced(10.0f);
+    library.removeFromTop(168.0f);
+    library.removeFromBottom(28.0f);
+    const auto rowHeight =
+        library.getHeight() / static_cast<float>(browserRowsPerPage);
+    return { library.getX(),
+             library.getY()
+                 + rowHeight * static_cast<float>(rowIndex),
+             library.getWidth(), juce::jmax(1.0f, rowHeight - 3.0f) };
+}
+
+juce::String ConvolutionReverbModuleView::searchQuery() const
+{
+    static constexpr std::array<const char*, 5> tokens {
+        "mono", "stereo", "short", "medium", "long"
+    };
+    auto query = searchText.trim();
+    for (size_t index = 0; index < filters.size(); ++index)
+        if (filters[index])
+            query += (query.isEmpty() ? "" : " ")
+                + juce::String(tokens[index]);
+    return query;
+}
+
+void ConvolutionReverbModuleView::refreshResults()
+{
+    results = processor.searchImpulseResponses(searchQuery(), 200);
+    const auto pageCount = juce::jmax(
+        1, static_cast<int>(
+               (results.size() + browserRowsPerPage - 1)
+               / browserRowsPerPage));
+    resultPage = juce::jlimit(0, pageCount - 1, resultPage);
+    searchDirty = false;
+}
+
+void ConvolutionReverbModuleView::chooseRootDirectory()
+{
+    rootChooser = std::make_unique<juce::FileChooser>(
+        "Choose impulse response root",
+        processor.impulseResponseRootDirectory());
+    juce::Component::SafePointer<EffectGraph> safeGraph(&graph);
+    rootChooser->launchAsync(
+        juce::FileBrowserComponent::openMode
+            | juce::FileBrowserComponent::canSelectDirectories,
+        [this, safeGraph](const juce::FileChooser& chooser)
+        {
+            if (safeGraph == nullptr)
+                return;
+            const auto root = chooser.getResult();
+            if (root.isDirectory())
+            {
+                const auto result =
+                    processor.setImpulseResponseRootDirectory(root);
+                if (result.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not index IR library",
+                        result.getErrorMessage());
+                else
+                {
+                    resultPage = 0;
+                    searchDirty = true;
+                    repaint();
+                }
+            }
+        });
+}
+
 void ConvolutionReverbModuleView::mouseDown(
     const juce::MouseEvent& event)
 {
     const auto area = getLocalBounds().toFloat().reduced(12.0f);
+    const auto library = libraryBounds(area);
+    if (library.contains(event.position))
+    {
+        if (rootBounds(area).contains(event.position))
+        {
+            chooseRootDirectory();
+            return;
+        }
+        for (int bank = 0;
+             bank < ConvolutionReverbModule::impulseBankCount; ++bank)
+            if (bankBounds(area, bank).contains(event.position))
+            {
+                processor.selectConvolutionImpulseResponseBank(
+                    slot, bank);
+                repaint();
+                return;
+            }
+        if (searchBounds(area).contains(event.position))
+        {
+            searchFocused = true;
+            repaint();
+            return;
+        }
+        searchFocused = false;
+        for (int filter = 0; filter < 5; ++filter)
+            if (filterBounds(area, filter).contains(event.position))
+            {
+                filters[static_cast<size_t>(filter)] =
+                    !filters[static_cast<size_t>(filter)];
+                resultPage = 0;
+                searchDirty = true;
+                repaint();
+                return;
+            }
+        for (int row = 0; row < browserRowsPerPage; ++row)
+            if (resultBounds(area, row).contains(event.position))
+            {
+                const auto index =
+                    resultPage * browserRowsPerPage + row;
+                if (juce::isPositiveAndBelow(
+                        index, static_cast<int>(results.size())))
+                {
+                    const auto result =
+                        processor.loadConvolutionImpulseResponseBank(
+                        slot,
+                        processor.activeConvolutionImpulseResponseBank(
+                            slot),
+                        results[static_cast<size_t>(index)].file);
+                    if (result.failed())
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::MessageBoxIconType::WarningIcon,
+                            "Could not load impulse response",
+                            result.getErrorMessage());
+                }
+                repaint();
+                return;
+            }
+        auto paging = library.reduced(10.0f).removeFromBottom(28.0f);
+        if (paging.contains(event.position))
+        {
+            const auto direction =
+                event.position.x < paging.getCentreX() ? -1 : 1;
+            const auto pageCount = juce::jmax(
+                1, static_cast<int>(
+                       (results.size() + browserRowsPerPage - 1)
+                       / browserRowsPerPage));
+            resultPage = juce::jlimit(
+                0, pageCount - 1, resultPage + direction);
+            repaint();
+        }
+        return;
+    }
+    searchFocused = false;
     const auto selector = viewSelectorBounds(area);
     if (selector.contains(event.position))
     {
@@ -177,6 +404,44 @@ void ConvolutionReverbModuleView::mouseDown(
         return;
     beginGestures();
     mouseDrag(event);
+}
+
+bool ConvolutionReverbModuleView::keyPressed(
+    const juce::KeyPress& key)
+{
+    if (!searchFocused)
+        return false;
+    if (key.getKeyCode() == juce::KeyPress::escapeKey)
+    {
+        searchFocused = false;
+        repaint();
+        return true;
+    }
+    if (key.getKeyCode() == juce::KeyPress::backspaceKey)
+    {
+        if (searchText.isNotEmpty())
+            searchText = searchText.dropLastCharacters(1);
+    }
+    else if (key.getKeyCode() == juce::KeyPress::returnKey)
+    {
+        searchFocused = false;
+        repaint();
+        return true;
+    }
+    else
+    {
+        const auto character = key.getTextCharacter();
+        if (key.getModifiers().isCommandDown()
+            || key.getModifiers().isCtrlDown()
+            || key.getModifiers().isAltDown()
+            || character < 32)
+            return false;
+        searchText += juce::String::charToString(character);
+    }
+    resultPage = 0;
+    searchDirty = true;
+    repaint();
+    return true;
 }
 
 void ConvolutionReverbModuleView::timerCallback()
@@ -281,9 +546,152 @@ void ConvolutionReverbModuleView::mouseDoubleClick(
     repaint();
 }
 
+void ConvolutionReverbModuleView::paintLibrary(
+    juce::Graphics& graphics, juce::Rectangle<float> area)
+{
+    const auto library = libraryBounds(area);
+    graphics.setColour(juce::Colour(0xd918202a));
+    graphics.fillRoundedRectangle(library, 7.0f);
+
+    const auto root = processor.impulseResponseRootDirectory();
+    graphics.setColour(juce::Colours::white.withAlpha(0.08f));
+    graphics.fillRoundedRectangle(rootBounds(area), 4.0f);
+    graphics.setColour(juce::Colours::white.withAlpha(0.78f));
+    graphics.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+    graphics.drawFittedText(
+        root.isDirectory()
+            ? "ROOT  " + root.getFileName()
+            : "SET IR ROOT DIRECTORY",
+        rootBounds(area).reduced(6.0f, 1.0f).toNearestInt(),
+        juce::Justification::centredLeft, 1, 0.75f);
+
+    const auto activeBank =
+        processor.activeConvolutionImpulseResponseBank(slot);
+    static constexpr std::array<const char*, 3> bankLabels {
+        "A", "B", "C"
+    };
+    for (int bank = 0; bank < 3; ++bank)
+    {
+        const auto bounds = bankBounds(area, bank);
+        const auto selected = bank == activeBank;
+        graphics.setColour(
+            selected ? accent.withAlpha(0.76f)
+                     : juce::Colours::white.withAlpha(0.075f));
+        graphics.fillRoundedRectangle(bounds, 5.0f);
+        const auto bankName =
+            processor.convolutionImpulseResponseBankName(slot, bank);
+        graphics.setColour(juce::Colours::white.withAlpha(
+            selected ? 0.98f : 0.65f));
+        graphics.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+        graphics.drawFittedText(
+            juce::String(bankLabels[static_cast<size_t>(bank)])
+                + (bankName.isNotEmpty()
+                       ? "  " + bankName
+                       : "  EMPTY"),
+            bounds.reduced(4.0f, 1.0f).toNearestInt(),
+            juce::Justification::centred, 1, 0.65f);
+    }
+
+    const auto search = searchBounds(area);
+    graphics.setColour(
+        searchFocused ? accent.withAlpha(0.18f)
+                      : juce::Colours::white.withAlpha(0.055f));
+    graphics.fillRoundedRectangle(search, 4.0f);
+    graphics.setColour(
+        searchFocused ? accent
+                      : juce::Colours::white.withAlpha(0.22f));
+    graphics.drawRoundedRectangle(search, 4.0f, 1.0f);
+    graphics.setColour(juce::Colours::white.withAlpha(
+        searchText.isNotEmpty() ? 0.92f : 0.42f));
+    graphics.setFont(juce::FontOptions(13.0f));
+    graphics.drawFittedText(
+        searchText.isNotEmpty()
+            ? searchText + (searchFocused ? "|" : "")
+            : "Search name or path...",
+        search.reduced(7.0f, 2.0f).toNearestInt(),
+        juce::Justification::centredLeft, 1, 0.75f);
+
+    static constexpr std::array<const char*, 5> filterNames {
+        "MONO", "ST", "<1s", "1-3s", ">3s"
+    };
+    for (int filter = 0; filter < 5; ++filter)
+    {
+        const auto bounds = filterBounds(area, filter);
+        graphics.setColour(
+            filters[static_cast<size_t>(filter)]
+                ? accent.withAlpha(0.60f)
+                : juce::Colours::white.withAlpha(0.06f));
+        graphics.fillRoundedRectangle(bounds, 4.0f);
+        graphics.setColour(juce::Colours::white.withAlpha(0.82f));
+        graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+        graphics.drawText(
+            filterNames[static_cast<size_t>(filter)],
+            bounds.toNearestInt(), juce::Justification::centred);
+    }
+
+    for (int row = 0; row < browserRowsPerPage; ++row)
+    {
+        const auto bounds = resultBounds(area, row);
+        const auto index = resultPage * browserRowsPerPage + row;
+        if (!juce::isPositiveAndBelow(
+                index, static_cast<int>(results.size())))
+            continue;
+        const auto& entry = results[static_cast<size_t>(index)];
+        const auto isLoaded =
+            processor.convolutionImpulseResponseBankPath(
+                slot, activeBank)
+            == entry.file.getFullPathName();
+        graphics.setColour(
+            isLoaded ? accent.withAlpha(0.16f)
+                     : juce::Colours::white.withAlpha(
+                           row % 2 == 0 ? 0.035f : 0.055f));
+        graphics.fillRoundedRectangle(bounds, 3.0f);
+        graphics.setColour(
+            isLoaded ? accent : juce::Colours::white.withAlpha(0.84f));
+        graphics.setFont(juce::FontOptions(11.5f, juce::Font::bold));
+        auto text = bounds.reduced(5.0f, 2.0f);
+        graphics.drawFittedText(
+            entry.relativePath,
+            text.removeFromTop(text.getHeight() * 0.55f)
+                .toNearestInt(),
+            juce::Justification::centredLeft, 1, 0.72f);
+        graphics.setColour(juce::Colours::white.withAlpha(0.45f));
+        graphics.setFont(juce::FontOptions(9.5f));
+        graphics.drawText(
+            (entry.channelCount == 1 ? "Mono" : "Stereo")
+                + juce::String("  ")
+                + juce::String(entry.sampleRate / 1000.0, 1)
+                + " kHz  " + juce::String(entry.durationSeconds, 2)
+                + " s",
+            text.toNearestInt(), juce::Justification::centredLeft);
+    }
+
+    auto paging = library.reduced(10.0f).removeFromBottom(28.0f);
+    const auto pageCount = juce::jmax(
+        1, static_cast<int>(
+               (results.size() + browserRowsPerPage - 1)
+               / browserRowsPerPage));
+    graphics.setColour(juce::Colours::white.withAlpha(0.58f));
+    graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+    graphics.drawText(
+        "<", paging.removeFromLeft(24.0f).toNearestInt(),
+        juce::Justification::centred);
+    graphics.drawText(
+        ">", paging.removeFromRight(24.0f).toNearestInt(),
+        juce::Justification::centred);
+    graphics.drawText(
+        juce::String(results.size()) + " IRs  "
+            + juce::String(resultPage + 1) + "/"
+            + juce::String(pageCount),
+        paging.toNearestInt(), juce::Justification::centred);
+}
+
 void ConvolutionReverbModuleView::paint(
     juce::Graphics& graphics, juce::Rectangle<float> area)
 {
+    if (searchDirty)
+        refreshResults();
+    paintLibrary(graphics, area);
     const auto name = processor.impulseResponseName(slot);
     const auto storedPath = processor.impulseResponsePath(slot);
     auto column = waveformColumn(area);

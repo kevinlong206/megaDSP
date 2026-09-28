@@ -70,6 +70,11 @@ private:
     void analysePitch() noexcept;
 
     std::array<std::array<Oscillator, modeCount>, 2> modes {};
+    std::array<std::array<float, modeCount>, materialCount> materialRatios {};
+    std::array<std::array<float, modeCount>, materialCount>
+        materialBrightnesses {};
+    std::array<std::array<float, modeCount>, materialCount>
+        materialDecayScales {};
     std::array<float, modeCount> mutationPhases {};
     std::array<float, modeCount> modeEnergyState {};
     std::array<float, pitchHistorySize> pitchHistory {};

@@ -262,7 +262,8 @@ public:
                    == megadsp::ModuleType::compressor);
         }
 
-        beginTest("Eight uniform cards persist and overflow vertically");
+        beginTest(
+            "Eight preferred-height cards persist and overflow vertically");
         {
             auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
             rackProcessor->prepareToPlay(48000.0, 512);
@@ -278,7 +279,10 @@ public:
             expectEquals(
                 editor->chainInsertButtonCountForTesting(),
                 megadsp::slotCount + 1);
-            expect(editor->cardHeightsAreUniformForTesting());
+            expect(editor->cardHeightsMatchPreferencesForTesting());
+            expectEquals(
+                editor->cardHeightForTesting(0),
+                megadsp::ui::fullPanelModuleCardHeight);
             expect(editor->cardChildrenFitForTesting());
             expect(editor->cardGraphsAvoidControlsForTesting());
             expect(editor->rackOverflowsVerticallyForTesting());
@@ -287,7 +291,7 @@ public:
 
             editor->refreshCardsForTesting();
             expectEquals(editor->cardCountForTesting(), megadsp::slotCount);
-            expect(editor->cardHeightsAreUniformForTesting());
+            expect(editor->cardHeightsMatchPreferencesForTesting());
             expect(editor->rackOverflowsVerticallyForTesting());
 
             editor->clickChainNavigatorForTesting(megadsp::slotCount - 1);
@@ -297,6 +301,21 @@ public:
             editor->clickChainNavigatorForTesting(0);
             expectEquals(editor->selectedCardForTesting(), 0);
             expect(editor->selectedCardVisibleForTesting());
+        }
+
+        beginTest("Convolution Reverb uses the doubled card height");
+        {
+            auto convolutionProcessor =
+                std::make_unique<MegaDSPAudioProcessor>();
+            convolutionProcessor->prepareToPlay(48000.0, 512);
+            convolutionProcessor->addModule(
+                megadsp::ModuleType::convolutionReverb);
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
+                *convolutionProcessor, 1100, 720);
+            expectEquals(
+                editor->cardHeightForTesting(0),
+                megadsp::ui::moduleCardMaximumHeight);
+            expect(editor->cardChildrenFitForTesting());
         }
 
         beginTest("Chain navigator reorders and inserts at every boundary");
@@ -1254,22 +1273,98 @@ public:
         };
         const auto firstIr = irDirectory.getChildFile("a-room.wav");
         const auto secondIr = irDirectory.getChildFile("B-room.wav");
+        const auto nestedDirectory =
+            irDirectory.getChildFile("Halls");
+        expect(nestedDirectory.createDirectory().wasOk());
+        const auto nestedIr =
+            nestedDirectory.getChildFile("C-bright-hall.wav");
+        const auto invalidIr =
+            nestedDirectory.getChildFile("invalid.wav");
         writeImpulse(firstIr);
         writeImpulse(secondIr);
+        writeImpulse(nestedIr);
+        expect(invalidIr.replaceWithText("not audio"));
         {
             MegaDSPAudioProcessor irBrowser;
             irBrowser.prepareToPlay(48000.0, 512);
             setType(irBrowser, 0, megadsp::ModuleType::convolutionReverb);
             irBrowser.flushPendingUpdatesForTesting();
+            expect(irBrowser.setImpulseResponseRootDirectory(
+                irDirectory).wasOk());
+            expectEquals(irBrowser.impulseResponseLibrarySize(), 3);
+            expectEquals(
+                static_cast<int>(
+                    irBrowser.searchImpulseResponses("hall").size()),
+                1);
+            expectEquals(
+                static_cast<int>(
+                    irBrowser.searchImpulseResponses("stereo").size()),
+                3);
+            expectEquals(
+                static_cast<int>(
+                    irBrowser.searchImpulseResponses("sr:48000").size()),
+                3);
+            expectEquals(
+                static_cast<int>(
+                    irBrowser.searchImpulseResponses("short").size()),
+                3);
+            const auto hallMatches =
+                irBrowser.searchImpulseResponses(
+                    "hall stereo sr:48000 short");
+            expectEquals(static_cast<int>(hallMatches.size()), 1);
+            if (!hallMatches.empty())
+                expectEquals(
+                    hallMatches.front().file.getFullPathName(),
+                    nestedIr.getFullPathName());
+            expect(irBrowser.searchImpulseResponses("mono").empty());
             expect(irBrowser.loadImpulseResponse(0, secondIr).wasOk());
             expectEquals(
                 irBrowser.impulseResponseDirectory(0).getFullPathName(),
                 irDirectory.getFullPathName());
             expect(irBrowser.loadAdjacentImpulseResponse(0, 1).wasOk());
-            expectEquals(irBrowser.impulseResponseName(0), firstIr.getFileName());
+            expectEquals(
+                irBrowser.impulseResponseName(0), nestedIr.getFileName());
             expect(irBrowser.loadAdjacentImpulseResponse(0, -1).wasOk());
             expectEquals(
                 irBrowser.impulseResponseName(0), secondIr.getFileName());
+
+            expect(irBrowser.loadConvolutionImpulseResponseBank(
+                0, 0, firstIr).wasOk());
+            expect(irBrowser.loadConvolutionImpulseResponseBank(
+                0, 1, secondIr).wasOk());
+            expect(irBrowser.loadConvolutionImpulseResponseBank(
+                0, 2, nestedIr).wasOk());
+            expect(irBrowser.selectConvolutionImpulseResponseBank(0, 1));
+            expectEquals(
+                irBrowser.activeConvolutionImpulseResponseBank(0), 1);
+            expectEquals(
+                irBrowser.convolutionImpulseResponseBankName(0, 0),
+                firstIr.getFileName());
+            expectEquals(
+                irBrowser.convolutionImpulseResponseBankName(0, 1),
+                secondIr.getFileName());
+            expectEquals(
+                irBrowser.convolutionImpulseResponseBankName(0, 2),
+                nestedIr.getFileName());
+            juce::MemoryBlock bankState;
+            irBrowser.getStateInformation(bankState);
+            MegaDSPAudioProcessor restoredBanks;
+            restoredBanks.prepareToPlay(48000.0, 512);
+            restoredBanks.setStateInformation(
+                bankState.getData(),
+                static_cast<int>(bankState.getSize()));
+            restoredBanks.flushPendingUpdatesForTesting();
+            expectEquals(
+                restoredBanks.activeConvolutionImpulseResponseBank(0), 1);
+            expectEquals(
+                restoredBanks.convolutionImpulseResponseBankName(0, 0),
+                firstIr.getFileName());
+            expectEquals(
+                restoredBanks.convolutionImpulseResponseBankName(0, 1),
+                secondIr.getFileName());
+            expectEquals(
+                restoredBanks.convolutionImpulseResponseBankName(0, 2),
+                nestedIr.getFileName());
 
             irBrowser.clearImpulseResponse(0);
             expect(irBrowser.impulseResponsePath(0).isEmpty());
@@ -1286,6 +1381,8 @@ public:
             expectEquals(
                 restoredIrBrowser.impulseResponseDirectory(0).getFullPathName(),
                 irDirectory.getFullPathName());
+            expectEquals(
+                restoredIrBrowser.impulseResponseLibrarySize(), 3);
             expect(restoredIrBrowser.loadAdjacentImpulseResponse(0, 1).wasOk());
             expectEquals(
                 restoredIrBrowser.impulseResponseName(0),

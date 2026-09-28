@@ -72,6 +72,18 @@ float materialDecayScale(int material, int mode) noexcept
 void ResonantSculptureModule::prepare(const juce::dsp::ProcessSpec& spec)
 {
     sampleRate = detail::safeSampleRate(spec.sampleRate);
+    for (int material = 0; material < materialCount; ++material)
+        for (int mode = 0; mode < modeCount; ++mode)
+        {
+            const auto materialIndex = static_cast<size_t>(material);
+            const auto modeIndex = static_cast<size_t>(mode);
+            materialRatios[materialIndex][modeIndex] =
+                materialRatio(material, mode);
+            materialBrightnesses[materialIndex][modeIndex] =
+                materialBrightness(material, mode);
+            materialDecayScales[materialIndex][modeIndex] =
+                materialDecayScale(material, mode);
+        }
     pitchDecimation = juce::jmax(
         1, juce::roundToInt(static_cast<float>(sampleRate) / 6000.0f));
     pitchDetectorRate =
@@ -374,9 +386,13 @@ void ResonantSculptureModule::process(
             for (int material = 0; material < materialCount; ++material)
             {
                 const auto weight = weights[static_cast<size_t>(material)];
-                ratio += weight * materialRatio(material, mode);
-                brightness += weight * materialBrightness(material, mode);
-                decayScale += weight * materialDecayScale(material, mode);
+                const auto materialIndex = static_cast<size_t>(material);
+                ratio += weight
+                    * materialRatios[materialIndex][index];
+                brightness += weight
+                    * materialBrightnesses[materialIndex][index];
+                decayScale += weight
+                    * materialDecayScales[materialIndex][index];
             }
             const auto modePosition =
                 static_cast<float>(mode) / static_cast<float>(modeCount - 1);
