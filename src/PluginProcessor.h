@@ -12,6 +12,7 @@ struct ImpulseResponseLibraryEntry
 {
     juce::File file;
     juce::String relativePath;
+    juce::String searchableText;
     double sampleRate = 0.0;
     double durationSeconds = 0.0;
     int channelCount = 0;
@@ -26,6 +27,7 @@ struct NamModelLibraryEntry
     juce::String architecture;
     juce::String captureDescription;
     juce::String gearType;
+    juce::String searchableText;
     double sampleRate = 0.0;
     double inputLevelDbU = std::numeric_limits<double>::quiet_NaN();
     int submodelCount = 1;
@@ -124,6 +126,14 @@ public:
     juce::Result loadImpulseResponse(int slot, const juce::File& file);
     juce::Result loadImpulseResponse(
         int slot, int lane, const juce::File& file);
+    using AssetLoadCallback =
+        std::function<void(const juce::Result&)>;
+    juce::Result loadImpulseResponseAsync(
+        int slot, int lane, const juce::File&,
+        AssetLoadCallback = {});
+    juce::Result loadConvolutionImpulseResponseBankAsync(
+        int slot, int bank, const juce::File&,
+        AssetLoadCallback = {});
     juce::Result loadConvolutionImpulseResponseBank(
         int slot, int bank, const juce::File& file);
     bool selectConvolutionImpulseResponseBank(int slot, int bank);
@@ -142,6 +152,15 @@ public:
     std::vector<ImpulseResponseLibraryEntry> searchImpulseResponses(
         const juce::String& query, int maximumResults = 200);
     int impulseResponseLibrarySize();
+    bool isImpulseResponseLibraryIndexing() const noexcept
+    {
+        return impulseResponseIndexInProgress.load(
+            std::memory_order_acquire);
+    }
+    std::uint64_t assetLibraryGeneration() const noexcept
+    {
+        return libraryGeneration.load(std::memory_order_acquire);
+    }
     juce::File impulseResponseRootDirectory() const;
     void clearImpulseResponse(int slot);
     void clearImpulseResponse(int slot, int lane);
@@ -174,6 +193,11 @@ public:
     std::vector<NamModelLibraryEntry> searchNamModels(
         const juce::String& query, int maximumResults = 200);
     int namModelLibrarySize();
+    bool isNamModelLibraryIndexing() const noexcept
+    {
+        return namModelIndexInProgress.load(
+            std::memory_order_acquire);
+    }
     juce::Result loadAdjacentNamModel(int slot, int direction);
     juce::File namModelRootDirectory() const;
     juce::Result clearNamModel(int slot);
@@ -353,6 +377,9 @@ private:
         double bpm);
     void ensureImpulseResponseLibrary();
     void ensureNamModelLibrary();
+    void scheduleImpulseResponseLibraryRebuild();
+    void scheduleNamModelLibraryRebuild();
+    void finishPendingImpulseResponseLoad();
     void finishPendingNamModelLoad();
     void disposeNamModelAsync(megadsp::PreparedNamModelPtr);
     void serializeSnapshots(juce::ValueTree&) const;
@@ -429,6 +456,23 @@ private:
     juce::CriticalSection impulseResponseLibraryLock;
     std::vector<ImpulseResponseLibraryEntry> impulseResponseLibrary;
     juce::String indexedImpulseResponseRoot;
+    struct PendingImpulseResponseLoad
+    {
+        megadsp::EffectRack* rack = nullptr;
+        megadsp::EffectRack::PreparedImpulseResponseLoad load;
+        juce::Result result = juce::Result::ok();
+        AssetLoadCallback callback;
+        int snapshot = -1;
+        bool selectConvolutionBank = false;
+    };
+    juce::CriticalSection pendingImpulseResponseLoadLock;
+    std::unique_ptr<PendingImpulseResponseLoad>
+        pendingImpulseResponseLoad;
+    juce::ThreadPool impulseResponseLoadPool { 1 };
+    juce::ThreadPool libraryIndexPool { 1 };
+    std::atomic<bool> impulseResponseIndexInProgress { false };
+    std::atomic<bool> namModelIndexInProgress { false };
+    std::atomic<std::uint64_t> libraryGeneration { 0 };
     juce::CriticalSection namModelLibraryLock;
     std::vector<NamModelLibraryEntry> namModelLibrary;
     juce::String indexedNamModelRoot;
@@ -470,7 +514,9 @@ private:
     std::unique_ptr<megadsp::ReaperEmbeddedUI> reaperEmbeddedUI;
 #if defined(MEGADSP_TESTS)
 public:
+    void finishLibraryIndexForTesting();
     void finishNamModelLoadForTesting();
+    void finishImpulseResponseLoadForTesting();
 #endif
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MegaDSPAudioProcessor)
 };

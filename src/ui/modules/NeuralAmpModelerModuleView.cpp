@@ -80,6 +80,8 @@ private:
     std::vector<NamModelLibraryEntry> results;
     std::unique_ptr<juce::FileChooser> rootChooser;
     int resultPage = 0;
+    int selectedResult = -1;
+    std::uint64_t observedLibraryGeneration = 0;
     bool searchFocused = false;
     bool searchDirty = true;
 
@@ -154,6 +156,7 @@ private:
 
     juce::String searchQuery() const;
     void refreshResults();
+    void activateResult(int);
     void chooseRootDirectory();
     void paintBrowser(juce::Graphics&, juce::Rectangle<float>);
 
@@ -237,11 +240,56 @@ juce::String NeuralAmpModelerModuleView::searchQuery() const
 void NeuralAmpModelerModuleView::refreshResults()
 {
     results = processor.searchNamModels(searchQuery(), 200);
+    const auto loadedPath = processor.namModelPath(slot);
+    const auto loaded = std::find_if(
+        results.begin(), results.end(),
+        [&loadedPath](const auto& entry)
+        {
+            return entry.file.getFullPathName() == loadedPath;
+        });
+    if (loaded != results.end())
+        selectedResult =
+            static_cast<int>(std::distance(results.begin(), loaded));
+    else
+        selectedResult = results.empty()
+            ? -1 : juce::jlimit(
+                0, static_cast<int>(results.size()) - 1,
+                juce::jmax(0, selectedResult));
     const auto pageCount = juce::jmax(
         1, static_cast<int>(
                (results.size() + rowsPerPage - 1) / rowsPerPage));
     resultPage = juce::jlimit(0, pageCount - 1, resultPage);
     searchDirty = false;
+}
+
+void NeuralAmpModelerModuleView::activateResult(int index)
+{
+    if (searchDirty)
+        refreshResults();
+    if (!juce::isPositiveAndBelow(
+            index, static_cast<int>(results.size())))
+        return;
+    selectedResult = index;
+    resultPage = index / rowsPerPage;
+    juce::Component::SafePointer<EffectGraph> safeGraph(&graph);
+    const auto result = processor.loadNamModelAsync(
+        slot, results[static_cast<size_t>(index)].file,
+        [safeGraph](const juce::Result& completed)
+        {
+            if (safeGraph == nullptr)
+                return;
+            if (completed.failed())
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Could not load NAM model",
+                    completed.getErrorMessage());
+            safeGraph->repaint();
+        });
+    if (result.failed())
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "Could not load NAM model", result.getErrorMessage());
+    repaint();
 }
 
 void NeuralAmpModelerModuleView::chooseRootDirectory()
@@ -310,24 +358,7 @@ void NeuralAmpModelerModuleView::mouseDown(const juce::MouseEvent& event)
                 const auto index = resultPage * rowsPerPage + row;
                 if (juce::isPositiveAndBelow(
                         index, static_cast<int>(results.size())))
-                {
-                    const auto result = processor.loadNamModelAsync(
-                        slot, results[static_cast<size_t>(index)].file,
-                        [](const juce::Result& completed)
-                        {
-                            if (completed.failed())
-                                juce::AlertWindow::showMessageBoxAsync(
-                                    juce::MessageBoxIconType::WarningIcon,
-                                    "Could not load NAM model",
-                                    completed.getErrorMessage());
-                        });
-                    if (result.failed())
-                        juce::AlertWindow::showMessageBoxAsync(
-                            juce::MessageBoxIconType::WarningIcon,
-                            "Could not load NAM model",
-                            result.getErrorMessage());
-                }
-                repaint();
+                    activateResult(index);
                 return;
             }
         auto paging = browser.reduced(10.0f).removeFromBottom(28.0f);
@@ -372,10 +403,26 @@ bool NeuralAmpModelerModuleView::keyPressed(
         if (searchText.isNotEmpty())
             searchText = searchText.dropLastCharacters(1);
     }
+    else if (key.getKeyCode() == juce::KeyPress::upKey
+             || key.getKeyCode() == juce::KeyPress::downKey)
+    {
+        if (searchDirty)
+            refreshResults();
+        if (!results.empty())
+        {
+            const auto direction =
+                key.getKeyCode() == juce::KeyPress::upKey ? -1 : 1;
+            selectedResult = juce::jlimit(
+                0, static_cast<int>(results.size()) - 1,
+                juce::jmax(0, selectedResult) + direction);
+            resultPage = selectedResult / rowsPerPage;
+        }
+        repaint();
+        return true;
+    }
     else if (key.getKeyCode() == juce::KeyPress::returnKey)
     {
-        searchFocused = false;
-        repaint();
+        activateResult(selectedResult);
         return true;
     }
     else
@@ -389,6 +436,7 @@ bool NeuralAmpModelerModuleView::keyPressed(
         searchText += juce::String::charToString(character);
     }
     resultPage = 0;
+    selectedResult = 0;
     searchDirty = true;
     repaint();
     return true;
@@ -421,6 +469,14 @@ void NeuralAmpModelerModuleView::mouseDoubleClick(
 
 void NeuralAmpModelerModuleView::timerCallback()
 {
+    const auto libraryGeneration =
+        processor.assetLibraryGeneration();
+    if (libraryGeneration != observedLibraryGeneration)
+    {
+        observedLibraryGeneration = libraryGeneration;
+        searchDirty = true;
+        repaint();
+    }
     const auto* module = processor.getRack().activeModuleInstance(slot);
     const auto* capability =
         module != nullptr ? module->namModelCapability() : nullptr;
@@ -517,11 +573,18 @@ void NeuralAmpModelerModuleView::paintBrowser(
         const auto& entry = results[static_cast<size_t>(index)];
         const auto loaded =
             currentPath == entry.file.getFullPathName();
+        const auto selected = index == selectedResult;
         graphics.setColour(
             loaded ? accent.withAlpha(0.16f)
+                   : selected ? accent.withAlpha(0.09f)
                    : juce::Colours::white.withAlpha(
                          row % 2 == 0 ? 0.035f : 0.055f));
         graphics.fillRoundedRectangle(bounds, 3.0f);
+        if (selected)
+        {
+            graphics.setColour(accent.withAlpha(0.78f));
+            graphics.drawRoundedRectangle(bounds, 3.0f, 1.0f);
+        }
         auto text = bounds.reduced(6.0f, 3.0f);
         graphics.setColour(
             loaded ? accent
@@ -569,9 +632,11 @@ void NeuralAmpModelerModuleView::paintBrowser(
         ">", paging.removeFromRight(24.0f).toNearestInt(),
         juce::Justification::centred);
     graphics.drawText(
-        juce::String(results.size()) + " MODELS  "
-            + juce::String(resultPage + 1) + "/"
-            + juce::String(pageCount),
+        processor.isNamModelLibraryIndexing()
+            ? "INDEXING NAM LIBRARY..."
+            : juce::String(results.size()) + " MODELS  "
+                + juce::String(resultPage + 1) + "/"
+                + juce::String(pageCount),
         paging.toNearestInt(), juce::Justification::centred);
 }
 

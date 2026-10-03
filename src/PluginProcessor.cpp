@@ -107,6 +107,31 @@ juce::File namModelLibraryCacheFile()
         "nam-model-library-cache.xml");
 }
 
+juce::File impulseResponseLibraryCacheFile()
+{
+    return globalSettingsFile().getSiblingFile(
+        "impulse-response-library-cache.xml");
+}
+
+juce::String impulseResponseSearchableText(
+    const ImpulseResponseLibraryEntry& entry)
+{
+    return (entry.relativePath + " "
+            + entry.file.getFileNameWithoutExtension())
+        .toLowerCase();
+}
+
+juce::String namModelSearchableText(
+    const NamModelLibraryEntry& entry)
+{
+    return (entry.relativePath + " "
+            + entry.file.getFileNameWithoutExtension() + " "
+            + entry.displayName + " " + entry.metadataTitle + " "
+            + entry.architecture + " " + entry.captureDescription + " "
+            + entry.gearType)
+        .toLowerCase();
+}
+
 juce::PropertiesFile::Options globalSettingsOptions()
 {
     juce::PropertiesFile::Options options;
@@ -258,6 +283,70 @@ juce::Result seedGlobalNamModelRoot(const juce::ValueTree& state)
     return instanceRoot.isDirectory()
         ? persistGlobalNamModelRoot(instanceRoot)
         : juce::Result::ok();
+}
+
+bool restoreImpulseResponseLibraryCache(
+    const juce::File& root,
+    std::vector<ImpulseResponseLibraryEntry>& destination)
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto cache = impulseResponseLibraryCacheFile();
+    if (!cache.existsAsFile())
+        return false;
+    const auto xml = juce::XmlDocument::parse(cache);
+    if (xml == nullptr
+        || !xml->hasTagName("IR_LIBRARY")
+        || xml->getIntAttribute("schema") != 1
+        || xml->getStringAttribute("root") != root.getFullPathName())
+        return false;
+
+    std::vector<ImpulseResponseLibraryEntry> restored;
+    forEachXmlChildElementWithTagName(*xml, child, "IR")
+    {
+        ImpulseResponseLibraryEntry entry;
+        entry.relativePath = child->getStringAttribute("path");
+        if (entry.relativePath.isEmpty())
+            continue;
+        entry.file = root.getChildFile(entry.relativePath);
+        entry.sampleRate = child->getDoubleAttribute("sampleRate");
+        entry.durationSeconds = child->getDoubleAttribute("duration");
+        entry.channelCount = child->getIntAttribute("channels");
+        entry.searchableText = impulseResponseSearchableText(entry);
+        restored.push_back(std::move(entry));
+    }
+    if (restored.empty())
+        return false;
+    destination = std::move(restored);
+    return true;
+}
+
+juce::Result persistImpulseResponseLibraryCache(
+    const juce::File& root,
+    const std::vector<ImpulseResponseLibraryEntry>& entries)
+{
+    juce::XmlElement xml("IR_LIBRARY");
+    xml.setAttribute("schema", 1);
+    xml.setAttribute("root", root.getFullPathName());
+    for (const auto& entry : entries)
+    {
+        auto child = std::make_unique<juce::XmlElement>("IR");
+        child->setAttribute("path", entry.relativePath);
+        child->setAttribute("sampleRate", entry.sampleRate);
+        child->setAttribute("duration", entry.durationSeconds);
+        child->setAttribute("channels", entry.channelCount);
+        xml.addChildElement(child.release());
+    }
+
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto cache = impulseResponseLibraryCacheFile();
+    const auto directoryResult =
+        cache.getParentDirectory().createDirectory();
+    if (directoryResult.failed())
+        return directoryResult;
+    return xml.writeTo(cache)
+        ? juce::Result::ok()
+        : juce::Result::fail(
+              "Could not save the impulse-response library cache.");
 }
 
 juce::String namJsonString(
@@ -434,6 +523,7 @@ std::optional<NamModelLibraryEntry> inspectNamModel(
         else if (entry.gearType.contains("amp"))
             entry.cabIncluded = 0;
     }
+    entry.searchableText = namModelSearchableText(entry);
     return entry;
 }
 
@@ -472,6 +562,7 @@ bool restoreNamModelLibraryCache(
         entry.submodelCount = child->getIntAttribute("submodels", 1);
         entry.cabIncluded = child->getIntAttribute("cab", -1);
         entry.isA2 = child->getBoolAttribute("a2");
+        entry.searchableText = namModelSearchableText(entry);
         restored.push_back(std::move(entry));
     }
     if (restored.empty())
@@ -634,6 +725,8 @@ MegaDSPAudioProcessor::MegaDSPAudioProcessor()
 MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
 {
     stopTimer();
+    libraryIndexPool.removeAllJobs(true, 30000);
+    impulseResponseLoadPool.removeAllJobs(true, 30000);
     namModelLoadPool.removeAllJobs(true, 30000);
     namModelDisposalPool.removeAllJobs(true, 30000);
     {
@@ -643,6 +736,14 @@ MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
             pendingNamModelLoad->rack->cancelNamModel(
                 pendingNamModelLoad->load);
         pendingNamModelLoad.reset();
+    }
+    {
+        const juce::ScopedLock lock(pendingImpulseResponseLoadLock);
+        if (pendingImpulseResponseLoad != nullptr
+            && pendingImpulseResponseLoad->load.prepared != nullptr)
+            pendingImpulseResponseLoad->rack->cancelImpulseResponse(
+                pendingImpulseResponseLoad->load);
+        pendingImpulseResponseLoad.reset();
     }
     for (auto* parameter : getParameters())
     {
@@ -2753,6 +2854,142 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     return juce::Result::ok();
 }
 
+juce::Result MegaDSPAudioProcessor::loadImpulseResponseAsync(
+    int slot, int lane, const juce::File& file,
+    AssetLoadCallback callback)
+{
+    if (lane == 0
+        && getRack().moduleType(slot)
+               == megadsp::ModuleType::convolutionReverb)
+        return loadConvolutionImpulseResponseBankAsync(
+            slot, getRack().activeConvolutionImpulseResponseBank(slot),
+            file, std::move(callback));
+
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "An asset or topology update is already in progress.");
+    const auto snapshot = getSelectedSnapshot();
+    auto* rack = snapshotRacks[static_cast<size_t>(snapshot)].get();
+    impulseResponseLoadPool.addJob(std::function<void()> {
+        [this, rack, snapshot, slot, lane, file,
+         completionCallback = std::move(callback)]() mutable
+        {
+            auto completed =
+                std::make_unique<PendingImpulseResponseLoad>();
+            completed->rack = rack;
+            completed->snapshot = snapshot;
+            completed->callback = std::move(completionCallback);
+            completed->result = rack->prepareImpulseResponse(
+                slot, lane, file, completed->load);
+            const juce::ScopedLock lock(
+                pendingImpulseResponseLoadLock);
+            pendingImpulseResponseLoad = std::move(completed);
+        } });
+    return juce::Result::ok();
+}
+
+juce::Result
+MegaDSPAudioProcessor::loadConvolutionImpulseResponseBankAsync(
+    int slot, int bank, const juce::File& file,
+    AssetLoadCallback callback)
+{
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "An asset or topology update is already in progress.");
+    const auto snapshot = getSelectedSnapshot();
+    auto* rack = snapshotRacks[static_cast<size_t>(snapshot)].get();
+    impulseResponseLoadPool.addJob(std::function<void()> {
+        [this, rack, snapshot, slot, bank, file,
+         completionCallback = std::move(callback)]() mutable
+        {
+            auto completed =
+                std::make_unique<PendingImpulseResponseLoad>();
+            completed->rack = rack;
+            completed->snapshot = snapshot;
+            completed->callback = std::move(completionCallback);
+            completed->selectConvolutionBank = true;
+            completed->result =
+                rack->prepareConvolutionImpulseResponseBank(
+                    slot, bank, file, completed->load);
+            const juce::ScopedLock lock(
+                pendingImpulseResponseLoadLock);
+            pendingImpulseResponseLoad = std::move(completed);
+        } });
+    return juce::Result::ok();
+}
+
+void MegaDSPAudioProcessor::finishPendingImpulseResponseLoad()
+{
+    std::unique_ptr<PendingImpulseResponseLoad> completed;
+    {
+        const juce::ScopedLock lock(pendingImpulseResponseLoadLock);
+        completed = std::move(pendingImpulseResponseLoad);
+    }
+    if (completed == nullptr)
+        return;
+
+    auto result = completed->result;
+    if (result.wasOk())
+    {
+        ScopedProcessorUndoTransaction undo(
+            *this, "Load impulse response");
+        suspendProcessing(true);
+        auto committed = completed->selectConvolutionBank
+            ? completed->rack->commitConvolutionImpulseResponseBank(
+                  completed->load)
+            : completed->rack->commitImpulseResponse(completed->load);
+        if (committed && completed->selectConvolutionBank)
+            committed =
+                completed->rack->selectConvolutionImpulseResponseBank(
+                    completed->load.slot,
+                    completed->load.convolutionBank);
+        refreshLatency();
+        suspendProcessing(false);
+        if (!committed)
+        {
+            completed->rack->cancelImpulseResponse(completed->load);
+            result = juce::Result::fail(
+                "Impulse-response commit superseded.");
+        }
+        else
+        {
+            const auto file = juce::File(completed->load.path);
+            if (parameters.state.getProperty(
+                    "impulseResponseRootDirectory").toString().isEmpty())
+            {
+                parameters.state.setProperty(
+                    "impulseResponseRootDirectory",
+                    file.getParentDirectory().getFullPathName(), nullptr);
+                parameters.state.setProperty(
+                    "impulseResponseDirectory",
+                    file.getParentDirectory().getFullPathName(), nullptr);
+                const juce::ScopedLock lock(impulseResponseLibraryLock);
+                indexedImpulseResponseRoot.clear();
+                const auto persisted =
+                    persistGlobalImpulseResponseRoot(
+                        file.getParentDirectory());
+                if (persisted.failed())
+                    megadsp::Diagnostics::instance().log(
+                        "ir-root-persist-failed",
+                        persisted.getErrorMessage());
+            }
+            if (completed->snapshot == getSelectedSnapshot())
+                publishSnapshotToParameters(completed->snapshot);
+            updateHostDisplay(
+                ChangeDetails{}.withNonParameterStateChanged(true));
+        }
+    }
+    topologyMutationInProgress.store(false, std::memory_order_release);
+    if (topologyDirty.load(std::memory_order_acquire))
+        triggerAsyncUpdate();
+    if (completed->callback)
+        completed->callback(result);
+}
+
 juce::Result
 MegaDSPAudioProcessor::loadConvolutionImpulseResponseBank(
     int slot, int bank, const juce::File& file)
@@ -3013,6 +3250,10 @@ juce::Result MegaDSPAudioProcessor::setImpulseResponseRootDirectory(
     if (!directory.isDirectory())
         return juce::Result::fail(
             "Choose an existing impulse response directory.");
+    libraryIndexPool.removeAllJobs(true, 30000);
+    impulseResponseIndexInProgress.store(
+        false, std::memory_order_release);
+    namModelIndexInProgress.store(false, std::memory_order_release);
     parameters.state.setProperty(
         "impulseResponseRootDirectory",
         directory.getFullPathName(), nullptr);
@@ -3061,14 +3302,17 @@ juce::Result MegaDSPAudioProcessor::rebuildImpulseResponseLibrary()
         if (reader == nullptr || reader->lengthInSamples <= 0
             || reader->sampleRate <= 0.0 || reader->numChannels == 0)
             continue;
-        rebuilt.push_back({
-            file,
-            file.getRelativePathFrom(root).replaceCharacter('\\', '/'),
-            reader->sampleRate,
+        ImpulseResponseLibraryEntry entry;
+        entry.file = file;
+        entry.relativePath =
+            file.getRelativePathFrom(root).replaceCharacter('\\', '/');
+        entry.sampleRate = reader->sampleRate;
+        entry.durationSeconds =
             static_cast<double>(reader->lengthInSamples)
-                / reader->sampleRate,
-            static_cast<int>(reader->numChannels)
-        });
+            / reader->sampleRate;
+        entry.channelCount = static_cast<int>(reader->numChannels);
+        entry.searchableText = impulseResponseSearchableText(entry);
+        rebuilt.push_back(std::move(entry));
     }
     std::sort(
         rebuilt.begin(), rebuilt.end(),
@@ -3086,7 +3330,15 @@ juce::Result MegaDSPAudioProcessor::rebuildImpulseResponseLibrary()
         impulseResponseLibrary = std::move(rebuilt);
         indexedImpulseResponseRoot = root.getFullPathName();
     }
-    return juce::Result::ok();
+    std::vector<ImpulseResponseLibraryEntry> cached;
+    {
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        cached = impulseResponseLibrary;
+    }
+    const auto result =
+        persistImpulseResponseLibraryCache(root, cached);
+    libraryGeneration.fetch_add(1, std::memory_order_release);
+    return result;
 }
 
 void MegaDSPAudioProcessor::ensureImpulseResponseLibrary()
@@ -3105,7 +3357,35 @@ void MegaDSPAudioProcessor::ensureImpulseResponseLibrary()
         if (root.isNotEmpty() && root == indexedImpulseResponseRoot)
             return;
     }
-    rebuildImpulseResponseLibrary();
+    std::vector<ImpulseResponseLibraryEntry> cached;
+    const auto rootDirectory = juce::File(root);
+    if (restoreImpulseResponseLibraryCache(rootDirectory, cached))
+    {
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        impulseResponseLibrary = std::move(cached);
+        indexedImpulseResponseRoot = root;
+        libraryGeneration.fetch_add(1, std::memory_order_release);
+        return;
+    }
+    scheduleImpulseResponseLibraryRebuild();
+}
+
+void MegaDSPAudioProcessor::scheduleImpulseResponseLibraryRebuild()
+{
+    auto expected = false;
+    if (!impulseResponseIndexInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return;
+    libraryIndexPool.addJob(std::function<void()> {
+        [this]
+        {
+            const auto result = rebuildImpulseResponseLibrary();
+            if (result.failed())
+                megadsp::Diagnostics::instance().log(
+                    "ir-index-failed", result.getErrorMessage());
+            impulseResponseIndexInProgress.store(
+                false, std::memory_order_release);
+        } });
 }
 
 std::vector<ImpulseResponseLibraryEntry>
@@ -3126,7 +3406,6 @@ MegaDSPAudioProcessor::searchImpulseResponses(
     for (const auto& entry : impulseResponseLibrary)
     {
         auto matched = true;
-        const auto searchable = entry.relativePath.toLowerCase();
         for (const auto& token : tokens)
         {
             if (token.isEmpty())
@@ -3151,7 +3430,7 @@ MegaDSPAudioProcessor::searchImpulseResponses(
                     && std::abs(entry.sampleRate - requested) < 1.0;
             }
             else
-                matched = searchable.contains(token);
+                matched = entry.searchableText.contains(token);
             if (!matched)
                 break;
         }
@@ -3251,6 +3530,10 @@ juce::Result MegaDSPAudioProcessor::setNamModelRootDirectory(
     if (!directory.isDirectory())
         return juce::Result::fail(
             "Choose an existing NAM model directory.");
+    libraryIndexPool.removeAllJobs(true, 30000);
+    impulseResponseIndexInProgress.store(
+        false, std::memory_order_release);
+    namModelIndexInProgress.store(false, std::memory_order_release);
     parameters.state.setProperty(
         "namModelRootDirectory",
         directory.getFullPathName(), nullptr);
@@ -3309,7 +3592,9 @@ juce::Result MegaDSPAudioProcessor::rebuildNamModelLibrary()
         const juce::ScopedLock lock(namModelLibraryLock);
         cached = namModelLibrary;
     }
-    return persistNamModelLibraryCache(root, cached);
+    const auto result = persistNamModelLibraryCache(root, cached);
+    libraryGeneration.fetch_add(1, std::memory_order_release);
+    return result;
 }
 
 void MegaDSPAudioProcessor::ensureNamModelLibrary()
@@ -3334,9 +3619,28 @@ void MegaDSPAudioProcessor::ensureNamModelLibrary()
         const juce::ScopedLock lock(namModelLibraryLock);
         namModelLibrary = std::move(cached);
         indexedNamModelRoot = root;
+        libraryGeneration.fetch_add(1, std::memory_order_release);
         return;
     }
-    rebuildNamModelLibrary();
+    scheduleNamModelLibraryRebuild();
+}
+
+void MegaDSPAudioProcessor::scheduleNamModelLibraryRebuild()
+{
+    auto expected = false;
+    if (!namModelIndexInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return;
+    libraryIndexPool.addJob(std::function<void()> {
+        [this]
+        {
+            const auto result = rebuildNamModelLibrary();
+            if (result.failed())
+                megadsp::Diagnostics::instance().log(
+                    "nam-index-failed", result.getErrorMessage());
+            namModelIndexInProgress.store(
+                false, std::memory_order_release);
+        } });
 }
 
 std::vector<NamModelLibraryEntry>
@@ -3356,12 +3660,6 @@ MegaDSPAudioProcessor::searchNamModels(
         namModelLibrary.size()));
     for (const auto& entry : namModelLibrary)
     {
-        const auto searchable =
-            (entry.relativePath + " "
-             + entry.file.getFileNameWithoutExtension() + " "
-             + entry.metadataTitle + " " + entry.architecture + " "
-             + entry.captureDescription + " " + entry.gearType)
-                .toLowerCase();
         auto matched = true;
         for (const auto& token : tokens)
         {
@@ -3392,7 +3690,7 @@ MegaDSPAudioProcessor::searchNamModels(
                     && std::abs(entry.sampleRate - requested) < 1.0;
             }
             else
-                matched = searchable.contains(token);
+                matched = entry.searchableText.contains(token);
             if (!matched)
                 break;
         }
@@ -3978,6 +4276,7 @@ void MegaDSPAudioProcessor::restoreParameterState(const juce::ValueTree& state)
 
 void MegaDSPAudioProcessor::timerCallback()
 {
+    finishPendingImpulseResponseLoad();
     finishPendingNamModelLoad();
 
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
@@ -4062,6 +4361,25 @@ void MegaDSPAudioProcessor::timerCallback()
 }
 
 #if defined(MEGADSP_TESTS)
+void MegaDSPAudioProcessor::finishLibraryIndexForTesting()
+{
+    const auto deadline =
+        juce::Time::getMillisecondCounterHiRes() + 30000.0;
+    while (libraryIndexPool.getNumJobs() > 0
+           && juce::Time::getMillisecondCounterHiRes() < deadline)
+        juce::Thread::sleep(1);
+}
+
+void MegaDSPAudioProcessor::finishImpulseResponseLoadForTesting()
+{
+    const auto deadline =
+        juce::Time::getMillisecondCounterHiRes() + 30000.0;
+    while (impulseResponseLoadPool.getNumJobs() > 0
+           && juce::Time::getMillisecondCounterHiRes() < deadline)
+        juce::Thread::sleep(1);
+    finishPendingImpulseResponseLoad();
+}
+
 void MegaDSPAudioProcessor::finishNamModelLoadForTesting()
 {
     const auto deadline =

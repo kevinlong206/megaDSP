@@ -886,6 +886,24 @@ public:
                 coldBrowser.namModelPath(0),
                 ampModel.getFullPathName());
 
+            MegaDSPAudioProcessor coldSearchBrowser;
+            const auto coldSearchStart =
+                juce::Time::getHighResolutionTicks();
+            coldSearchBrowser.searchNamModels("clean");
+            const auto coldSearchMicros =
+                juce::Time::highResolutionTicksToSeconds(
+                    juce::Time::getHighResolutionTicks()
+                    - coldSearchStart)
+                * 1000000.0;
+            expect(
+                coldSearchMicros < 500000.0,
+                "A cold NAM search must schedule indexing off the UI thread.");
+            coldSearchBrowser.finishLibraryIndexForTesting();
+            expectEquals(
+                static_cast<int>(
+                    coldSearchBrowser.searchNamModels("clean").size()),
+                1);
+
             expect(browser.rebuildNamModelLibrary().wasOk());
             expect(pedalModel.replaceWithText("{ cache probe }"));
             MegaDSPAudioProcessor cachedBrowser;

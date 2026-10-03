@@ -2075,6 +2075,8 @@ public:
         expect(irDirectory.createDirectory().wasOk());
         const auto writeImpulse = [this](const juce::File& file)
         {
+            if (file.existsAsFile())
+                expect(file.deleteFile());
             std::unique_ptr<juce::OutputStream> stream =
                 file.createOutputStream();
             juce::WavAudioFormat format;
@@ -2120,6 +2122,44 @@ public:
                 irDirectory.getFullPathName());
             expectEquals(
                 freshIrBrowser.impulseResponseLibrarySize(), 3);
+            const auto irCache =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getChildFile("megaDSP-tests")
+                    .getChildFile(
+                        "impulse-response-library-cache.xml");
+            expect(
+                irCache.existsAsFile(),
+                "Rebuilding an IR library must persist its index.");
+            expect(
+                nestedIr.replaceWithText("cache probe"),
+                "The IR cache probe must replace the source file.");
+            MegaDSPAudioProcessor cachedIrBrowser;
+            expectEquals(
+                cachedIrBrowser.impulseResponseLibrarySize(), 3);
+            expectEquals(
+                static_cast<int>(
+                    cachedIrBrowser.searchImpulseResponses("hall").size()),
+                1);
+            writeImpulse(nestedIr);
+            expect(irCache.deleteFile());
+            MegaDSPAudioProcessor coldIrSearch;
+            const auto coldIrSearchStart =
+                juce::Time::getHighResolutionTicks();
+            coldIrSearch.searchImpulseResponses("hall");
+            const auto coldIrSearchMicros =
+                juce::Time::highResolutionTicksToSeconds(
+                    juce::Time::getHighResolutionTicks()
+                    - coldIrSearchStart)
+                * 1000000.0;
+            expect(
+                coldIrSearchMicros < 500000.0,
+                "A cold IR search must schedule indexing off the UI thread.");
+            coldIrSearch.finishLibraryIndexForTesting();
+            expectEquals(
+                static_cast<int>(
+                    coldIrSearch.searchImpulseResponses("hall").size()),
+                1);
             expectEquals(
                 static_cast<int>(
                     irBrowser.searchImpulseResponses("hall").size()),
@@ -2145,6 +2185,42 @@ public:
                     hallMatches.front().file.getFullPathName(),
                     nestedIr.getFullPathName());
             expect(irBrowser.searchImpulseResponses("mono").empty());
+            bool asyncIrCompleted = false;
+            juce::Result asyncIrResult = juce::Result::fail(
+                "Async IR callback was not called.");
+            const auto asyncIrStart =
+                juce::Time::getHighResolutionTicks();
+            expect(
+                irBrowser.loadConvolutionImpulseResponseBankAsync(
+                    0, 0, nestedIr,
+                    [&asyncIrCompleted, &asyncIrResult](
+                        const juce::Result& result)
+                    {
+                        asyncIrCompleted = true;
+                        asyncIrResult = result;
+                    }).wasOk(),
+                "Selecting an IR result must schedule background loading.");
+            const auto asyncIrMicros =
+                juce::Time::highResolutionTicksToSeconds(
+                    juce::Time::getHighResolutionTicks() - asyncIrStart)
+                * 1000000.0;
+            expect(
+                asyncIrMicros < 500000.0,
+                "Selecting an IR search result must not decode it on the "
+                "calling thread.");
+            expect(
+                irBrowser.impulseResponsePath(0).isEmpty(),
+                "The previous IR must remain active during preparation.");
+            irBrowser.finishImpulseResponseLoadForTesting();
+            expect(
+                asyncIrCompleted,
+                "The async IR completion callback must run.");
+            expect(
+                asyncIrResult.wasOk(),
+                asyncIrResult.getErrorMessage());
+            expectEquals(
+                irBrowser.impulseResponseName(0),
+                nestedIr.getFileName());
             expect(irBrowser.loadImpulseResponse(0, secondIr).wasOk());
             expectEquals(
                 irBrowser.impulseResponseDirectory(0).getFullPathName(),
@@ -2153,7 +2229,9 @@ public:
                 irBrowser.undoDescription(),
                 juce::String("Load impulse response"));
             expect(irBrowser.undo());
-            expect(irBrowser.impulseResponsePath(0).isEmpty());
+            expectEquals(
+                irBrowser.impulseResponseName(0),
+                nestedIr.getFileName());
             expect(irBrowser.redo());
             expectEquals(
                 irBrowser.impulseResponseName(0), secondIr.getFileName());
