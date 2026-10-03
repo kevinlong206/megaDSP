@@ -819,7 +819,32 @@ public:
             expectEquals(
                 browser.namModelPath(0),
                 ampModel.getFullPathName());
-            expect(browser.loadAdjacentNamModel(0, 1).wasOk());
+            bool asyncCompleted = false;
+            juce::Result asyncResult = juce::Result::fail(
+                "Async NAM callback was not called.");
+            const auto requestStart =
+                juce::Time::getHighResolutionTicks();
+            expect(browser.loadAdjacentNamModelAsync(
+                0, 1,
+                [&asyncCompleted, &asyncResult](
+                    const juce::Result& result)
+                {
+                    asyncCompleted = true;
+                    asyncResult = result;
+                }).wasOk());
+            const auto requestMicros =
+                juce::Time::highResolutionTicksToSeconds(
+                    juce::Time::getHighResolutionTicks() - requestStart)
+                * 1000000.0;
+            expect(
+                requestMicros < 500000.0,
+                "Scheduling an adjacent NAM load must not parse the model.");
+            expectEquals(
+                browser.namModelPath(0),
+                ampModel.getFullPathName());
+            browser.finishNamModelLoadForTesting();
+            expect(asyncCompleted);
+            expect(asyncResult.wasOk(), asyncResult.getErrorMessage());
             expectEquals(
                 browser.namModelPath(0),
                 pedalModel.getFullPathName());

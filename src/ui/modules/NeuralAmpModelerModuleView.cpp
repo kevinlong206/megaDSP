@@ -50,7 +50,16 @@ public:
     {
         if (!isInterestedInFileDrag(files))
             return;
-        const auto result = processor.loadNamModel(slot, juce::File(files[0]));
+        const auto result = processor.loadNamModelAsync(
+            slot, juce::File(files[0]),
+            [](const juce::Result& completed)
+            {
+                if (completed.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not load NAM model",
+                        completed.getErrorMessage());
+            });
         if (result.failed())
             juce::AlertWindow::showMessageBoxAsync(
                 juce::MessageBoxIconType::WarningIcon,
@@ -302,8 +311,16 @@ void NeuralAmpModelerModuleView::mouseDown(const juce::MouseEvent& event)
                 if (juce::isPositiveAndBelow(
                         index, static_cast<int>(results.size())))
                 {
-                    const auto result = processor.loadNamModel(
-                        slot, results[static_cast<size_t>(index)].file);
+                    const auto result = processor.loadNamModelAsync(
+                        slot, results[static_cast<size_t>(index)].file,
+                        [](const juce::Result& completed)
+                        {
+                            if (completed.failed())
+                                juce::AlertWindow::showMessageBoxAsync(
+                                    juce::MessageBoxIconType::WarningIcon,
+                                    "Could not load NAM model",
+                                    completed.getErrorMessage());
+                        });
                     if (result.failed())
                         juce::AlertWindow::showMessageBoxAsync(
                             juce::MessageBoxIconType::WarningIcon,

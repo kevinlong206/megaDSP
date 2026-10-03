@@ -1968,14 +1968,49 @@ private:
         if (!acceptsAssetFile(file))
             return;
         editor.selectSlot(slot);
-        const auto result = supportsNamModel
-            ? processor.loadNamModel(slot, file)
-            : processor.loadImpulseResponse(slot, impulseLane, file);
+        if (supportsNamModel)
+        {
+            if (namModelLoadPending)
+                return;
+            namModelLoadPending = true;
+            previousNam.setEnabled(false);
+            nextNam.setEnabled(false);
+            const juce::Component::SafePointer<ModuleCard> safeThis(this);
+            const auto scheduled = processor.loadNamModelAsync(
+                slot, file,
+                [safeThis](const juce::Result& completed)
+                {
+                    if (safeThis == nullptr)
+                        return;
+                    safeThis->namModelLoadPending = false;
+                    safeThis->previousNam.setEnabled(true);
+                    safeThis->nextNam.setEnabled(true);
+                    if (completed.failed())
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::MessageBoxIconType::WarningIcon,
+                            "Could not load NAM model",
+                            completed.getErrorMessage());
+                    safeThis->syncAssetName();
+                    safeThis->graph->repaint();
+                });
+            if (scheduled.failed())
+            {
+                namModelLoadPending = false;
+                previousNam.setEnabled(true);
+                nextNam.setEnabled(true);
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Could not load NAM model",
+                    scheduled.getErrorMessage());
+            }
+            return;
+        }
+        const auto result =
+            processor.loadImpulseResponse(slot, impulseLane, file);
         if (result.failed())
             juce::AlertWindow::showMessageBoxAsync(
                 juce::MessageBoxIconType::WarningIcon,
-                supportsNamModel ? "Could not load NAM model"
-                                 : "Could not load impulse response",
+                "Could not load impulse response",
                 result.getErrorMessage());
         graph->repaint();
     }
@@ -1995,15 +2030,39 @@ private:
 
     void loadAdjacentNamModel(int direction)
     {
-        const auto result =
-            processor.loadAdjacentNamModel(slot, direction);
+        if (namModelLoadPending)
+            return;
+        namModelLoadPending = true;
+        previousNam.setEnabled(false);
+        nextNam.setEnabled(false);
+        const juce::Component::SafePointer<ModuleCard> safeThis(this);
+        const auto result = processor.loadAdjacentNamModelAsync(
+            slot, direction,
+            [safeThis](const juce::Result& completed)
+            {
+                if (safeThis == nullptr)
+                    return;
+                safeThis->namModelLoadPending = false;
+                safeThis->previousNam.setEnabled(true);
+                safeThis->nextNam.setEnabled(true);
+                if (completed.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not browse NAM models",
+                        completed.getErrorMessage());
+                safeThis->syncAssetName();
+                safeThis->graph->repaint();
+            });
         if (result.failed())
+        {
+            namModelLoadPending = false;
+            previousNam.setEnabled(true);
+            nextNam.setEnabled(true);
             juce::AlertWindow::showMessageBoxAsync(
                 juce::MessageBoxIconType::WarningIcon,
                 "Could not browse NAM models",
                 result.getErrorMessage());
-        syncAssetName();
-        graph->repaint();
+        }
     }
 
     void showImpulseLibraryMenu()
@@ -2254,6 +2313,7 @@ private:
     bool isConvolution = false;
     bool isWormhole = false;
     bool supportsNamModel = false;
+    bool namModelLoadPending = false;
     juce::Label name;
     WidgetActionButton bypass { WidgetActionButton::Icon::power };
     juce::Label assetName;

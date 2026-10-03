@@ -248,7 +248,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | Module | What it does |
 |---|---|
 | **Guitar Cabinet** | Cabinet convolution with 23 bundled mono/stereo IRs, user IR loading, wet-path passband and tone shaping, drive, mix, and output |
-| **Neural Amp Modeler** | Loads standard, A2, and slimmable `.nam` models at full quality; its persistent recursive model library validates supported files and provides inline name/path/metadata search plus A1, A2, Cab, and Amp filters |
+| **Neural Amp Modeler** | Loads standard, A2, and slimmable `.nam` models at full quality; its persistent recursive library provides name/path/metadata search and A1, A2, Cab, Amp, Rig, and Pedal filters. Model parsing, stereo graph construction, resampling setup, and prewarming run in the background while the current model keeps processing; the prepared replacement is swapped in briefly when ready. |
 | **Velvet Drive** | Purely modeled touch-sensitive boutique amplifier with cascaded tube-style overdrive, interactive tone stack, power-supply bloom, and analytic speaker loads |
 
 ### Time-Based

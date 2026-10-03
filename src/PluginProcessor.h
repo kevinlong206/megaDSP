@@ -163,6 +163,12 @@ public:
         return getRack().impulseResponsePath(slot, lane);
     }
     juce::Result loadNamModel(int slot, const juce::File& file);
+    using NamModelLoadCallback =
+        std::function<void(const juce::Result&)>;
+    juce::Result loadNamModelAsync(
+        int slot, const juce::File&, NamModelLoadCallback = {});
+    juce::Result loadAdjacentNamModelAsync(
+        int slot, int direction, NamModelLoadCallback = {});
     juce::Result setNamModelRootDirectory(const juce::File&);
     juce::Result rebuildNamModelLibrary();
     std::vector<NamModelLibraryEntry> searchNamModels(
@@ -347,6 +353,7 @@ private:
         double bpm);
     void ensureImpulseResponseLibrary();
     void ensureNamModelLibrary();
+    void finishPendingNamModelLoad();
     void serializeSnapshots(juce::ValueTree&) const;
     void restoreSnapshots(const juce::ValueTree&, int sourceSchema);
     megadsp::RackState& selectedSnapshotState() noexcept
@@ -424,6 +431,17 @@ private:
     juce::CriticalSection namModelLibraryLock;
     std::vector<NamModelLibraryEntry> namModelLibrary;
     juce::String indexedNamModelRoot;
+    struct PendingNamModelLoad
+    {
+        megadsp::EffectRack* rack = nullptr;
+        megadsp::EffectRack::PreparedNamModelLoad load;
+        juce::Result result = juce::Result::ok();
+        NamModelLoadCallback callback;
+        int snapshot = -1;
+    };
+    juce::CriticalSection pendingNamModelLoadLock;
+    std::unique_ptr<PendingNamModelLoad> pendingNamModelLoad;
+    juce::ThreadPool namModelLoadPool { 1 };
     int hostBypassWritePosition = 0;
     int lastHostBypassLatency = 0;
     std::atomic<bool> topologyMutationInProgress { false };
@@ -448,5 +466,9 @@ private:
     int undoTransactionDepth = 0;
     bool restoringUndoState = false;
     std::unique_ptr<megadsp::ReaperEmbeddedUI> reaperEmbeddedUI;
+#if defined(MEGADSP_TESTS)
+public:
+    void finishNamModelLoadForTesting();
+#endif
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MegaDSPAudioProcessor)
 };

@@ -547,6 +547,15 @@ MegaDSPAudioProcessor::MegaDSPAudioProcessor()
 MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
 {
     stopTimer();
+    namModelLoadPool.removeAllJobs(true, 30000);
+    {
+        const juce::ScopedLock lock(pendingNamModelLoadLock);
+        if (pendingNamModelLoad != nullptr
+            && pendingNamModelLoad->load.prepared != nullptr)
+            pendingNamModelLoad->rack->cancelNamModel(
+                pendingNamModelLoad->load);
+        pendingNamModelLoad.reset();
+    }
     for (auto* parameter : getParameters())
     {
         parameter->removeListener(this);
@@ -3337,6 +3346,112 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentNamModel(
     return loadNamModel(slot, models[static_cast<size_t>(target)].file);
 }
 
+juce::Result MegaDSPAudioProcessor::loadAdjacentNamModelAsync(
+    int slot, int direction, NamModelLoadCallback callback)
+{
+    if (direction == 0)
+        return juce::Result::fail(
+            "Choose either the previous or next NAM model.");
+
+    ensureNamModelLibrary();
+    juce::File targetFile;
+    {
+        const juce::ScopedLock lock(namModelLibraryLock);
+        if (namModelLibrary.empty())
+            return juce::Result::fail(
+                "The NAM model library contains no valid .nam files.");
+        const auto currentFile = juce::File(namModelPath(slot));
+        const auto current = std::find_if(
+            namModelLibrary.begin(), namModelLibrary.end(),
+            [&currentFile](const NamModelLibraryEntry& candidate)
+            {
+                return candidate.file == currentFile;
+            });
+        auto target = direction > 0
+            ? 0 : static_cast<int>(namModelLibrary.size()) - 1;
+        if (current != namModelLibrary.end())
+        {
+            const auto currentIndex = static_cast<int>(
+                std::distance(namModelLibrary.begin(), current));
+            const auto count = static_cast<int>(namModelLibrary.size());
+            target =
+                (currentIndex + (direction > 0 ? 1 : count - 1)) % count;
+        }
+        targetFile =
+            namModelLibrary[static_cast<size_t>(target)].file;
+    }
+    return loadNamModelAsync(slot, targetFile, std::move(callback));
+}
+
+juce::Result MegaDSPAudioProcessor::loadNamModelAsync(
+    int slot, const juce::File& file, NamModelLoadCallback callback)
+{
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "A model or topology update is already in progress.");
+
+    const auto snapshot = getSelectedSnapshot();
+    auto* rack = snapshotRacks[static_cast<size_t>(snapshot)].get();
+    namModelLoadPool.addJob(std::function<void()> {
+        [this, rack, snapshot, slot, file,
+         completionCallback = std::move(callback)]() mutable
+        {
+            auto completed = std::make_unique<PendingNamModelLoad>();
+            completed->rack = rack;
+            completed->snapshot = snapshot;
+            completed->callback = std::move(completionCallback);
+            completed->result =
+                rack->prepareNamModel(slot, file, completed->load);
+            {
+                const juce::ScopedLock lock(pendingNamModelLoadLock);
+                pendingNamModelLoad = std::move(completed);
+            }
+        } });
+    return juce::Result::ok();
+}
+
+void MegaDSPAudioProcessor::finishPendingNamModelLoad()
+{
+    std::unique_ptr<PendingNamModelLoad> completed;
+    {
+        const juce::ScopedLock lock(pendingNamModelLoadLock);
+        completed = std::move(pendingNamModelLoad);
+    }
+    if (completed == nullptr)
+        return;
+
+    auto result = completed->result;
+    if (result.wasOk())
+    {
+        ScopedProcessorUndoTransaction undo(*this, "Load NAM model");
+        suspendProcessing(true);
+        const auto committed =
+            completed->rack->commitNamModel(completed->load);
+        refreshLatency();
+        suspendProcessing(false);
+        if (!committed)
+        {
+            completed->rack->cancelNamModel(completed->load);
+            result = juce::Result::fail(
+                "NAM model commit superseded.");
+        }
+        else
+        {
+            if (completed->snapshot == getSelectedSnapshot())
+                publishSnapshotToParameters(completed->snapshot);
+            updateHostDisplay(
+                ChangeDetails{}.withNonParameterStateChanged(true));
+        }
+    }
+    topologyMutationInProgress.store(false, std::memory_order_release);
+    if (topologyDirty.load(std::memory_order_acquire))
+        triggerAsyncUpdate();
+    if (completed->callback)
+        completed->callback(result);
+}
+
 juce::Result MegaDSPAudioProcessor::loadNamModel(
     int slot, const juce::File& file)
 {
@@ -3615,6 +3730,8 @@ void MegaDSPAudioProcessor::restoreParameterState(const juce::ValueTree& state)
 
 void MegaDSPAudioProcessor::timerCallback()
 {
+    finishPendingNamModelLoad();
+
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
         const auto lanes =
@@ -3635,6 +3752,7 @@ void MegaDSPAudioProcessor::timerCallback()
                 pendingWormholeReloads[static_cast<size_t>(slot)].fetch_or(
                     bit, std::memory_order_release);
         }
+
     }
 
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
@@ -3694,6 +3812,18 @@ void MegaDSPAudioProcessor::timerCallback()
                               .withLatencyChanged(true));
     }
 }
+
+#if defined(MEGADSP_TESTS)
+void MegaDSPAudioProcessor::finishNamModelLoadForTesting()
+{
+    const auto deadline =
+        juce::Time::getMillisecondCounterHiRes() + 30000.0;
+    while (namModelLoadPool.getNumJobs() > 0
+           && juce::Time::getMillisecondCounterHiRes() < deadline)
+        juce::Thread::sleep(1);
+    finishPendingNamModelLoad();
+}
+#endif
 
 
 juce::AudioProcessorEditor* MegaDSPAudioProcessor::createEditor()

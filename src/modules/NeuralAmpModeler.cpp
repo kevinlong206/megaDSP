@@ -551,14 +551,12 @@ juce::Result NeuralAmpModelerModule::prepareNamModel(
             return v;
         };
 
-        auto loadModel = [&]() { return nam::get_dsp(
-            std::filesystem::path(file.getFullPathName().toStdString()),
-            nam::DspLoadOptions { false }); };
-
         for (int ch = 0; ch < maxChannels; ++ch)
         {
             auto cs = std::make_unique<ChannelState>();
-            auto fm = ch == 0 ? std::move(mdl) : loadModel();
+            auto fm = ch == 0
+                ? std::move(mdl)
+                : nam::get_dsp(config, nam::DspLoadOptions { false });
             if (!fm) return juce::Result::fail("Stereo model failed.");
             cs->full = makeVariant(std::move(fm));
             cs->allocate(blk);
