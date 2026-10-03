@@ -844,7 +844,7 @@ public:
             megadsp::ModuleType::delay, 0, delayContext));
         expect(megadsp::isControlContextuallyVisible(
             megadsp::ModuleType::delay, 6, delayContext));
-        expect(!megadsp::isControlContextuallyVisible(
+        expect(megadsp::isControlContextuallyVisible(
             megadsp::ModuleType::delay, 7, delayContext));
         delayContext[5] = 0.0f;
         expect(megadsp::isControlContextuallyVisible(
@@ -883,26 +883,26 @@ public:
             megadsp::ModuleType::tremolo, 3, tremoloContext));
         expectEquals(tremoloContext[5], retainedPitchDepth);
 
-        beginTest("Direct graph controls do not fall back to a generic bank");
-        const auto expectGraphOwned = [this](
-                                          megadsp::ModuleType module,
-                                          const auto& graphControls)
+        beginTest("Former graph controls remain available in widgets");
+        const auto expectWidgetOwned = [this](
+                                           megadsp::ModuleType module,
+                                           const auto& graphControls)
         {
             const auto defaults = megadsp::moduleDefaults(module);
             for (const auto control : graphControls)
-                expect(!megadsp::isControlContextuallyVisible(
+                expect(megadsp::isControlContextuallyVisible(
                     module, control, defaults));
         };
-        expectGraphOwned(
+        expectWidgetOwned(
             megadsp::ModuleType::algorithmicReverb,
             std::array<int, 4> { 0, 1, 10, 11 });
-        expectGraphOwned(
+        expectWidgetOwned(
             megadsp::ModuleType::stereoWidth,
             std::array<int, 2> { 0, 2 });
-        expectGraphOwned(
+        expectWidgetOwned(
             megadsp::ModuleType::rotarySpeaker,
             std::array<int, 5> { 2, 4, 5, 6, 7 });
-        expectGraphOwned(
+        expectWidgetOwned(
             megadsp::ModuleType::convolutionReverb,
             std::array<int, 2> { 0, 1 });
         expect(megadsp::controlMetadata(
@@ -2281,6 +2281,38 @@ public:
         expectWithinAbsoluteError(
             schemaTenValue(megadsp::controlParameterId(2, 5)),
             0.44f, 0.000001f);
+
+        beginTest("Compressor threshold controls gain reduction with auto makeup");
+        megadsp::ControlValues thresholdControls =
+            megadsp::moduleDefaults(megadsp::ModuleType::compressor);
+        thresholdControls[1] =
+            std::log(8.0f) / std::log(20.0f);
+        thresholdControls[8] = 1.0f;
+        megadsp::CompressorModule highThresholdCompressor;
+        highThresholdCompressor.prepare({ 48000.0, 512, 2 });
+        auto highThresholdSignal = juce::AudioBuffer<float>(2, 48000);
+        for (int channel = 0; channel < 2; ++channel)
+            juce::FloatVectorOperations::fill(
+                highThresholdSignal.getWritePointer(channel), 0.5f,
+                highThresholdSignal.getNumSamples());
+        thresholdControls[0] = 0.95f;
+        highThresholdCompressor.process(
+            highThresholdSignal, thresholdControls, {});
+        const auto highThresholdReduction =
+            highThresholdCompressor.meterValue();
+
+        megadsp::CompressorModule lowThresholdCompressor;
+        lowThresholdCompressor.prepare({ 48000.0, 512, 2 });
+        auto lowThresholdSignal = juce::AudioBuffer<float>(2, 48000);
+        for (int channel = 0; channel < 2; ++channel)
+            juce::FloatVectorOperations::fill(
+                lowThresholdSignal.getWritePointer(channel), 0.5f,
+                lowThresholdSignal.getNumSamples());
+        thresholdControls[0] = 0.5f;
+        lowThresholdCompressor.process(
+            lowThresholdSignal, thresholdControls, {});
+        expect(lowThresholdCompressor.meterValue()
+               > highThresholdReduction + 10.0f);
 
         beginTest("Compressor auto makeup restores slow average reduction");
         megadsp::CompressorModule autoCompressor;

@@ -4,6 +4,7 @@
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
+#include <set>
 
 namespace
 {
@@ -47,12 +48,65 @@ public:
         expectEquals(safeBackgroundThemeIndex(-1), 0);
         expectEquals(safeBackgroundThemeIndex(999), 15);
 
+        beginTest("Module colours are stable, distinct, and category coherent");
+        std::set<juce::uint32> moduleColours;
+        for (int rawType = 1; rawType < moduleTypeCount; ++rawType)
+        {
+            const auto type = static_cast<ModuleType>(rawType);
+            const auto colour = modulePaletteColour(type);
+            moduleColours.insert(colour.getARGB());
+            expect(colour.getBrightness() >= 0.70f);
+            expect(
+                moduleSurfaceColour(backgroundColour(0), type)
+                    != backgroundColour(0));
+        }
+        expectEquals(
+            static_cast<int>(moduleColours.size()),
+            moduleTypeCount - 1);
+        expect(std::abs(
+            modulePaletteColour(ModuleType::equalizer).getHue()
+            - modulePaletteColour(ModuleType::dynamicEqualizer).getHue())
+               < 0.08f);
+        expect(std::abs(
+            modulePaletteColour(ModuleType::delay).getHue()
+            - modulePaletteColour(ModuleType::diffusionDelay).getHue())
+               < 0.08f);
+        expect(std::abs(
+            modulePaletteColour(ModuleType::algorithmicReverb).getHue()
+            - modulePaletteColour(ModuleType::studioPlate).getHue())
+               < 0.08f);
+
         beginTest("Instance identity fits the minimum editor header");
         const auto identity = calculateIdentityHeaderLayout(
             editorMinimumWidth);
-        expectEquals(identity.nameWidth, 104);
+        expectEquals(identity.nameWidth, 102);
         expect(identity.usedWidth() <= editorMinimumWidth - 20);
         expect(editorMinimumWidth - 20 - identity.usedWidth() >= 200);
+
+        beginTest("Widget sizes and horizontal rack widths are stable");
+        expectEquals(widgetWidth(WidgetSize::small), 300);
+        expectEquals(widgetWidth(WidgetSize::medium), 440);
+        expectEquals(widgetWidth(WidgetSize::large), 640);
+        expectEquals(
+            calculateRackContentWidth(
+                2, WidgetSize::small, false),
+            300 * 2 + moduleCardGap);
+        expectEquals(
+            calculateRackContentWidth(
+                2, WidgetSize::small, true),
+            300 * 2 + moduleCardGap + 3 * 24);
+        expect(widgetSizeFromId("invalid") == WidgetSize::small);
+        expectEquals(
+            widgetSizeId(widgetSizeFromId("MEDIUM")),
+            juce::String("medium"));
+
+        beginTest("Editor limits follow logical display bounds");
+        const auto limits = calculateEditorResizeLimits(
+            { 0, 0, 3840, 2160 });
+        expectEquals(limits.getX(), editorMinimumWidth);
+        expectEquals(limits.getY(), editorMinimumHeight);
+        expectEquals(limits.getWidth(), 3840);
+        expectEquals(limits.getHeight(), 2160);
 
         beginTest("Toggle text keeps semantic label and state together");
         expectEquals(
@@ -140,13 +194,12 @@ public:
                    moduleDefaults(ModuleType::signalDecay)[0])
                    .endsWith("bits"));
 
-        beginTest("Minimum editor leaves a usable full-panel graph");
-        const auto modulePanelWidth = editorMinimumWidth - 20;
-        const auto modulePanelHeight = editorMinimumHeight - 92 - 52 - 12;
-        const auto graphWidth = modulePanelWidth - 28;
-        const auto graphHeight = modulePanelHeight - 28 - 34 - 6;
-        expect(graphWidth >= 760);
-        expect(graphHeight >= 390);
+        beginTest("Minimum editor leaves a usable compact device row");
+        const auto rackWidth = editorMinimumWidth - 16;
+        const auto rackHeight =
+            editorMinimumHeight - 38 - 24 - 8;
+        expect(rackWidth >= widgetWidth(WidgetSize::small));
+        expect(rackHeight >= 210);
 
         beginTest("Full-panel keyboard order includes every active control");
         const auto eq = keyboardControlOrder(

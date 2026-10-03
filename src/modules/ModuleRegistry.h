@@ -160,6 +160,30 @@ static_assert(
     static_cast<int>(ModuleType::irMosaic) + 1 == moduleTypeCount);
 static_assert(static_cast<int>(ModulePresentation::count) == moduleTypeCount);
 
+enum class CompactVisualization
+{
+    response,
+    dynamics,
+    transfer,
+    delay,
+    space,
+    impulse,
+    wetSpectrum,
+    stereo,
+    modulation,
+    grains,
+    slices,
+    spectral,
+    resonator,
+    transport,
+    pitch,
+    envelope,
+    cabinet,
+    bitcrusher,
+    chaos,
+    count
+};
+
 enum class ControlKind
 {
     rotary,
@@ -216,6 +240,8 @@ struct ModuleDefinition
 const std::array<ModuleDefinition, moduleTypeCount>& moduleRegistry();
 const ModuleDefinition* findModuleDefinition(ModuleType type);
 const ModuleDefinition& moduleDefinition(ModuleType type);
+CompactVisualization compactVisualization(ModuleType type);
+bool compactVisualizationShowsGainReduction(ModuleType);
 const char* moduleCategoryName(ModuleCategory category);
 std::unique_ptr<DspModule> createDspModule(ModuleType type);
 juce::StringArray validateModuleRegistry();

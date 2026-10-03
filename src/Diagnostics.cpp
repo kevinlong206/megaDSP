@@ -193,6 +193,8 @@ juce::String eventName(std::uint32_t event)
             return "snapshot-profile";
         case DiagnosticEvent::moduleWorkload:
             return "module-profile";
+        case DiagnosticEvent::unsafeOutputRejected:
+            return "output-rejected";
     }
     return "message";
 }
@@ -496,6 +498,15 @@ void Diagnostics::drain()
                 + " avg_us=" + juce::String(entry.valueB)
                 + " max_us=" + juce::String(entry.valueC)
                 + " calls=" + juce::String(entry.valueD);
+        }
+        else if (entry.event
+                 == static_cast<std::uint32_t>(
+                     DiagnosticEvent::unsafeOutputRejected))
+        {
+            line = eventName(entry.event)
+                + " instance=" + juce::String(entry.instanceId)
+                + " peak_milli=" + juce::String(entry.valueA)
+                + " snapshot=" + juce::String(entry.valueB + 1);
         }
         else
             line = eventName(entry.event)

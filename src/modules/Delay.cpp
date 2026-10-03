@@ -7,6 +7,16 @@ namespace megadsp
 {
 using detail::exponential;
 
+namespace
+{
+constexpr float delayLineLimit = 4.0f;
+
+float boundDelayLineSample(float sample) noexcept
+{
+    return delayLineLimit * std::tanh(sample / delayLineLimit);
+}
+} // namespace
+
 void DelayModule::prepare(const juce::dsp::ProcessSpec& spec)
 {
     sampleRate = spec.sampleRate;
@@ -104,7 +114,8 @@ void DelayModule::process(juce::AudioBuffer<float>& buffer,
             filtered = filterCoefficient * filtered
                        + (1.0f - filterCoefficient) * feedbackSource;
             delayBuffer[index][static_cast<size_t>(writePosition)] =
-                injection[index] + filtered * feedback;
+                boundDelayLineSample(
+                    injection[index] + filtered * feedback);
             samples[sample] = dry[index] + (delayed[index] - dry[index]) * mix;
         }
 

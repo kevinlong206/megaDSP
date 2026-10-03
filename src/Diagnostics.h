@@ -18,7 +18,8 @@ enum class DiagnosticEvent : std::uint32_t
     snapshotRecallWorkload,
     audioCallbackWorkload,
     snapshotGraphWorkload,
-    moduleWorkload
+    moduleWorkload,
+    unsafeOutputRejected
 };
 
 class Diagnostics final : private juce::Thread

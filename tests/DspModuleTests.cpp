@@ -1158,6 +1158,91 @@ public:
                      stereoRender.getSample(0, 1800 + wetLatency))
                      + 0.01f);
 
+        beginTest("Convolution normalizes IR energy off the audio thread");
+        const auto writeNormalizationIr =
+            [this](const juce::File& file, float scale)
+        {
+            std::unique_ptr<juce::OutputStream> stream =
+                file.createOutputStream();
+            juce::WavAudioFormat format;
+            auto writer = format.createWriterFor(
+                stream, juce::AudioFormatWriterOptions {}
+                            .withSampleRate(48000.0)
+                            .withNumChannels(1)
+                            .withBitsPerSample(24));
+            expect(writer != nullptr);
+            juce::AudioBuffer<float> impulse(1, 2048);
+            impulse.clear();
+            impulse.setSample(0, 0, scale);
+            impulse.setSample(0, 320, scale * 0.5f);
+            impulse.setSample(0, 900, scale * -0.25f);
+            expect(writer != nullptr
+                   && writer->writeFromAudioSampleBuffer(
+                       impulse, 0, impulse.getNumSamples()));
+        };
+        const auto loudNormalizationFile =
+            juce::File::getCurrentWorkingDirectory()
+                .getNonexistentChildFile(
+                    "megadsp-test-ir-normalized-loud", ".wav");
+        const auto quietNormalizationFile =
+            juce::File::getCurrentWorkingDirectory()
+                .getNonexistentChildFile(
+                    "megadsp-test-ir-normalized-quiet", ".wav");
+        const auto silentNormalizationFile =
+            juce::File::getCurrentWorkingDirectory()
+                .getNonexistentChildFile(
+                    "megadsp-test-ir-normalized-silent", ".wav");
+        writeNormalizationIr(loudNormalizationFile, 0.5f);
+        writeNormalizationIr(quietNormalizationFile, 0.125f);
+        writeNormalizationIr(silentNormalizationFile, 0.0f);
+
+        const auto renderNormalizedPeak =
+            [&spec, &environment](const juce::File& file)
+        {
+            ConvolutionReverbModule normalizedConvolution;
+            normalizedConvolution.prepare(spec);
+            if (normalizedConvolution.loadImpulseResponse(file).failed())
+                return -1.0f;
+            auto normalizedControls =
+                moduleDefaults(ModuleType::convolutionReverb);
+            normalizedControls[2] = 1.0f;
+            normalizedControls[4] = 0.0f;
+            juce::AudioBuffer<float> block(2, 512);
+            auto peak = 0.0f;
+            for (int blockIndex = 0; blockIndex < 14; ++blockIndex)
+            {
+                block.clear();
+                if (blockIndex == 4)
+                {
+                    block.setSample(0, 0, 1.0f);
+                    block.setSample(1, 0, 1.0f);
+                }
+                normalizedConvolution.process(
+                    block, normalizedControls, environment);
+                if (blockIndex >= 4)
+                    peak = juce::jmax(
+                        peak, block.getMagnitude(
+                                  0, block.getNumSamples()));
+            }
+            return peak;
+        };
+        const auto loudNormalizedPeak =
+            renderNormalizedPeak(loudNormalizationFile);
+        const auto quietNormalizedPeak =
+            renderNormalizedPeak(quietNormalizationFile);
+        expect(loudNormalizedPeak > 0.1f);
+        expectWithinAbsoluteError(
+            quietNormalizedPeak, loudNormalizedPeak,
+            loudNormalizedPeak * 0.02f);
+
+        ConvolutionReverbModule silentConvolution;
+        silentConvolution.prepare(spec);
+        const auto silentResult =
+            silentConvolution.loadImpulseResponse(
+                silentNormalizationFile);
+        expect(silentResult.failed());
+        expect(!silentConvolution.hasImpulseResponse());
+
         const auto renderConvolution =
             [&spec, &environment, &impulseFile](
                 float frequency, float lowCut, float ducking)
@@ -1424,6 +1509,9 @@ public:
                    0, pendingWetOnly.getNumSamples()) < 0.000001f);
 
         replacementFile.deleteFile();
+        silentNormalizationFile.deleteFile();
+        quietNormalizationFile.deleteFile();
+        loudNormalizationFile.deleteFile();
         monoImpulseFile.deleteFile();
         impulseFile.deleteFile();
 
@@ -1708,6 +1796,37 @@ public:
         expect(pingPongResponse.getMagnitude(0, 11990, 30) > 0.45f);
         expect(pingPongResponse.getMagnitude(1, 11990, 30) < 0.0001f);
         expect(pingPongResponse.getMagnitude(1, 23980, 40) > 0.05f);
+
+        beginTest("Delay feedback remains bounded under coherent input");
+        DelayModule boundedDelay;
+        boundedDelay.prepare(spec);
+        juce::AudioBuffer<float> coherentInput(2, 48000);
+        for (int channel = 0; channel < coherentInput.getNumChannels();
+             ++channel)
+            juce::FloatVectorOperations::fill(
+                coherentInput.getWritePointer(channel), 1.0f,
+                coherentInput.getNumSamples());
+        controls.fill(0.0f);
+        controls[0] = 0.0f;
+        controls[1] = 1.0f;
+        controls[2] = 1.0f;
+        controls[3] = 1.0f;
+        controls[5] = 0.0f;
+        controls[8] = 0.0f;
+        boundedDelay.process(coherentInput, controls, environment);
+        auto coherentOutputFinite = true;
+        for (int channel = 0;
+             channel < coherentInput.getNumChannels(); ++channel)
+            for (int sample = 0;
+                 sample < coherentInput.getNumSamples(); ++sample)
+                coherentOutputFinite =
+                    coherentOutputFinite
+                    && std::isfinite(
+                        coherentInput.getSample(channel, sample));
+        expect(coherentOutputFinite);
+        expect(
+            coherentInput.getMagnitude(
+                0, coherentInput.getNumSamples()) <= 4.0001f);
 
         beginTest("Stereo width creates a mono-compatible side field");
         StereoWidthModule stereoWidth;

@@ -55,15 +55,15 @@ explicit error.
 
 ## EQ
 
-A large knob-free response editor inspired by the directness of modern
-parametric EQs. Double-click empty graph space to add a band, drag its node for
-frequency and gain, and use the mouse wheel nearby for Q. Selecting an outer
-node exposes **Bell**, **Low/High Shelf**, and **High/Low Pass** choices directly
-below the graph. Double-click a node, or use **Remove**, to return that band to
-a neutral inactive state. The right-side **Output** rail controls final EQ trim.
-
-Pre/post spectrum traces run continuously while the EQ card is focused or
-hovered.
+The compact graph owns the three most important shaping gestures. Drag the
+**L**, **M**, and **H** nodes horizontally for frequency and vertically for
+gain; the selected node shows its exact musical values. The mouse wheel over a
+node adjusts Q, and double-click resets that band. Selecting an outer node
+reveals direct **Bell**, **Shelf**, and **Cut** pills below the graph. The
+right-side **Output** rail controls final trim. Every EQ operation remains in
+the knob-free graph, and the live output spectrum gives immediate visual
+feedback behind the nodes. Left/Right selects a node from the keyboard;
+Up/Down adjusts it, Return cycles outer-band shape, and Home resets it.
 
 ---
 
@@ -80,16 +80,30 @@ chooses an upward or downward response.
 while **Filter Type** selects Low Pass, Band Pass, Peak, or Classic Wah.
 **Drive** adds progressively stronger level-referenced saturation and harmonic
 push before the filter. The animated response follows
-the measured envelope and actual cutoff. **Mix** retains an immediate
+the measured envelope and actual cutoff; the compact widget also shows pick
+intensity and the live input crossing the Sensitivity threshold. **Mix** retains an immediate
 zero-latency dry path.
 
 ---
 
 ## Compressor
 
-The **Threshold** control is a live input-level meter: signal fills the track behind the movable threshold marker. A 10-second input/output history and real-time gain-reduction overlay show what the compressor is doing over time, including a 10-second maximum-reduction line.
+**Threshold** is the dashed horizontal line over the 10-second input/output
+history. Its inline `DRAG` cue makes the direct interaction explicit. Drag it
+vertically to set the level; double-click resets it, and focused keyboard
+editing uses Up/Down with Shift for fine adjustment. The
+visualization separates level history from gain-reduction history and reports
+current input, output, and reduction values. Recovery status explicitly shows
+Auto or Manual and any retained Manual Trim.
 
-**Auto Makeup** slowly recovers average level lost to gain reduction. **Manual Trim** is always control 5; it appears secondarily when Auto Makeup is off or its retained value is nonzero. Both are automatable and enabled by default for new instances.
+Controls follow the signal flow around the graph-owned Threshold: Ratio, Knee,
+Attack, Release, **Auto Makeup**, optional Manual Trim, Mix, and Detector.
+**Auto Makeup** slowly
+recovers average level lost to gain reduction but does not alter the reduction
+trace. **Manual Trim** is always control 5; it appears when Auto Makeup is off
+or its retained value is nonzero and remains additional output gain. When no
+external sidechain is connected, the graph explicitly reports the internal
+detector and the unavailable Detector switch leaves its retained value intact.
 
 ---
 
@@ -264,7 +278,7 @@ combined response of every interacting section.
 
 ## Delay
 
-The editable tap timeline visualises the delay path. A compact two-dimensional **Rate/Depth Movement** field edits both modulation parameters together. **Sync** toggles between free **Time** and a synced **Division**; the inactive control is hidden, unfocusable, and retains its automation value. Ping Pong alternates correctly even when the host supplies a duplicated mono source through a stereo track.
+The editable tap timeline visualises the delay path. A compact two-dimensional **Rate/Depth Movement** field edits both modulation parameters together. **Sync** toggles between free **Time** and a synced **Division**; the inactive control is hidden, unfocusable, and retains its automation value. Ping Pong alternates correctly even when the host supplies a duplicated mono source through a stereo track. The filtered feedback loop uses a high-headroom soft bound so coherent input and a resumed bypass tail cannot accumulate into a host-muting spike.
 
 ---
 
@@ -295,9 +309,13 @@ reduce pre-delay, while larger values are more resilient at very small host
 block sizes. Dry remains immediate and host PDC stays at zero.
 Changing the buffer reconstructs populated A/B/C engines off the audio thread.
 IR decoding, engine preparation, and Wet convolution stay off the audio thread.
+During preparation, megaDSP applies one bounded energy-normalization gain to
+the complete IR. This raises typically quiet captures by up to 18 dB while
+preserving stereo balance and limiting coefficient peaks; silent or invalid
+IRs are rejected instead of producing a misleading loaded state.
 
-The module uses the rack's expanded 640 px card and gives its left-hand library
-larger text, controls, and ten visible results per page. The library sets a root
+The widget's **LIB** action manages the IR library root and validated index.
+The library sets a root
 directory that is saved both with plugin state and in megaDSP's user-level
 settings. Project instances retain their own root, while new instances inherit
 the last explicitly selected valid root across DAW restarts. The validated
@@ -316,13 +334,12 @@ Clicking a result prepares it into the selected bank; clicking A, B, or C then
 switches among those already prepared convolution engines without decoding a
 file on the audio thread.
 
-The center panel is one rolling four-second spectrogram of the measured wet
-convolution output. Low-to-high frequency energy runs from bottom to top, newest
-audio enters at the right edge, and display-only gain keeps quiet tails visible
-without changing the sound. A dedicated strip below it owns draggable
-**Low Cut** (high-pass) and **High Cut** (low-pass) handles that shape only the
-wet convolution signal. A separate control deck keeps **Dry**, **Wet**,
-**Ducking**, and **Output Trim** together. Ducking applies up to 18 dB of smooth
+The widget graph is a real-time spectrum measured from only the completed wet
+convolution signal. Its display normalizes each frame visually so quiet tails
+retain a readable spectral shape without changing their audio level.
+**Low Cut** and **High Cut** shape only the wet convolution signal. **Dry**,
+**Wet**, **Ducking**, and **Output Trim** remain directly available. Ducking
+applies up to 18 dB of smooth
 input-responsive attenuation to the filtered wet response and releases
 naturally into the tail. Dry and Wet are adjacent, independent linear 0–100%
 amplitude rails. Output
@@ -394,7 +411,7 @@ Negative Range performs conventional downward de-essing; positive Range provides
 
 ## Random Granulizer
 
-Continuously records six seconds of recent mono or stereo input and launches up to 16 click-free windowed grains without stealing active voices. Uses a resettable xorshift PRNG; never allocates or locks on the audio thread.
+Continuously records six seconds of recent mono or stereo input and launches up to 16 click-free windowed grains without stealing active voices. Uses a resettable xorshift PRNG; never allocates or locks on the audio thread. The compact stream now draws actual grain capture position, duration, pan, filter color, direction, progress, and live voice count rather than a control-derived pattern.
 
 **Size Minimum** and **Size Maximum** each span 50 ms–2 seconds (logarithmic); either handle can cross the other safely. Defaults are 80 ms min, 280 ms max. **Grain Rate** spans 0.5–30 launches per second. **Capture Range** reaches only through initialised history. **Reverse Chance** is the only control that changes playback direction. **Stereo Spread** uses constant-power placement with a mono-safe fold. Rhythmic **Delay** chooses tempo-quantised subdivisions from host BPM (fallback 120 BPM) without occupying grain voices while waiting. **Brightness** applies a stable per-grain low-pass cutoff. **Regeneration** returns wet energy to capture history with a guard against runaway. Independent smoothed **Dry** and **Wet** levels allow parallel-style blending, including dry-only, wet-only, or silence.
 
@@ -481,8 +498,8 @@ rumble, and the frequency-selective de-esser controls sibilance. A fast
 stereo-linked feedback FET stage then catches peaks with an 8:1 curve before a
 slow optical stage levels phrases with dual-memory, program-dependent recovery.
 Presence and Air provide final broad tone shaping, followed by Output trim.
-The live display shows measured input/output levels and separate fast FET,
-de-esser, and slow optical reduction.
+The compact live display shows measured input/output histories and separate
+fast FET, de-esser, and slow optical reduction lanes.
 
 | # | Control | Range | Default | Description |
 |---|---------|-------|---------|-------------|
@@ -701,9 +718,9 @@ core tape tone. The nonlinear print path runs at 4x oversampling. A cubic
 transport delay, machine/speed voicing, hysteresis-inspired memory,
 deterministic hiss, and bounded wear modulation provide optional movement and
 age without runtime allocation.
-The reel graphic follows captured DSP transport phase and reports actual
-wow/flutter offset, dropout gain, and signal envelope rather than advancing on
-the editor timer.
+The compact reel graphic follows captured DSP transport phase, actual
+wow/flutter offset, dropout gain, and signal envelope rather than advancing
+on the editor timer.
 
 ---
 
@@ -715,9 +732,9 @@ The transport uses one fixed latency-aligned delay for wow and flutter, so Mix
 zero remains aligned while the modulation controls move.
 
 Synthetic stereo texture exists only in the side domain and cancels on mono
-fold-down. Noise events remain bounded and resettable, and the spinning record
-view follows capture-gated measured dust, scratch, wear, transport, and signal
-activity.
+fold-down. Noise events remain bounded and resettable, and the compact
+spinning-record view follows capture-gated measured dust, crackle, scratch,
+wear, transport, and signal activity.
 
 ---
 
@@ -856,8 +873,12 @@ tones powered by machine learning. Supports all standard NAM architectures
 (Linear, LSTM, WaveNet, ConvNet, Container) plus the A2 Standard (8-channel)
 and A2 Nano (3-channel) fast-path models.
 
-The expanded module card includes a recursive model browser. Choose one root
-directory and megaDSP persists it in both project state and user settings so
+The widget keeps model loading and clearing beside the current model name. The
+adjacent **<** and **>** buttons step through the validated recursive library
+and wrap at either end. Its live graph shows the loaded model's output
+spectrum and decays naturally to silence when audio callbacks stop instead of
+freezing on the final frame. The recursive model library uses one root
+directory, and megaDSP persists it in both project state and user settings so
 new instances inherit it across DAW restarts. The catalog accepts structurally
 valid supported `.nam` files and ignores malformed or unsupported entries.
 Search covers model names, relative paths, amp/capture metadata, authors, and
@@ -878,6 +899,9 @@ rate, and cabinet status and load directly when clicked.
 
 The module always outputs the modeled path; use the rack's module bypass for
 dry comparison. `SlimmableContainer` models load at their full-size setting.
+If a malformed or unstable third-party model emits non-finite or host-muting
+levels, megaDSP discards that complete output block before it reaches the host
+instead of clipping it into the signal.
 
 ### Unloaded Behavior
 
@@ -909,8 +933,9 @@ low-pass current. **Motion Rate**, **Phase Depth**, and signed **Regeneration**
 drive an eight-stage phase network, while **Resonance**, **Warmth**,
 **Softness**, and **Drift** control its analog weight and instability.
 
-The main response field directly edits Filter Center and Filter Sweep and shows
-the cutoff and phase motion captured from the DSP. **Stereo Spread** changes
+The main response field directly edits Filter Center and Filter Sweep. Its
+compact current trace shows actual cutoff, phase intensity, stereo phase, and
+wet energy captured from the DSP. **Stereo Spread** changes
 only the wet side field, so mono fold-down preserves the wet center. **Mix**
 blends against an immediate dry path with no reported latency, and **Output**
 provides final trim.
@@ -932,5 +957,7 @@ sustained input into continuous excitation; both remain scaled by
 **Excitation**. **Mutation** adds slow independent modal drift, while **Chaos**
 adds deterministic irregular motion without changing the stable decay gain.
 **Stereo Field** spreads alternating modes only in a mono-cancelling side
-field. The animated structure deforms from captured mode energy, attack, shape,
+field. The compact structure displays captured energy for the first eight
+modes, tracked fundamental and confidence, plus live Strike and Bow activity.
+The animated structure deforms from captured mode energy, attack, shape,
 and chaos telemetry. **Mix** retains an immediate zero-latency dry path.

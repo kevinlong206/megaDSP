@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../modules/ModuleRegistry.h"
+
 #include <juce_graphics/juce_graphics.h>
 
 #include <array>
@@ -56,6 +58,51 @@ inline const BackgroundTheme& backgroundTheme(int index)
 inline juce::Colour backgroundColour(int index)
 {
     return backgroundTheme(index).colour;
+}
+
+inline float moduleCategoryHue(ModuleCategory category)
+{
+    switch (category)
+    {
+        case ModuleCategory::eqAndFilters: return 0.52f;
+        case ModuleCategory::dynamics: return 0.085f;
+        case ModuleCategory::saturationAndColor: return 0.015f;
+        case ModuleCategory::delayAndEcho: return 0.59f;
+        case ModuleCategory::reverbAndSpace: return 0.72f;
+        case ModuleCategory::modulation: return 0.86f;
+        case ModuleCategory::stereoAndUtility: return 0.42f;
+        case ModuleCategory::glitchAndCreative: return 0.95f;
+        case ModuleCategory::guitar: return 0.14f;
+        case ModuleCategory::none: return 0.0f;
+    }
+    return 0.0f;
+}
+
+inline juce::Colour modulePaletteColour(ModuleType type)
+{
+    const auto& definition = moduleDefinition(type);
+    const auto stableIndex = static_cast<int>(type);
+    const auto variation =
+        (static_cast<float>((stableIndex * 37) % 17) - 8.0f) * 0.0045f;
+    auto hue = moduleCategoryHue(definition.category) + variation;
+    hue -= std::floor(hue);
+    const auto saturation =
+        0.48f + static_cast<float>((stableIndex * 11) % 5) * 0.025f;
+    const auto brightness =
+        0.72f + static_cast<float>((stableIndex * 7) % 4) * 0.025f;
+    return juce::Colour::fromHSV(
+        hue, saturation, brightness, 1.0f);
+}
+
+inline juce::Colour moduleSurfaceColour(
+    juce::Colour editorBackground, ModuleType type,
+    float colourAmount = 0.22f)
+{
+    return editorBackground
+        .interpolatedWith(
+            modulePaletteColour(type),
+            juce::jlimit(0.0f, 1.0f, colourAmount))
+        .brighter(0.08f);
 }
 
 inline float lerp(float low, float high, float value)

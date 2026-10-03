@@ -691,6 +691,39 @@ juce::Result ConvolutionReverbModule::prepareImpulseResponseInternal(
             &decoded, 0, sampleCount, 0, true, channelCount > 1))
         return fail("Could not decode the impulse response.");
 
+    double maximumEnergy = 0.0;
+    float maximumSample = 0.0f;
+    for (int channel = 0; channel < decoded.getNumChannels(); ++channel)
+    {
+        double energy = 0.0;
+        const auto* samples = decoded.getReadPointer(channel);
+        for (int sample = 0; sample < sampleCount; ++sample)
+        {
+            const auto value = samples[sample];
+            if (!std::isfinite(value))
+                return fail(
+                    "Impulse response contains invalid sample data.");
+            energy += static_cast<double>(value)
+                * static_cast<double>(value);
+            maximumSample = juce::jmax(
+                maximumSample, std::abs(value));
+        }
+        maximumEnergy = juce::jmax(maximumEnergy, energy);
+    }
+    if (maximumEnergy < 1.0e-12 || maximumSample < 1.0e-6f)
+        return fail("Impulse response contains no usable signal.");
+
+    constexpr auto targetEnergy = 0.5;
+    constexpr auto maximumBoost =
+        7.943282347242816f; // 18 dB
+    constexpr auto maximumCoefficient = 0.95f;
+    const auto energyGain = static_cast<float>(
+        targetEnergy / std::sqrt(maximumEnergy));
+    const auto peakGain = maximumCoefficient / maximumSample;
+    const auto normalisationGain = juce::jmin(
+        maximumBoost, energyGain, peakGain);
+    decoded.applyGain(normalisationGain);
+
     ImpulseResponsePreview newPreview{};
     float maximum = 0.0f;
     for (int point = 0;
@@ -726,7 +759,7 @@ juce::Result ConvolutionReverbModule::prepareImpulseResponseInternal(
         std::move(decoded), reader->sampleRate,
         juce::dsp::Convolution::Stereo::yes,
         juce::dsp::Convolution::Trim::yes,
-        juce::dsp::Convolution::Normalise::yes);
+        juce::dsp::Convolution::Normalise::no);
     prepared->engine->prepare(preparedSpec);
     prepared->name = file.getFileName();
     prepared->preview = newPreview;

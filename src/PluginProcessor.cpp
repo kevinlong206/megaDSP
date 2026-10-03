@@ -8,6 +8,7 @@
 #include <json.hpp>
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <cstring>
 #include <optional>
 
 thread_local bool
@@ -15,6 +16,75 @@ thread_local bool
 
 namespace
 {
+class ProcessorStateUndoAction final : public juce::UndoableAction
+{
+public:
+    ProcessorStateUndoAction(
+        MegaDSPAudioProcessor& processorToUse,
+        juce::MemoryBlock beforeToUse,
+        juce::MemoryBlock afterToUse)
+        : processor(processorToUse),
+          before(std::move(beforeToUse)),
+          after(std::move(afterToUse))
+    {
+    }
+
+    bool perform() override
+    {
+        if (firstPerform)
+        {
+            firstPerform = false;
+            return true;
+        }
+        processor.restoreUndoState(after);
+        return true;
+    }
+
+    bool undo() override
+    {
+        processor.restoreUndoState(before);
+        return true;
+    }
+
+    int getSizeInUnits() override { return 1; }
+
+private:
+    MegaDSPAudioProcessor& processor;
+    juce::MemoryBlock before;
+    juce::MemoryBlock after;
+    bool firstPerform = true;
+};
+
+class ScopedProcessorUndoTransaction final
+{
+public:
+    ScopedProcessorUndoTransaction(
+        MegaDSPAudioProcessor& processorToUse,
+        const juce::String& name)
+        : processor(processorToUse)
+    {
+        processor.beginUndoTransaction(name);
+    }
+
+    ~ScopedProcessorUndoTransaction()
+    {
+        processor.endUndoTransaction();
+    }
+
+private:
+    MegaDSPAudioProcessor& processor;
+};
+
+bool memoryBlocksMatch(
+    const juce::MemoryBlock& left,
+    const juce::MemoryBlock& right)
+{
+    return left.getSize() == right.getSize()
+        && (left.getSize() == 0
+            || std::memcmp(
+                   left.getData(), right.getData(), left.getSize()) == 0);
+}
+
 juce::File globalSettingsFile()
 {
 #if defined(MEGADSP_TESTS)
@@ -62,6 +132,36 @@ juce::String globalNamModelRoot()
     juce::PropertiesFile settings(
         globalSettingsFile(), globalSettingsOptions());
     return settings.getValue("namModelRootDirectory");
+}
+
+juce::String globalWidgetSizePreference()
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    juce::PropertiesFile settings(
+        globalSettingsFile(), globalSettingsOptions());
+    return megadsp::ui::widgetSizeId(
+        megadsp::ui::widgetSizeFromId(
+            settings.getValue("widgetSize", "small")));
+}
+
+juce::Result persistGlobalWidgetSize(
+    const juce::String& identifier)
+{
+    const auto size = megadsp::ui::widgetSizeFromId(identifier);
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto file = globalSettingsFile();
+    const auto directoryResult =
+        file.getParentDirectory().createDirectory();
+    if (directoryResult.failed())
+        return directoryResult;
+    juce::PropertiesFile settings(
+        file, globalSettingsOptions());
+    settings.setValue(
+        "widgetSize", megadsp::ui::widgetSizeId(size));
+    return settings.saveIfNeeded()
+        ? juce::Result::ok()
+        : juce::Result::fail(
+              "Could not save the global widget size.");
 }
 
 void inheritGlobalImpulseResponseRoot(juce::ValueTree& state)
@@ -291,17 +391,21 @@ std::optional<NamModelLibraryEntry> inspectNamModel(
         const auto displayName = namJsonString(*metadata, "display_name");
         const auto metadataName = namJsonString(*metadata, "name");
         if (displayName.isNotEmpty())
-            entry.displayName = displayName;
+            entry.metadataTitle = displayName;
         else if (metadataName.isNotEmpty())
-            entry.displayName = metadataName;
+            entry.metadataTitle = metadataName;
+        if (entry.metadataTitle.isNotEmpty())
+            entry.displayName = entry.metadataTitle;
 
         juce::StringArray capture;
         auto gear = namJsonString(*metadata, "gear_make");
         const auto gearModel = namJsonString(*metadata, "gear_model");
         if (gearModel.isNotEmpty())
             gear += (gear.isNotEmpty() ? " " : "") + gearModel;
+        entry.gearType =
+            namJsonString(*metadata, "gear_type").toLowerCase();
         if (gear.isEmpty())
-            gear = namJsonString(*metadata, "gear_type");
+            gear = entry.gearType;
         if (gear.isNotEmpty())
             capture.add(gear);
         const auto tone = namJsonString(*metadata, "tone_type");
@@ -316,6 +420,11 @@ std::optional<NamModelLibraryEntry> inspectNamModel(
         const auto withCab = metadata->find("with_cab");
         if (withCab != metadata->end() && withCab->is_boolean())
             entry.cabIncluded = withCab->get<bool>() ? 1 : 0;
+        else if (entry.gearType.contains("cab")
+                 || entry.gearType == "full-rig")
+            entry.cabIncluded = 1;
+        else if (entry.gearType.contains("amp"))
+            entry.cabIncluded = 0;
     }
     return entry;
 }
@@ -423,8 +532,12 @@ MegaDSPAudioProcessor::MegaDSPAudioProcessor()
     diagnosticInstanceId =
         megadsp::Diagnostics::instance().registerInstance();
     for (auto* parameter : getParameters())
+    {
+        parameter->addListener(this);
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter))
             parameters.addParameterListener(ranged->paramID, this);
+    }
+    undoManager.setMaxNumberOfStoredUnits(64, 8);
     startTimerHz(30);
 }
 
@@ -432,11 +545,122 @@ MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
 {
     stopTimer();
     for (auto* parameter : getParameters())
+    {
+        parameter->removeListener(this);
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter))
             parameters.removeParameterListener(ranged->paramID, this);
+    }
     cancelPendingUpdate();
     megadsp::Diagnostics::instance().unregisterInstance(
         diagnosticInstanceId);
+}
+
+void MegaDSPAudioProcessor::beginUndoTransaction(
+    const juce::String& name)
+{
+    auto* messageManager =
+        juce::MessageManager::getInstanceWithoutCreating();
+    if (restoringUndoState || messageManager == nullptr
+        || !messageManager->isThisTheMessageThread())
+        return;
+    if (undoTransactionDepth++ != 0)
+        return;
+    pendingUndoName = name.trim().isNotEmpty()
+        ? name.trim() : "Edit megaDSP";
+    pendingUndoBefore.reset();
+    getStateInformation(pendingUndoBefore);
+}
+
+void MegaDSPAudioProcessor::endUndoTransaction()
+{
+    if (restoringUndoState || undoTransactionDepth <= 0)
+        return;
+    if (--undoTransactionDepth != 0)
+        return;
+
+    juce::MemoryBlock after;
+    getStateInformation(after);
+    if (!memoryBlocksMatch(pendingUndoBefore, after))
+    {
+        undoManager.beginNewTransaction(pendingUndoName);
+        undoManager.perform(new ProcessorStateUndoAction(
+            *this, std::move(pendingUndoBefore), std::move(after)));
+    }
+    pendingUndoBefore.reset();
+    pendingUndoName.clear();
+}
+
+bool MegaDSPAudioProcessor::canUndo() const
+{
+    return undoManager.canUndo();
+}
+
+bool MegaDSPAudioProcessor::canRedo() const
+{
+    return undoManager.canRedo();
+}
+
+juce::String MegaDSPAudioProcessor::undoDescription() const
+{
+    return undoManager.getUndoDescription();
+}
+
+juce::String MegaDSPAudioProcessor::redoDescription() const
+{
+    return undoManager.getRedoDescription();
+}
+
+bool MegaDSPAudioProcessor::undo()
+{
+    if (!canUndo())
+        return false;
+    const auto restored = undoManager.undo();
+    if (restored)
+        updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+    return restored;
+}
+
+bool MegaDSPAudioProcessor::redo()
+{
+    if (!canRedo())
+        return false;
+    const auto restored = undoManager.redo();
+    if (restored)
+        updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+    return restored;
+}
+
+void MegaDSPAudioProcessor::restoreUndoState(
+    const juce::MemoryBlock& state)
+{
+    const juce::ScopedValueSetter<bool> restoring(
+        restoringUndoState, true);
+    undoTransactionDepth = 0;
+    pendingUndoBefore.reset();
+    pendingUndoName.clear();
+    setStateInformation(
+        state.getData(), static_cast<int>(state.getSize()));
+}
+
+void MegaDSPAudioProcessor::parameterGestureChanged(
+    int parameterIndex, bool starting)
+{
+    auto* messageManager =
+        juce::MessageManager::getInstanceWithoutCreating();
+    if (restoringUndoState || messageManager == nullptr
+        || !messageManager->isThisTheMessageThread())
+        return;
+    if (starting)
+    {
+        const auto& allParameters = getParameters();
+        const auto name =
+            juce::isPositiveAndBelow(parameterIndex, allParameters.size())
+            ? allParameters[parameterIndex]->getName(64)
+            : juce::String("Parameter");
+        beginUndoTransaction("Adjust " + name);
+    }
+    else
+        endUndoTransaction();
 }
 
 void MegaDSPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
@@ -620,6 +844,46 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         position = eventPosition;
     }
     processRange(position, main.getNumSamples() - position);
+
+    auto outputPeak = 0.0f;
+    auto outputIsSafe = true;
+    const auto outputChannels = juce::jmin(
+        buffer.getNumChannels(), getTotalNumOutputChannels());
+    for (int channel = 0; channel < outputChannels; ++channel)
+    {
+        const auto* samples = buffer.getReadPointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            const auto magnitude = std::abs(samples[sample]);
+            if (!std::isfinite(magnitude))
+            {
+                outputIsSafe = false;
+                outputPeak = std::numeric_limits<float>::infinity();
+                break;
+            }
+            outputPeak = juce::jmax(outputPeak, magnitude);
+            if (outputPeak > 8.0f)
+            {
+                outputIsSafe = false;
+                break;
+            }
+        }
+        if (!outputIsSafe)
+            break;
+    }
+    if (!outputIsSafe)
+    {
+        for (int channel = 0; channel < outputChannels; ++channel)
+            buffer.clear(channel, 0, buffer.getNumSamples());
+        megadsp::Diagnostics::instance().logRealtime(
+            megadsp::DiagnosticEvent::unsafeOutputRejected,
+            diagnosticInstanceId,
+            std::isfinite(outputPeak)
+                ? static_cast<std::int64_t>(
+                    juce::roundToInt(outputPeak * 1000.0f))
+                : -1,
+            activeAudioSnapshot.load(std::memory_order_relaxed));
+    }
 
     const auto latency = getAudioRack().latencySamples();
     if (latency != pendingLatency.exchange(latency))
@@ -917,6 +1181,7 @@ void MegaDSPAudioProcessor::setBackgroundThemeIndex(int index)
         parameters.state.getProperty("backgroundTheme", 0));
     if (safeIndex == storedIndex)
         return;
+    ScopedProcessorUndoTransaction undo(*this, "Change theme");
     parameters.state.setProperty("backgroundTheme", safeIndex, nullptr);
     updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
 }
@@ -933,6 +1198,7 @@ void MegaDSPAudioProcessor::setInstanceName(const juce::String& name)
     if (normalized
         == parameters.state.getProperty("instanceName").toString())
         return;
+    ScopedProcessorUndoTransaction undo(*this, "Rename instance");
     parameters.state.setProperty("instanceName", normalized, nullptr);
     updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
 }
@@ -942,6 +1208,7 @@ void MegaDSPAudioProcessor::setLiveSafeSnapshotsEnabled(bool enabled)
     if (liveSafeSnapshots.exchange(
             enabled, std::memory_order_acq_rel) == enabled)
         return;
+    ScopedProcessorUndoTransaction undo(*this, "Toggle Live Safe");
     parameters.state.setProperty(
         "liveSafeSnapshots", enabled, nullptr);
     snapshotGeneration.fetch_add(1, std::memory_order_release);
@@ -1236,6 +1503,9 @@ void MegaDSPAudioProcessor::recallSnapshot(int index)
 {
     if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount))
         return;
+    if (index == getSelectedSnapshot())
+        return;
+    ScopedProcessorUndoTransaction undo(*this, "Recall snapshot");
     if (!isSnapshotPopulated(index))
     {
         suspendProcessing(true);
@@ -1258,6 +1528,7 @@ void MegaDSPAudioProcessor::storeSnapshot(int index, bool overwrite)
     if (!juce::isPositiveAndBelow(index, megadsp::snapshotCount)
         || (isSnapshotPopulated(index) && !overwrite))
         return;
+    ScopedProcessorUndoTransaction undo(*this, "Store snapshot");
     const auto source = getSelectedSnapshot();
     suspendProcessing(true);
     snapshotStates[static_cast<size_t>(index)].copyFrom(
@@ -1278,6 +1549,7 @@ void MegaDSPAudioProcessor::copySnapshot(int source, int destination)
         || !isSnapshotReady(source))
         return;
 
+    ScopedProcessorUndoTransaction undo(*this, "Copy snapshot");
     suspendProcessing(true);
     for (auto& spill : spillSnapshots)
     {
@@ -2148,6 +2420,13 @@ void MegaDSPAudioProcessor::getStateInformation(juce::MemoryBlock& destination)
 
 void MegaDSPAudioProcessor::setStateInformation(const void* data, int size)
 {
+    if (!restoringUndoState)
+    {
+        undoManager.clearUndoHistory();
+        undoTransactionDepth = 0;
+        pendingUndoBefore.reset();
+        pendingUndoName.clear();
+    }
     if (auto xml = getXmlFromBinary(data, size))
     {
         if (!xml->hasTagName(parameters.state.getType()))
@@ -2171,12 +2450,12 @@ void MegaDSPAudioProcessor::setStateInformation(const void* data, int size)
         restored = megadsp::migrateStateToCurrentSchema(restored);
         editorWidth = juce::jlimit(
             megadsp::ui::editorMinimumWidth,
-            megadsp::ui::editorMaximumWidth,
+            megadsp::ui::editorStateMaximumWidth,
             static_cast<int>(
                 restored.getProperty("editorWidth", 1100)));
         editorHeight = juce::jlimit(
             megadsp::ui::editorMinimumHeight,
-            megadsp::ui::editorMaximumHeight,
+            megadsp::ui::editorStateMaximumHeight,
             static_cast<int>(
                 restored.getProperty("editorHeight", 720)));
         selectedTab = static_cast<int>(
@@ -2196,6 +2475,9 @@ void MegaDSPAudioProcessor::setStateInformation(const void* data, int size)
 
 void MegaDSPAudioProcessor::moveSlot(int source, int destination)
 {
+    if (source == destination)
+        return;
+    ScopedProcessorUndoTransaction undo(*this, "Reorder module");
     if (!beginTopologyMutation())
         return;
     getRack().moveSlot(source, destination);
@@ -2205,6 +2487,7 @@ void MegaDSPAudioProcessor::moveSlot(int source, int destination)
 
 void MegaDSPAudioProcessor::clearSlot(int slot)
 {
+    ScopedProcessorUndoTransaction undo(*this, "Clear module");
     if (!beginTopologyMutation())
         return;
     getRack().clearSlot(slot);
@@ -2214,6 +2497,9 @@ void MegaDSPAudioProcessor::clearSlot(int slot)
 
 void MegaDSPAudioProcessor::removeSlot(int slot)
 {
+    if (!juce::isPositiveAndBelow(slot, getRack().activeSlotCount()))
+        return;
+    ScopedProcessorUndoTransaction undo(*this, "Remove module");
     if (!beginTopologyMutation())
         return;
     getRack().removeSlot(slot);
@@ -2228,6 +2514,7 @@ void MegaDSPAudioProcessor::addModule(megadsp::ModuleType type)
         || type == megadsp::ModuleType::empty
         || megadsp::findModuleDefinition(type) == nullptr)
         return;
+    ScopedProcessorUndoTransaction undo(*this, "Add module");
     if (!beginTopologyMutation())
         return;
     getRack().clearSlot(slot);
@@ -2257,6 +2544,7 @@ void MegaDSPAudioProcessor::resetModuleToDefaults(int slot)
     if (type == megadsp::ModuleType::empty)
         return;
 
+    ScopedProcessorUndoTransaction undo(*this, "Reset module");
     suspendProcessing(true);
     const auto defaults = megadsp::moduleDefaults(type);
     for (int control = 0; control < megadsp::controlsPerSlot; ++control)
@@ -2285,6 +2573,7 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
 juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
     int slot, int lane, const juce::File& file)
 {
+    ScopedProcessorUndoTransaction undo(*this, "Load impulse response");
     if (lane == 0
         && getRack().moduleType(slot)
                == megadsp::ModuleType::convolutionReverb)
@@ -2362,6 +2651,8 @@ juce::Result
 MegaDSPAudioProcessor::loadConvolutionImpulseResponseBank(
     int slot, int bank, const juce::File& file)
 {
+    ScopedProcessorUndoTransaction undo(
+        *this, "Load convolution impulse response");
     auto expected = false;
     if (!topologyMutationInProgress.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel))
@@ -2427,6 +2718,7 @@ MegaDSPAudioProcessor::loadConvolutionImpulseResponseBank(
 bool MegaDSPAudioProcessor::selectConvolutionImpulseResponseBank(
     int slot, int bank)
 {
+    ScopedProcessorUndoTransaction undo(*this, "Select impulse bank");
     suspendProcessing(true);
     const auto selected =
         getRack().selectConvolutionImpulseResponseBank(slot, bank);
@@ -2474,6 +2766,8 @@ juce::Result MegaDSPAudioProcessor::setConvolutionWetBufferSamples(
         return juce::Result::fail(
             "Unsupported convolution wet buffer size.");
 
+    ScopedProcessorUndoTransaction undo(
+        *this, "Change convolution buffer");
     auto expected = false;
     if (!topologyMutationInProgress.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel))
@@ -2816,6 +3110,7 @@ void MegaDSPAudioProcessor::clearImpulseResponse(int slot)
 
 void MegaDSPAudioProcessor::clearImpulseResponse(int slot, int lane)
 {
+    ScopedProcessorUndoTransaction undo(*this, "Clear impulse response");
     auto expected = false;
     if (!topologyMutationInProgress.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel))
@@ -2942,8 +3237,10 @@ MegaDSPAudioProcessor::searchNamModels(
     for (const auto& entry : namModelLibrary)
     {
         const auto searchable =
-            (entry.relativePath + " " + entry.displayName + " "
-             + entry.architecture + " " + entry.captureDescription)
+            (entry.relativePath + " "
+             + entry.file.getFileNameWithoutExtension() + " "
+             + entry.metadataTitle + " " + entry.architecture + " "
+             + entry.captureDescription + " " + entry.gearType)
                 .toLowerCase();
         auto matched = true;
         for (const auto& token : tokens)
@@ -2956,8 +3253,16 @@ MegaDSPAudioProcessor::searchNamModels(
                 matched = entry.isA2;
             else if (token == "cab")
                 matched = entry.cabIncluded == 1;
-            else if (token == "nocab" || token == "amp")
+            else if (token == "nocab")
                 matched = entry.cabIncluded == 0;
+            else if (token == "amp")
+                matched = entry.gearType == "amp"
+                    || (entry.gearType.isEmpty()
+                        && entry.cabIncluded == 0);
+            else if (token == "rig" || token == "full-rig")
+                matched = entry.gearType == "full-rig";
+            else if (token == "pedal")
+                matched = entry.gearType.contains("pedal");
             else if (token.startsWith("sr:")
                      || token.startsWith("rate:"))
             {
@@ -2987,9 +3292,46 @@ int MegaDSPAudioProcessor::namModelLibrarySize()
     return static_cast<int>(namModelLibrary.size());
 }
 
+juce::Result MegaDSPAudioProcessor::loadAdjacentNamModel(
+    int slot, int direction)
+{
+    if (direction == 0)
+        return juce::Result::fail(
+            "Choose either the previous or next NAM model.");
+
+    ensureNamModelLibrary();
+    std::vector<NamModelLibraryEntry> models;
+    {
+        const juce::ScopedLock lock(namModelLibraryLock);
+        models = namModelLibrary;
+    }
+    if (models.empty())
+        return juce::Result::fail(
+            "The NAM model library contains no valid .nam files.");
+
+    const auto currentFile = juce::File(namModelPath(slot));
+    const auto current = std::find_if(
+        models.begin(), models.end(),
+        [&currentFile](const NamModelLibraryEntry& candidate)
+        {
+            return candidate.file == currentFile;
+        });
+    int target =
+        direction > 0 ? 0 : static_cast<int>(models.size()) - 1;
+    if (current != models.end())
+    {
+        const auto currentIndex =
+            static_cast<int>(std::distance(models.begin(), current));
+        const auto count = static_cast<int>(models.size());
+        target = (currentIndex + (direction > 0 ? 1 : count - 1)) % count;
+    }
+    return loadNamModel(slot, models[static_cast<size_t>(target)].file);
+}
+
 juce::Result MegaDSPAudioProcessor::loadNamModel(
     int slot, const juce::File& file)
 {
+    ScopedProcessorUndoTransaction undo(*this, "Load NAM model");
     auto expected = false;
     if (!topologyMutationInProgress.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel))
@@ -3030,6 +3372,20 @@ juce::Result MegaDSPAudioProcessor::loadNamModel(
     return juce::Result::ok();
 }
 
+juce::Result MegaDSPAudioProcessor::clearNamModel(int slot)
+{
+    ScopedProcessorUndoTransaction undo(*this, "Clear NAM model");
+    if (!beginTopologyMutation())
+        return juce::Result::fail("Topology mutation in progress.");
+    auto result = getRack().clearNamModel(slot);
+    refreshLatency();
+    suspendProcessing(false);
+    topologyMutationInProgress.store(false, std::memory_order_release);
+    publishSnapshotToParameters(getSelectedSnapshot());
+    updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+    return result;
+}
+
 void MegaDSPAudioProcessor::topologyChanged()
 {
     if (!beginTopologyMutation())
@@ -3039,6 +3395,7 @@ void MegaDSPAudioProcessor::topologyChanged()
 
 void MegaDSPAudioProcessor::loadFactoryPreset(int presetIndex)
 {
+    ScopedProcessorUndoTransaction undo(*this, "Load factory preset");
     struct PresetSlot
     {
         megadsp::ModuleType type = megadsp::ModuleType::empty;
@@ -3170,6 +3527,7 @@ juce::Result MegaDSPAudioProcessor::loadPreset(const juce::File& file)
     if (schemaVersion < 2
         || schemaVersion > megadsp::stateSchemaVersion)
         return juce::Result::fail("Preset uses an incompatible megaDSP state format.");
+    ScopedProcessorUndoTransaction undo(*this, "Load preset");
     state = megadsp::migrateStateToCurrentSchema(state);
     if (!beginTopologyMutation())
         return juce::Result::fail(
@@ -3338,10 +3696,21 @@ void MegaDSPAudioProcessor::rememberEditorSize(int width, int height)
 {
     editorWidth = juce::jlimit(
         megadsp::ui::editorMinimumWidth,
-        megadsp::ui::editorMaximumWidth, width);
+        megadsp::ui::editorStateMaximumWidth, width);
     editorHeight = juce::jlimit(
         megadsp::ui::editorMinimumHeight,
-        megadsp::ui::editorMaximumHeight, height);
+        megadsp::ui::editorStateMaximumHeight, height);
+}
+
+juce::String MegaDSPAudioProcessor::globalWidgetSizeId() const
+{
+    return globalWidgetSizePreference();
+}
+
+juce::Result MegaDSPAudioProcessor::setGlobalWidgetSizeId(
+    const juce::String& identifier)
+{
+    return persistGlobalWidgetSize(identifier);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

@@ -28,6 +28,7 @@ constexpr float gainLow = -24.0f;
 constexpr float gainHigh = 24.0f;
 constexpr float toneLow = -12.0f;
 constexpr float toneHigh = 12.0f;
+constexpr float maximumSafeOutput = 8.0f;
 constexpr double defaultModelRate = 48000.0;
 
 float linMap(float lo, float hi, float n)
@@ -385,6 +386,26 @@ void NeuralAmpModelerModule::process(
     else
     {
         wetBuffer.clear(0, ns);
+    }
+
+    auto outputIsSafe = true;
+    for (int ch = 0; ch < nc && outputIsSafe; ++ch)
+    {
+        const auto* wet = wetBuffer.getReadPointer(ch);
+        for (int sample = 0; sample < ns; ++sample)
+            if (!std::isfinite(wet[sample])
+                || std::abs(wet[sample]) > maximumSafeOutput)
+            {
+                outputIsSafe = false;
+                break;
+            }
+    }
+    if (!outputIsSafe)
+    {
+        wetBuffer.clear(0, ns);
+        for (int ch = 0; ch < nc; ++ch)
+            for (auto& filter : toneFilters[static_cast<size_t>(ch)])
+                filter.reset();
     }
 
     for (int ch = 0; ch < nc; ++ch)

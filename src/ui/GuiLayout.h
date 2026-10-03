@@ -10,9 +10,11 @@
 namespace megadsp::ui
 {
 inline constexpr int editorMinimumWidth = 820;
-inline constexpr int editorMinimumHeight = 620;
-inline constexpr int editorMaximumWidth = 1800;
-inline constexpr int editorMaximumHeight = 1200;
+inline constexpr int editorMinimumHeight = 280;
+inline constexpr int editorFallbackMaximumWidth = 1800;
+inline constexpr int editorFallbackMaximumHeight = 1200;
+inline constexpr int editorStateMaximumWidth = 8192;
+inline constexpr int editorStateMaximumHeight = 4320;
 inline constexpr int instanceNameMaximumLength = 32;
 inline constexpr int moduleCardHeight = 320;
 inline constexpr int fullPanelModuleCardHeight = 480;
@@ -20,17 +22,33 @@ inline constexpr int moduleCardMaximumHeight = 640;
 inline constexpr int moduleCardGap = 8;
 inline constexpr int addModuleCardHeight = 42;
 
+enum class WidgetSize
+{
+    small,
+    medium,
+    large
+};
+
+juce::String widgetSizeId(WidgetSize);
+juce::String widgetSizeName(WidgetSize);
+WidgetSize widgetSizeFromId(const juce::String&);
+int widgetWidth(WidgetSize);
+int calculateRackContentWidth(
+    int moduleCount, WidgetSize, bool showAddButton);
+juce::Rectangle<int> calculateEditorResizeLimits(
+    juce::Rectangle<int> displayUserArea);
+
 juce::String normalizeInstanceName(const juce::String&);
 
 struct IdentityHeaderLayout
 {
-    int titleWidth = 112;
-    int labelWidth = 58;
-    int nameWidth = 104;
-    int themeWidth = 62;
-    int presetWidth = 132;
-    int saveWidth = 56;
-    int loadWidth = 56;
+    int titleWidth = 92;
+    int labelWidth = 0;
+    int nameWidth = 100;
+    int themeWidth = 52;
+    int presetWidth = 110;
+    int saveWidth = 46;
+    int loadWidth = 46;
 
     int usedWidth() const
     {

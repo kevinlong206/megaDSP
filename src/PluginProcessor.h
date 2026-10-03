@@ -22,8 +22,10 @@ struct NamModelLibraryEntry
     juce::File file;
     juce::String relativePath;
     juce::String displayName;
+    juce::String metadataTitle;
     juce::String architecture;
     juce::String captureDescription;
+    juce::String gearType;
     double sampleRate = 0.0;
     double inputLevelDbU = std::numeric_limits<double>::quiet_NaN();
     int submodelCount = 1;
@@ -34,7 +36,8 @@ struct NamModelLibraryEntry
 class MegaDSPAudioProcessor final : public juce::AudioProcessor,
                                     private juce::Timer,
                                     private juce::AsyncUpdater,
-                                    private juce::AudioProcessorValueTreeState::Listener
+                                    private juce::AudioProcessorValueTreeState::Listener,
+                                    private juce::AudioProcessorParameter::Listener
 {
 public:
     MegaDSPAudioProcessor();
@@ -60,6 +63,15 @@ public:
     void changeProgramName(int, const juce::String&) override {}
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
+    void beginUndoTransaction(const juce::String& name);
+    void endUndoTransaction();
+    bool canUndo() const;
+    bool canRedo() const;
+    juce::String undoDescription() const;
+    juce::String redoDescription() const;
+    bool undo();
+    bool redo();
+    void restoreUndoState(const juce::MemoryBlock&);
 
     juce::AudioProcessorValueTreeState parameters;
     megadsp::EffectRack& getRack()
@@ -150,19 +162,9 @@ public:
     std::vector<NamModelLibraryEntry> searchNamModels(
         const juce::String& query, int maximumResults = 200);
     int namModelLibrarySize();
+    juce::Result loadAdjacentNamModel(int slot, int direction);
     juce::File namModelRootDirectory() const;
-    juce::Result clearNamModel(int slot)
-    {
-        if (!beginTopologyMutation())
-            return juce::Result::fail("Topology mutation in progress.");
-        auto result = getRack().clearNamModel(slot);
-        refreshLatency();
-        suspendProcessing(false);
-        topologyMutationInProgress.store(false, std::memory_order_release);
-        publishSnapshotToParameters(getSelectedSnapshot());
-        updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
-        return result;
-    }
+    juce::Result clearNamModel(int slot);
     juce::String namModelPath(int slot) const
     {
         return getRack().namModelPath(slot);
@@ -216,6 +218,8 @@ public:
     }
     bool hasStereoOutput() const { return getTotalNumOutputChannels() > 1; }
     void rememberEditorSize(int width, int height);
+    juce::String globalWidgetSizeId() const;
+    juce::Result setGlobalWidgetSizeId(const juce::String&);
     juce::Result savePreset(const juce::File&);
     juce::Result loadPreset(const juce::File&);
     int getSelectedSnapshot() const noexcept
@@ -297,6 +301,8 @@ private:
     void handleAsyncUpdate() override;
     void parameterChanged(
         const juce::String&, float) override;
+    void parameterValueChanged(int, float) override {}
+    void parameterGestureChanged(int parameterIndex, bool starting) override;
     double currentBpm() const;
     void refreshLatency();
     void restoreParameterState(const juce::ValueTree&);
@@ -430,5 +436,10 @@ private:
     megadsp::RealtimeProcessProfile realtimeProfile;
     megadsp::RealtimeProcessProfile accumulatedRealtimeProfile;
     int selectedTab = 0;
+    juce::UndoManager undoManager;
+    juce::MemoryBlock pendingUndoBefore;
+    juce::String pendingUndoName;
+    int undoTransactionDepth = 0;
+    bool restoringUndoState = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MegaDSPAudioProcessor)
 };

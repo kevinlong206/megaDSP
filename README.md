@@ -38,7 +38,7 @@ graphs, realtime analysis, and controls that match the musical quantities they
 edit. The long-term vision is a community-built library spanning dozens—and
 eventually perhaps hundreds—of useful effects in one consistent rack.
 
-![Processor cards in top-to-bottom signal-flow order with the header output meter](docs/images/rack-overview.png)
+![Processor widgets in left-to-right signal-flow order with the header output meter](docs/images/rack-overview.png)
 
 ## Built in the open
 
@@ -112,11 +112,11 @@ megaDSP.clap → ~/.clap
 ## First-rack workflow
 
 1. Load megaDSP on a track in your DAW.
-2. Click **Add Module** after the last card and choose a processor from the standard category submenus. **Search Modules…** at the top opens a separate searchable list; **↑↓** and **Enter** work there.
-3. Every loaded module appears as a horizontal card sized for its visual workflow: standard cards remain compact, full-panel processors receive more vertical space, and Convolution Reverb uses the 640 px maximum for its inline IR browser. Each card keeps its graph, direct controls, bypass, reset, remove, and any IR/NAM asset actions together. In the sticky **CHAIN** row, click a processor to jump to it, drag processors to reorder signal flow, use the small `+` buttons to insert before, between, or after processors, double-click a processor to toggle bypass, or use its `x` to remove it. You can still vertically scroll the rack from top to bottom.
-4. Drag a card header up or down to reorder the signal chain.
-5. Use a card's explicit **ON / BYP** control (or focus it and press **Space / B**) to bypass it. After its short click-safe fade, the module DSP and live visualization are suspended; only latency-preserving dry routing remains.
-6. Use a card's **Remove** action to delete it from the rack.
+2. Use any `+` between widgets to insert a processor at that exact signal-flow position. The module browser retains its category menus, searchable list, and keyboard navigation.
+3. Modules run from left to right in one row beneath a compact single-line identity/meter header and snapshot strip. The rack scrolls horizontally when it is wider than the plugin window; a normal mouse-wheel gesture also moves the horizontal rack. Use the highlighted **S**, **M**, or **L** button to choose uniform 300, 440, or 640 logical-pixel widgets. Animated visualizations follow both widget-size changes and host window resizing, including docking transitions. Compact continuous controls use clearly marked rotary knobs with an adjacent value; drag straight up to increase or down to decrease, and hold Shift for fine adjustment. While dragging, a larger precision knob and value readout appear over the editor. This preference is global for newly opened megaDSP editors and is not stored in projects or automation.
+4. Each widget is the complete module editor. Every module type receives a stable dark background tint from a coherent category palette: filters, dynamics, saturation, delay, reverb, modulation, utility, creative, and guitar effects remain visually related while retaining distinct per-module colors. Every currently relevant control remains visible at **S**, **M**, and **L**; changing size alters spacing and visualization room rather than hiding parameters. Effect-specific views include response and transfer curves, dynamics histories, IR envelopes, repeat fields, decay spaces, stereo scopes, modulation ribbons, grains, slices, resonant modes, transport media, and spectral fields. Asset processors expose their current model or IR plus loading, clearing, browsing, and library actions directly in the widget.
+5. Drag a widget header left or right to reorder the signal chain. Use **Left / Right** to move keyboard focus between adjacent widgets.
+6. Use a widget's explicit **ON / BYP** control (or focus it and press **Space / B**) to bypass it. After its short click-safe fade, the module DSP and live visualization are suspended; only latency-preserving dry routing remains. **RST** and **DEL** reset or remove the module directly from the widget.
 7. Use the header **Output Trim** and peak meter to manage the final output level. The meter shows peak hold, near-clip colour zones, and a resettable **CLIP** indicator.
 8. Use **Snapshots 1-8** above the module rack to keep alternate complete racks. Click recalls without copying the current rack; an unused slot opens as a fresh blank rack. Shift-click saves to an empty slot or overwrites a populated one. Drag one populated snapshot onto another slot to copy it. Program Change 0-7 recalls populated snapshots over MIDI.
 
@@ -124,13 +124,25 @@ The seven-character Git commit shown beneath the **megaDSP** title identifies
 the exact source used for the build. Click the hash to copy it when reporting a
 problem.
 
+megaDSP keeps a per-instance history of the last 64 editor transactions.
+With the plug-in editor focused, use **Command-Z** / **Command-Shift-Z** on
+macOS or **Ctrl-Z** / **Ctrl-Shift-Z** elsewhere. Ordinary knob, graph, choice,
+toggle, and bypass gestures are single actions. Module insertion, removal,
+reordering and reset; preset and snapshot operations; theme and instance-name
+changes; and NAM/IR loading or clearing restore as atomic full-state actions.
+Host project-state restoration starts a fresh history, and MIDI/automation
+changes made on the audio thread are intentionally excluded from the internal
+history.
+
 Continuous and spectral DSP telemetry, meters, and animation run for every
-populated card while the editor is visible. Hidden editors and fully bypassed
-cards suspend their visualization capture.
+populated widget while the editor is visible. Hidden editors and fully bypassed
+widgets suspend their visualization capture.
 
 Compact control groups occupy a dedicated region below each standard
 visualization so controls never obscure the graph, timeline, or measured view.
-The mouse wheel always scrolls the rack and never changes a control value.
+Changing widget size only changes presentation: hidden controls retain their
+values, attachments, and automation state. The mouse wheel scrolls the rack and
+never changes a control value.
 
 Snapshot recall never waits for modules or external files to load: populated
 snapshots remain prepared while inactive. Each snapshot keeps its native DSP
@@ -169,7 +181,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 
 | Module | What it does |
 |---|---|
-| **Compressor** | Draggable threshold with 10-second input/output history, real-time gain-reduction overlay, primary Auto Makeup, and secondary Manual Trim |
+| **Compressor** | Clearly draggable threshold with 10-second input/output history, real-time gain-reduction overlay, explicitly labeled Auto Makeup, and secondary Manual Trim |
 | **Limiter** | Knob-free graph with separate Threshold and Ceiling handles, 10-second level traces, full GR overlay, integrated Release/Lookahead tracks, and Auto Gain |
 | **Dynamic EQ / De-Esser** | Single-band stackable processor — drag frequency/range/threshold in the graph, mouse-wheel Q, 10-second gain history, external sidechain with fallback, and Listen |
 | **Gate / Expander** | Hysteresis, detector passband, sidechain audition, and DSP-synchronized detector/envelope/attenuation/open telemetry |
@@ -186,7 +198,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 
 | Module | What it does |
 |---|---|
-| **EQ** | Pro-Q-inspired response editor: double-click to add or remove bands, drag to shape, wheel Q, select Bell/Shelf/Cut directly, and compare pre/post spectrum traces |
+| **EQ** | Compact three-node editor with individual and combined response curves, logarithmic frequency and gain guides, selected-band frequency/gain/Q readout, direct frequency/gain dragging, wheel Q, double-click reset, explicit Bell/Shelf/Cut modes, and a live output spectrum |
 | **Auto Wah** | Pick-responsive Low Pass, Band Pass, Peak, or Classic Wah filter with direct center/range editing and a visible sensitivity threshold |
 | **Resonance Tamer** | Adaptive narrow-resonance suppression with transient protection and live detected-reduction traces |
 | **Spectral Balance** | Long-term tonal balancing toward Natural, Warm, Clear, Vocal, or Flat target contours |
@@ -220,7 +232,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | **Delay** | Editable tap timeline plus a 2D Rate/Depth Movement field; Sync toggles between free Time and synced Division |
 | **Diffusion Delay** | Full-width Time/Division and Cloud Density field with DSP-synchronized primary/cloud activity, energy, progress, and stereo placement |
 | **Algorithmic Reverb** | 16-line Hall, Chamber, and Plate network with input high-pass/low-pass filtering, smooth wet ducking, Decay, Room Scale, and independent Dry/Wet |
-| **Convolution Reverb** | Dedicated asynchronous Wet convolution with adjustable scheduling headroom, immediate unaligned Dry, and zero host PDC; its inline library globally persists the selected root across DAW restarts and new instances, recursively validates WAV/AIFF/FLAC files, and provides immediate search/filtering plus three prepared A/B/C audition banks and one measured four-second Wet spectrogram |
+| **Convolution Reverb** | Dedicated asynchronous, energy-normalized Wet convolution with adjustable scheduling headroom, immediate unaligned Dry, and zero host PDC; its inline library globally persists the selected root across DAW restarts and new instances, recursively validates WAV/AIFF/FLAC files, and drives a visually normalized real-time spectrum measured from only the completed Wet signal |
 | **Wormhole Convolution** | Loads two WAV, AIFF, or FLAC reverb IRs in parallel, with independent crop windows, reverse switches, and wet levels plus shared filtering, Dry, and Output |
 | **Portal Permuter** | Rearranges recent tempo-locked input slices, then sends them through a focused, positionable, reversible region of one loaded IR |
 | **IR Mosaic** | Slices one IR into eight edge-faded chunks, repeatedly selects a loudness-normalized shuffled space at a knob-controlled or synced rate, and crossfades tails without clicks |

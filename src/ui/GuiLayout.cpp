@@ -9,6 +9,8 @@ namespace megadsp::ui
 {
 namespace
 {
+constexpr int insertionWidgetWidth = 24;
+
 bool isEqualizerModeControl(ModuleType type, int control)
 {
     juce::ignoreUnused(type, control);
@@ -77,6 +79,75 @@ bool isSemanticKeyboardControl(ModuleType type, int control)
 }
 } // namespace
 
+juce::String widgetSizeId(WidgetSize size)
+{
+    switch (size)
+    {
+        case WidgetSize::small: return "small";
+        case WidgetSize::medium: return "medium";
+        case WidgetSize::large: return "large";
+    }
+    return "small";
+}
+
+juce::String widgetSizeName(WidgetSize size)
+{
+    switch (size)
+    {
+        case WidgetSize::small: return "Small";
+        case WidgetSize::medium: return "Medium";
+        case WidgetSize::large: return "Large";
+    }
+    return "Small";
+}
+
+WidgetSize widgetSizeFromId(const juce::String& identifier)
+{
+    if (identifier.equalsIgnoreCase("medium"))
+        return WidgetSize::medium;
+    if (identifier.equalsIgnoreCase("large"))
+        return WidgetSize::large;
+    return WidgetSize::small;
+}
+
+int widgetWidth(WidgetSize size)
+{
+    switch (size)
+    {
+        case WidgetSize::small: return 300;
+        case WidgetSize::medium: return 440;
+        case WidgetSize::large: return 640;
+    }
+    return 300;
+}
+
+int calculateRackContentWidth(
+    int moduleCount, WidgetSize size, bool showAddButton)
+{
+    const auto modules = juce::jmax(0, moduleCount);
+    auto width = modules * widgetWidth(size);
+    if (modules > 1)
+        width += (modules - 1) * moduleCardGap;
+    if (showAddButton)
+        width += (modules + 1) * insertionWidgetWidth;
+    return width;
+}
+
+juce::Rectangle<int> calculateEditorResizeLimits(
+    juce::Rectangle<int> displayUserArea)
+{
+    if (displayUserArea.isEmpty())
+        return {
+            editorMinimumWidth, editorMinimumHeight,
+            editorFallbackMaximumWidth, editorFallbackMaximumHeight
+        };
+    return {
+        editorMinimumWidth, editorMinimumHeight,
+        juce::jmax(editorMinimumWidth, displayUserArea.getWidth()),
+        juce::jmax(editorMinimumHeight, displayUserArea.getHeight())
+    };
+}
+
 juce::String normalizeInstanceName(const juce::String& name)
 {
     return name.replace("\r\n", " ")
@@ -90,7 +161,7 @@ juce::String normalizeInstanceName(const juce::String& name)
 IdentityHeaderLayout calculateIdentityHeaderLayout(int editorWidth)
 {
     IdentityHeaderLayout layout;
-    layout.nameWidth = juce::jlimit(104, 150, editorWidth / 8);
+    layout.nameWidth = juce::jlimit(100, 140, editorWidth / 8);
     return layout;
 }
 

@@ -261,6 +261,35 @@ public:
             f.deleteFile();
         }
 
+        beginTest("Runaway models are muted before reaching the host");
+        {
+            auto runaway = nlohmann::json::parse(
+                linearNamJson(48000.0).toStdString());
+            runaway["weights"] = { 0.0, 0.0, 0.0, 1000.0 };
+            auto f = writeNam(
+                juce::String(runaway.dump()), "runaway");
+            auto m = createDspModule(ModuleType::neuralAmpModeler);
+            m->prepare({ 48000.0, 512, 1 });
+            auto* cap = m->namModelCapability();
+            PreparedNamModelPtr p;
+            const auto result = cap->prepareNamModel(f, p);
+            expect(result.wasOk(), result.getErrorMessage());
+            expect(cap->commitPreparedNamModel(p));
+
+            juce::AudioBuffer<float> buffer(1, 512);
+            buffer.clear();
+            buffer.setSample(0, 0, 0.25f);
+            m->process(
+                buffer,
+                moduleDefaults(ModuleType::neuralAmpModeler), {});
+            expect(buffer.getMagnitude(
+                       0, buffer.getNumSamples()) < 0.000001f);
+            for (int sample = 0;
+                 sample < buffer.getNumSamples(); ++sample)
+                expect(std::isfinite(buffer.getSample(0, sample)));
+            f.deleteFile();
+        }
+
         beginTest("Resample 44.1k host / 48k model: latency > 0, non-silent after latency");
         {
             auto m = createDspModule(ModuleType::neuralAmpModeler);
@@ -722,28 +751,42 @@ public:
             const auto cabModel =
                 nested.getChildFile("studio-lead.nam");
             const auto ampModel = root.getChildFile("clean-amp.NAM");
+            const auto pedalModel = root.getChildFile("drive-pedal.nam");
             const auto invalid = root.getChildFile("broken.nam");
-            expect(cabModel.replaceWithText(metadataLinearNamJson()));
+            auto cabJson = nlohmann::json::parse(
+                metadataLinearNamJson().toStdString());
+            cabJson["metadata"]["gear_type"] = "full-rig";
+            expect(cabModel.replaceWithText(
+                juce::String(cabJson.dump())));
             auto ampJson = nlohmann::json::parse(
                 linearNamJson().toStdString());
             ampJson["metadata"] = {
                 { "display_name", "Clean Platform" },
                 { "gear_make", "Example" },
                 { "gear_model", "Clean 100" },
-                { "tone_type", "clean" },
-                { "with_cab", false }
+                { "gear_type", "amp" },
+                { "tone_type", "clean" }
             };
             expect(ampModel.replaceWithText(
                 juce::String(ampJson.dump())));
+            auto pedalJson = nlohmann::json::parse(
+                linearNamJson().toStdString());
+            pedalJson["metadata"] = {
+                { "name", "Copper Drive" },
+                { "gear_type", "pedal" },
+                { "with_cab", false }
+            };
+            expect(pedalModel.replaceWithText(
+                juce::String(pedalJson.dump())));
             expect(invalid.replaceWithText("{ not a model }"));
 
             MegaDSPAudioProcessor browser;
             expect(browser.setNamModelRootDirectory(root).wasOk());
-            expectEquals(browser.namModelLibrarySize(), 2);
+            expectEquals(browser.namModelLibrarySize(), 3);
             expectEquals(
                 static_cast<int>(
                     browser.searchNamModels("linear").size()),
-                2);
+                3);
             expectEquals(
                 static_cast<int>(
                     browser.searchNamModels("cab").size()),
@@ -754,16 +797,42 @@ public:
                 1);
             expectEquals(
                 static_cast<int>(
+                    browser.searchNamModels("rig").size()),
+                1);
+            expectEquals(
+                static_cast<int>(
+                    browser.searchNamModels("pedal").size()),
+                1);
+            expectEquals(
+                static_cast<int>(
+                    browser.searchNamModels("nocab").size()),
+                2);
+            expectEquals(
+                static_cast<int>(
                     browser.searchNamModels(
                         "studio a1 cab sr:48000").size()),
                 1);
             expect(browser.searchNamModels("a2").empty());
+            browser.prepareToPlay(48000.0, 64);
+            browser.addModule(ModuleType::neuralAmpModeler);
+            expect(browser.loadAdjacentNamModel(0, 1).wasOk());
+            expectEquals(
+                browser.namModelPath(0),
+                ampModel.getFullPathName());
+            expect(browser.loadAdjacentNamModel(0, 1).wasOk());
+            expectEquals(
+                browser.namModelPath(0),
+                pedalModel.getFullPathName());
+            expect(browser.loadAdjacentNamModel(0, -1).wasOk());
+            expectEquals(
+                browser.namModelPath(0),
+                ampModel.getFullPathName());
 
             MegaDSPAudioProcessor inherited;
             expectEquals(
                 inherited.namModelRootDirectory().getFullPathName(),
                 root.getFullPathName());
-            expectEquals(inherited.namModelLibrarySize(), 2);
+            expectEquals(inherited.namModelLibrarySize(), 3);
             const auto clean =
                 inherited.searchNamModels("clean platform");
             expectEquals(static_cast<int>(clean.size()), 1);
@@ -771,6 +840,14 @@ public:
                 expectEquals(
                     clean.front().file.getFullPathName(),
                     ampModel.getFullPathName());
+            expectEquals(
+                static_cast<int>(
+                    inherited.searchNamModels("clean-amp").size()),
+                1);
+            expectEquals(
+                static_cast<int>(
+                    inherited.searchNamModels("copper drive").size()),
+                1);
             root.deleteRecursively();
         }
     }

@@ -47,7 +47,7 @@ constexpr Metadata eqMetadata {{
 }};
 constexpr Metadata compressorMetadata {{
     { "Threshold", ControlKind::level, true, "Compression",
-      "Sets where compression begins; the control track also shows live input level." },
+      "Sets where compression begins; drag right for a higher threshold. The thin track shows live input level." },
     { "Ratio", ControlKind::rotary, true, "Compression",
       "Sets how strongly signals above the threshold are reduced." },
     { "Attack", ControlKind::rotary, false, "Timing",
@@ -63,7 +63,7 @@ constexpr Metadata compressorMetadata {{
     { "Detector", ControlKind::toggle, false, "Detector",
       "Chooses the internal signal or external sidechain as detector." },
     { "Auto Makeup", ControlKind::toggle, true, "Recovery",
-      "Slowly restores average level lost to compression; Manual Trim remains an additional trim." },
+      "Slowly restores average level lost to compression. It does not change gain reduction; Manual Trim remains an additional output gain." },
     unused, unused, unused
 }};
 constexpr Metadata saturatorMetadata {{
@@ -2596,7 +2596,10 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 0) return juce::String(linear(-60.0f, 0.0f, value), 1) + " dB";
             if (control == 1) return juce::String(exponential(1.0f, 20.0f, value), 1) + ":1";
             if (control == 2) return juce::String(exponential(0.1f, 100.0f, value), 1) + " ms";
-            if (control == 3) return juce::String(exponential(10.0f, 1000.0f, value), 0) + " ms";
+            if (control == 3)
+                return juce::String(juce::roundToInt(
+                           exponential(10.0f, 1000.0f, value)))
+                    + " ms";
             if (control == 4) return juce::String(linear(0.0f, 18.0f, value), 1) + " dB";
             if (control == 5) return "+" + juce::String(linear(0.0f, 24.0f, value), 1) + " dB";
             break;
@@ -4281,12 +4284,6 @@ bool isControlContextuallyVisible(
                 return values[5] < 0.5f;
             if (control == 6)
                 return values[5] >= 0.5f;
-            if (control == 7 || control == 8)
-                return false;
-            break;
-        case ModuleType::stereoWidth:
-            if (control == 0 || control == 2)
-                return false;
             break;
         case ModuleType::tremolo:
         {
@@ -4303,20 +4300,6 @@ bool isControlContextuallyVisible(
                 return mode == 1;
             break;
         }
-        case ModuleType::rotarySpeaker:
-            if (control == 2 || control == 4 || control == 5
-                || control == 6 || control == 7)
-                return false;
-            break;
-        case ModuleType::convolutionReverb:
-            if (control == 0 || control == 1)
-                return false;
-            break;
-        case ModuleType::algorithmicReverb:
-            if (control == 0 || control == 1
-                || control == 10 || control == 11)
-                return false;
-            break;
         case ModuleType::studioPhaser:
         case ModuleType::studioFlanger:
         case ModuleType::spatialOrbit:
@@ -4350,6 +4333,10 @@ bool isControlContextuallyVisible(
                 return values[2] >= 0.5f;
             break;
         case ModuleType::neuralAmpModeler:
+        case ModuleType::stereoWidth:
+        case ModuleType::rotarySpeaker:
+        case ModuleType::convolutionReverb:
+        case ModuleType::algorithmicReverb:
         case ModuleType::stageVocal:
         case ModuleType::vinylSimulator:
         case ModuleType::optoLeveler:
@@ -4965,6 +4952,118 @@ const ModuleDefinition& moduleDefinition(ModuleType type)
     if (const auto* definition = findModuleDefinition(type))
         return *definition;
     return *findModuleDefinition(ModuleType::empty);
+}
+
+CompactVisualization compactVisualization(ModuleType type)
+{
+    switch (type)
+    {
+        case ModuleType::equalizer:
+        case ModuleType::dynamicEqualizer:
+        case ModuleType::autoWah:
+        case ModuleType::programEqualizer:
+            return CompactVisualization::response;
+
+        case ModuleType::compressor:
+        case ModuleType::limiter:
+        case ModuleType::gateExpander:
+        case ModuleType::multibandCompressor:
+        case ModuleType::loudnessRider:
+        case ModuleType::stageVocal:
+        case ModuleType::optoLeveler:
+        case ModuleType::fetLimiter:
+            return CompactVisualization::dynamics;
+
+        case ModuleType::saturator:
+        case ModuleType::wavefoldGarden:
+        case ModuleType::adaptiveClipper:
+        case ModuleType::midnightCurrent:
+            return CompactVisualization::transfer;
+
+        case ModuleType::delay:
+        case ModuleType::diffusionDelay:
+            return CompactVisualization::delay;
+
+        case ModuleType::algorithmicReverb:
+        case ModuleType::studioPlate:
+        case ModuleType::wormholeConvolution:
+            return CompactVisualization::space;
+
+        case ModuleType::irMosaic:
+            return CompactVisualization::impulse;
+
+        case ModuleType::convolutionReverb:
+            return CompactVisualization::wetSpectrum;
+
+        case ModuleType::stereoWidth:
+        case ModuleType::midSideDecoder:
+        case ModuleType::spatialOrbit:
+        case ModuleType::phaseCoherence:
+            return CompactVisualization::stereo;
+
+        case ModuleType::tremolo:
+        case ModuleType::rotarySpeaker:
+        case ModuleType::vintageChorus:
+        case ModuleType::studioPhaser:
+        case ModuleType::studioFlanger:
+            return CompactVisualization::modulation;
+
+        case ModuleType::randomGranulizer:
+        case ModuleType::chordLoom:
+            return CompactVisualization::grains;
+
+        case ModuleType::beatPermuter:
+        case ModuleType::timeMosaic:
+        case ModuleType::portalPermuter:
+            return CompactVisualization::slices;
+
+        case ModuleType::spectralPrism:
+        case ModuleType::frequencyLab:
+        case ModuleType::resonanceTamer:
+        case ModuleType::spectralBalance:
+        case ModuleType::formantForge:
+        case ModuleType::spectralNebula:
+        case ModuleType::spectralDelayCanvas:
+        case ModuleType::neuralAmpModeler:
+            return CompactVisualization::spectral;
+
+        case ModuleType::resonantMatrix:
+        case ModuleType::harmonicMirage:
+        case ModuleType::resonantSculpture:
+            return CompactVisualization::resonator;
+
+        case ModuleType::analogTape:
+        case ModuleType::vinylSimulator:
+            return CompactVisualization::transport;
+
+        case ModuleType::pitchBloom:
+            return CompactVisualization::pitch;
+
+        case ModuleType::transientDesigner:
+        case ModuleType::signalDecay:
+        case ModuleType::volumeSwell:
+            return CompactVisualization::envelope;
+
+        case ModuleType::guitarCabinet:
+        case ModuleType::velvetDrive:
+            return CompactVisualization::cabinet;
+
+        case ModuleType::bitcrusher:
+            return CompactVisualization::bitcrusher;
+
+        case ModuleType::chaosField:
+            return CompactVisualization::chaos;
+
+        case ModuleType::empty:
+            return CompactVisualization::response;
+    }
+    return CompactVisualization::response;
+}
+
+bool compactVisualizationShowsGainReduction(ModuleType type)
+{
+    return compactVisualization(type)
+        == CompactVisualization::dynamics;
 }
 
 const char* moduleCategoryName(ModuleCategory category)

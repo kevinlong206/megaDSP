@@ -263,7 +263,7 @@ public:
         }
 
         beginTest(
-            "Eight preferred-height cards persist and overflow vertically");
+            "Eight widgets persist and overflow horizontally");
         {
             auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
             rackProcessor->prepareToPlay(48000.0, 512);
@@ -274,25 +274,19 @@ public:
 
             expectEquals(editor->cardCountForTesting(), megadsp::slotCount);
             expectEquals(
-                editor->chainNavigatorButtonCountForTesting(),
-                megadsp::slotCount);
-            expectEquals(
-                editor->chainInsertButtonCountForTesting(),
-                megadsp::slotCount + 1);
-            expect(editor->cardHeightsMatchPreferencesForTesting());
-            expectEquals(
-                editor->cardHeightForTesting(0),
-                megadsp::ui::fullPanelModuleCardHeight);
+                editor->cardWidthForTesting(0),
+                megadsp::ui::widgetWidth(
+                    megadsp::ui::WidgetSize::small));
             expect(editor->cardChildrenFitForTesting());
             expect(editor->cardGraphsAvoidControlsForTesting());
-            expect(editor->rackOverflowsVerticallyForTesting());
+            expect(editor->rackOverflowsHorizontallyForTesting());
+            expect(!editor->rackOverflowsVerticallyForTesting());
             expectEquals(
                 editor->activeVisualizationCardCountForTesting(), 0);
 
             editor->refreshCardsForTesting();
             expectEquals(editor->cardCountForTesting(), megadsp::slotCount);
-            expect(editor->cardHeightsMatchPreferencesForTesting());
-            expect(editor->rackOverflowsVerticallyForTesting());
+            expect(editor->rackOverflowsHorizontallyForTesting());
 
             editor->clickChainNavigatorForTesting(megadsp::slotCount - 1);
             expectEquals(
@@ -301,9 +295,70 @@ public:
             editor->clickChainNavigatorForTesting(0);
             expectEquals(editor->selectedCardForTesting(), 0);
             expect(editor->selectedCardVisibleForTesting());
+
+            editor->setWidgetSizeForTesting(
+                megadsp::ui::WidgetSize::medium);
+            const auto mediumGraphWidth =
+                editor->cardGraphWidthForTesting(0);
+            expectEquals(
+                editor->cardWidthForTesting(0),
+                megadsp::ui::widgetWidth(
+                    megadsp::ui::WidgetSize::medium));
+            editor->setWidgetSizeForTesting(
+                megadsp::ui::WidgetSize::large);
+            expect(
+                editor->cardGraphWidthForTesting(0) > mediumGraphWidth,
+                "Animated graph should follow module width changes.");
+            expectEquals(
+                editor->cardWidthForTesting(0),
+                megadsp::ui::widgetWidth(
+                    megadsp::ui::WidgetSize::large));
+            const auto graphHeightBeforeHostResize =
+                editor->cardGraphHeightForTesting(0);
+            editor->setSize(820, 760);
+            expect(
+                editor->cardGraphHeightForTesting(0)
+                    > graphHeightBeforeHostResize,
+                "Animated graph should follow host height changes.");
+            editor->setCardsEditorVisibleForTesting(true);
+            expectEquals(
+                editor->activeVisualizationCardCountForTesting(),
+                megadsp::slotCount);
+            rackProcessor->getVisualizationData().clearActiveSlots();
+            editor->setWidgetSizeForTesting(
+                megadsp::ui::WidgetSize::medium);
+            expectEquals(
+                static_cast<int>(
+                    rackProcessor->getVisualizationData()
+                        .getActiveSlotMask()),
+                (1 << megadsp::slotCount) - 1);
         }
 
-        beginTest("Convolution Reverb uses the doubled card height");
+        beginTest("Widget size is global and absent from project state");
+        {
+            MegaDSPAudioProcessor preferenceWriter;
+            expect(preferenceWriter.setGlobalWidgetSizeId("medium").wasOk());
+            MegaDSPAudioProcessor preferenceReader;
+            expectEquals(
+                preferenceReader.globalWidgetSizeId(),
+                juce::String("medium"));
+
+            juce::MemoryBlock state;
+            preferenceReader.getStateInformation(state);
+            const auto widgetStateXml =
+                juce::AudioProcessor::getXmlFromBinary(
+                state.getData(), static_cast<int>(state.getSize()));
+            expect(widgetStateXml != nullptr);
+            expect(widgetStateXml == nullptr
+                   || !widgetStateXml->hasAttribute("widgetSize"));
+
+            expect(preferenceWriter.setGlobalWidgetSizeId("invalid").wasOk());
+            expectEquals(
+                preferenceReader.globalWidgetSizeId(),
+                juce::String("small"));
+        }
+
+        beginTest("Convolution Reverb fits a compact widget");
         {
             auto convolutionProcessor =
                 std::make_unique<MegaDSPAudioProcessor>();
@@ -313,12 +368,13 @@ public:
             auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
                 *convolutionProcessor, 1100, 720);
             expectEquals(
-                editor->cardHeightForTesting(0),
-                megadsp::ui::moduleCardMaximumHeight);
+                editor->cardWidthForTesting(0),
+                megadsp::ui::widgetWidth(
+                    megadsp::ui::WidgetSize::small));
             expect(editor->cardChildrenFitForTesting());
         }
 
-        beginTest("Neural Amp Modeler browser uses the maximum card height");
+        beginTest("Neural Amp Modeler fits a compact widget");
         {
             auto namProcessor =
                 std::make_unique<MegaDSPAudioProcessor>();
@@ -328,12 +384,95 @@ public:
             auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
                 *namProcessor, 1100, 720);
             expectEquals(
-                editor->cardHeightForTesting(0),
-                megadsp::ui::moduleCardMaximumHeight);
+                editor->cardWidthForTesting(0),
+                megadsp::ui::widgetWidth(
+                    megadsp::ui::WidgetSize::small));
             expect(editor->cardChildrenFitForTesting());
         }
 
-        beginTest("Chain navigator reorders and inserts at every boundary");
+        beginTest("Every module presentation fits every widget size");
+        std::array<
+            bool,
+            static_cast<size_t>(
+                megadsp::CompactVisualization::count)>
+            compactVisualizationKinds {};
+        for (int rawType = 1;
+             rawType < megadsp::moduleTypeCount; ++rawType)
+        {
+            const auto visualization =
+                megadsp::compactVisualization(
+                    static_cast<megadsp::ModuleType>(rawType));
+            const auto visualizationIndex =
+                static_cast<size_t>(visualization);
+            expect(
+                visualizationIndex < compactVisualizationKinds.size(),
+                "Module has an invalid compact visualization.");
+            if (visualizationIndex < compactVisualizationKinds.size())
+                compactVisualizationKinds[visualizationIndex] = true;
+            auto moduleProcessor =
+                std::make_unique<MegaDSPAudioProcessor>();
+            moduleProcessor->prepareToPlay(48000.0, 512);
+            moduleProcessor->addModule(
+                static_cast<megadsp::ModuleType>(rawType));
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
+                *moduleProcessor, 820, 280);
+            if (rawType == static_cast<int>(
+                               megadsp::ModuleType::compressor))
+                expectEquals(
+                    editor->cardControlTextForTesting(0, 3),
+                    juce::String("150 ms"));
+            if (rawType == static_cast<int>(
+                               megadsp::ModuleType::delay))
+                expect(
+                    editor->cardRotaryControlsWorkForTesting(0),
+                    "Compact knobs must be visible and use upward/downward "
+                    "relative dragging.");
+            for (const auto size : {
+                     megadsp::ui::WidgetSize::small,
+                     megadsp::ui::WidgetSize::medium,
+                     megadsp::ui::WidgetSize::large })
+            {
+                editor->setWidgetSizeForTesting(size);
+                expectEquals(
+                    editor->cardWidthForTesting(0),
+                    megadsp::ui::widgetWidth(size));
+                expect(editor->cardChildrenFitForTesting());
+                expect(editor->cardGraphsAvoidControlsForTesting());
+                expect(editor->cardPresentsAllActiveControlsForTesting());
+            }
+        }
+        expect(std::all_of(
+            compactVisualizationKinds.begin(),
+            compactVisualizationKinds.end(),
+            [](bool present) { return present; }),
+            "Every compact visualization kind should be assigned.");
+        expect(
+            megadsp::compactVisualization(
+                megadsp::ModuleType::convolutionReverb)
+            == megadsp::CompactVisualization::wetSpectrum);
+        expect(
+            megadsp::compactVisualization(
+                megadsp::ModuleType::neuralAmpModeler)
+            == megadsp::CompactVisualization::spectral);
+        expect(megadsp::compactVisualizationShowsGainReduction(
+            megadsp::ModuleType::compressor));
+        expect(!megadsp::compactVisualizationShowsGainReduction(
+            megadsp::ModuleType::beatPermuter));
+
+        beginTest("Factory compressor values use musical units immediately");
+        {
+            auto factoryProcessor =
+                std::make_unique<MegaDSPAudioProcessor>();
+            factoryProcessor->prepareToPlay(48000.0, 512);
+            factoryProcessor->loadFactoryPreset(2);
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
+                *factoryProcessor, 1100, 720);
+            expectEquals(
+                editor->cardControlTextForTesting(1, 3),
+                juce::String("36 ms"));
+        }
+
+        beginTest("Widgets reorder and insert at every boundary");
         {
             auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
             rackProcessor->prepareToPlay(48000.0, 512);
@@ -398,7 +537,7 @@ public:
             expectEquals(editor->chainInsertButtonCountForTesting(), 6);
         }
 
-        beginTest("Vertical rack follows topology, reorder, and saved selection");
+        beginTest("Horizontal rack follows topology, reorder, and saved selection");
         {
             auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
             rackProcessor->prepareToPlay(48000.0, 512);
@@ -449,7 +588,7 @@ public:
             expect(presetFile.deleteFile());
         }
 
-        beginTest("Vertical rack follows snapshot recall and asset drop types");
+        beginTest("Horizontal rack follows snapshot recall and asset drop types");
         {
             auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
             rackProcessor->prepareToPlay(48000.0, 512);
@@ -502,6 +641,222 @@ public:
             expect(!image.isNull());
         }
 
+        beginTest("Compact spectra use a perceptual frequency axis");
+        {
+            expectEquals(
+                static_cast<int>(
+                    megadsp::ui::EffectGraph::spectrumBinForProportion(
+                        0.0f, 48000.0)),
+                1);
+            expectEquals(
+                static_cast<int>(
+                    megadsp::ui::EffectGraph::spectrumBinForProportion(
+                        1.0f / 3.0f, 48000.0)),
+                4);
+            expectEquals(
+                static_cast<int>(
+                    megadsp::ui::EffectGraph::spectrumBinForProportion(
+                        2.0f / 3.0f, 48000.0)),
+                43);
+            expectEquals(
+                static_cast<int>(
+                    megadsp::ui::EffectGraph::spectrumBinForProportion(
+                        1.0f, 48000.0)),
+                427);
+        }
+
+        beginTest("Fresh dynamics histories represent silence");
+        {
+            MegaDSPAudioProcessor dynamicsProcessor;
+            dynamicsProcessor.prepareToPlay(48000.0, 512);
+            setType(
+                dynamicsProcessor, 0,
+                megadsp::ModuleType::compressor);
+            dynamicsProcessor.flushPendingUpdatesForTesting();
+            megadsp::ui::EffectGraph graph(
+                dynamicsProcessor, 0,
+                megadsp::ModuleType::compressor, true);
+            graph.setBounds(0, 0, 384, 120);
+            graph.setVisualizationActive(true);
+            graph.refreshVisualizationForTesting();
+            expect(std::all_of(
+                graph.inputLevelData().begin(),
+                graph.inputLevelData().end(),
+                [](float value)
+                {
+                    return std::abs(value + 60.0f) < 0.000001f;
+                }));
+            expect(std::all_of(
+                graph.outputLevelData().begin(),
+                graph.outputLevelData().end(),
+                [](float value)
+                {
+                    return std::abs(value + 60.0f) < 0.000001f;
+                }));
+            graph.setCompactCompressorThresholdFromYForTesting(0.0f);
+            expectWithinAbsoluteError(
+                graph.value(0), 1.0f, 0.000001f);
+            graph.setCompactCompressorThresholdFromYForTesting(
+                static_cast<float>(graph.getHeight()));
+            expectWithinAbsoluteError(
+                graph.value(0), 0.0f, 0.000001f);
+        }
+
+        beginTest("Compact Equalizer nodes directly edit frequency and gain");
+        {
+            MegaDSPAudioProcessor equalizerProcessor;
+            equalizerProcessor.prepareToPlay(48000.0, 512);
+            setType(
+                equalizerProcessor, 0,
+                megadsp::ModuleType::equalizer);
+            equalizerProcessor.flushPendingUpdatesForTesting();
+            megadsp::ui::EffectGraph graph(
+                equalizerProcessor, 0,
+                megadsp::ModuleType::equalizer, true);
+            graph.setBounds(0, 0, 384, 120);
+            const auto compactPlot =
+                graph.compactEqualizerPlotAreaForTesting();
+            const auto oneKhzX = compactPlot.getX()
+                + std::log(1000.0f / 20.0f) / std::log(1000.0f)
+                    * compactPlot.getWidth();
+            graph.setCompactEqualizerBandFromPointForTesting(
+                1, { oneKhzX, compactPlot.getCentreY() });
+            const auto expectedOneKhz = std::log(1000.0f / 150.0f)
+                / std::log(7000.0f / 150.0f);
+            expectWithinAbsoluteError(
+                graph.value(3), expectedOneKhz, 0.000001f,
+                "EQ node positions must follow the displayed frequency axis.");
+            graph.setValue(4, 1.0f);
+            expect(
+                graph.compactEqualizerResponseDbForTesting(1000.0f)
+                    > 15.0f,
+                "The compact graph must expose the audible EQ response.");
+            graph.setValue(4, 0.5f);
+            expectWithinAbsoluteError(
+                graph.compactEqualizerResponseDbForTesting(1000.0f),
+                0.0f, 0.01f,
+                "A neutral compact EQ must draw a flat response.");
+            graph.setCompactEqualizerBandFromPointForTesting(
+                1, { 10000.0f, -100.0f });
+            expectWithinAbsoluteError(
+                graph.value(3), 1.0f, 0.000001f);
+            expectWithinAbsoluteError(
+                graph.value(4), 1.0f, 0.000001f);
+            graph.setCompactEqualizerBandFromPointForTesting(
+                1, { -100.0f, 10000.0f });
+            expectWithinAbsoluteError(
+                graph.value(3), 0.0f, 0.000001f);
+            expectWithinAbsoluteError(
+                graph.value(4), 0.0f, 0.000001f);
+            graph.setCompactEqualizerOutputFromYForTesting(-100.0f);
+            expectWithinAbsoluteError(
+                graph.value(9), 1.0f, 0.000001f);
+            graph.setCompactEqualizerOutputFromYForTesting(10000.0f);
+            expectWithinAbsoluteError(
+                graph.value(9), 0.0f, 0.000001f);
+            const auto previousLowShape = graph.value(10);
+            expect(graph.keyPressed(juce::KeyPress(
+                juce::KeyPress::leftKey)));
+            expect(graph.keyPressed(juce::KeyPress(
+                juce::KeyPress::returnKey)));
+            expect(std::abs(graph.value(10) - previousLowShape)
+                   > 0.1f);
+        }
+
+        beginTest("NAM spectrum resumes after module bypass");
+        {
+            MegaDSPAudioProcessor spectrumProcessor;
+            spectrumProcessor.prepareToPlay(48000.0, 512);
+            setType(
+                spectrumProcessor, 0,
+                megadsp::ModuleType::neuralAmpModeler);
+            spectrumProcessor.flushPendingUpdatesForTesting();
+            megadsp::ui::EffectGraph graph(
+                spectrumProcessor, 0,
+                megadsp::ModuleType::neuralAmpModeler, true);
+            graph.setVisualizationActive(true);
+
+            juce::AudioBuffer<float> dcOffset(
+                2, megadsp::ui::graphFftSize);
+            dcOffset.clear();
+            for (int channel = 0;
+                 channel < dcOffset.getNumChannels(); ++channel)
+                juce::FloatVectorOperations::fill(
+                    dcOffset.getWritePointer(channel),
+                    0.25f, dcOffset.getNumSamples());
+            spectrumProcessor.getVisualizationData().captureOutput(
+                0, dcOffset);
+            graph.refreshVisualizationForTesting();
+            expect(
+                *std::max_element(
+                    graph.outputSpectrumData().begin(),
+                    graph.outputSpectrumData().end())
+                <= -99.0f,
+                "DC must not appear as pinned bass energy.");
+
+            juce::AudioBuffer<float> tone(2, megadsp::ui::graphFftSize);
+            for (int channel = 0; channel < tone.getNumChannels(); ++channel)
+                for (int sample = 0; sample < tone.getNumSamples(); ++sample)
+                    tone.setSample(
+                        channel, sample,
+                        0.25f * std::sin(
+                            juce::MathConstants<float>::twoPi
+                            * 1000.0f * static_cast<float>(sample)
+                            / 48000.0f));
+            spectrumProcessor.getVisualizationData().captureOutput(
+                0, tone);
+            graph.refreshVisualizationForTesting();
+            expect(
+                *std::max_element(
+                    graph.outputSpectrumData().begin(),
+                    graph.outputSpectrumData().end())
+                > -30.0f);
+            expectWithinAbsoluteError(
+                graph.namSpectrumFreshnessForTesting(),
+                1.0f, 0.000001f);
+
+            for (int refresh = 0; refresh < 20; ++refresh)
+                graph.refreshVisualizationForTesting();
+            expect(
+                *std::max_element(
+                    graph.outputSpectrumData().begin(),
+                    graph.outputSpectrumData().end())
+                <= -99.0f);
+            expectWithinAbsoluteError(
+                graph.namSpectrumFreshnessForTesting(),
+                0.0f, 0.000001f);
+
+            spectrumProcessor.getVisualizationData().captureOutput(
+                0, tone);
+            graph.refreshVisualizationForTesting();
+            expect(
+                *std::max_element(
+                    graph.outputSpectrumData().begin(),
+                    graph.outputSpectrumData().end())
+                > -30.0f);
+            expectWithinAbsoluteError(
+                graph.namSpectrumFreshnessForTesting(),
+                1.0f, 0.000001f);
+
+            setBypass(spectrumProcessor, 0, true);
+            graph.refreshVisualizationForTesting();
+            expectEquals(
+                *std::max_element(
+                    graph.outputSpectrumData().begin(),
+                    graph.outputSpectrumData().end()),
+                -100.0f);
+
+            setBypass(spectrumProcessor, 0, false);
+            spectrumProcessor.getVisualizationData().captureOutput(
+                0, tone);
+            graph.refreshVisualizationForTesting();
+            expect(
+                *std::max_element(
+                    graph.outputSpectrumData().begin(),
+                    graph.outputSpectrumData().end())
+                > -30.0f);
+        }
+
         beginTest("Every active graph owns visualization capture");
         {
             MegaDSPAudioProcessor graphProcessor;
@@ -522,9 +877,67 @@ public:
             expect(second.isVisualizationActive());
             expect(graphProcessor.getVisualizationData().isSlotActive(0));
             expect(graphProcessor.getVisualizationData().isSlotActive(1));
+            graphProcessor.getVisualizationData().clearActiveSlots();
+            first.setVisualizationActive(true);
+            second.setVisualizationActive(true);
+            expect(graphProcessor.getVisualizationData().isSlotActive(0));
+            expect(graphProcessor.getVisualizationData().isSlotActive(1));
             second.setVisualizationActive(false);
             expect(graphProcessor.getVisualizationData().isSlotActive(0));
             expect(!graphProcessor.getVisualizationData().isSlotActive(1));
+        }
+
+        beginTest("Telemetry-rich compact views render measured state");
+        {
+            constexpr std::array telemetryTypes {
+                megadsp::ModuleType::autoWah,
+                megadsp::ModuleType::stageVocal,
+                megadsp::ModuleType::midnightCurrent,
+                megadsp::ModuleType::resonantSculpture,
+                megadsp::ModuleType::analogTape,
+                megadsp::ModuleType::vinylSimulator,
+                megadsp::ModuleType::chaosField
+            };
+            for (const auto type : telemetryTypes)
+            {
+                MegaDSPAudioProcessor telemetryProcessor;
+                telemetryProcessor.prepareToPlay(48000.0, 512);
+                setType(telemetryProcessor, 0, type);
+                telemetryProcessor.flushPendingUpdatesForTesting();
+                megadsp::ui::EffectGraph graph(
+                    telemetryProcessor, 0, type, true);
+                graph.setBounds(0, 0, 384, 120);
+                graph.setVisualizationActive(true);
+                juce::MidiBuffer telemetryMidi;
+                auto phase = 0.0f;
+                for (int blockIndex = 0; blockIndex < 24; ++blockIndex)
+                {
+                    juce::AudioBuffer<float> block(2, 512);
+                    for (int sample = 0; sample < block.getNumSamples();
+                         ++sample)
+                    {
+                        const auto value = 0.2f * std::sin(phase);
+                        phase += juce::MathConstants<float>::twoPi
+                            * 220.0f / 48000.0f;
+                        for (int channel = 0;
+                             channel < block.getNumChannels(); ++channel)
+                            block.setSample(channel, sample, value);
+                    }
+                    telemetryProcessor.processBlock(block, telemetryMidi);
+                }
+                megadsp::ContinuousTelemetrySnapshot telemetry;
+                expect(
+                    telemetryProcessor.readContinuousTelemetry(
+                        0, telemetry),
+                    megadsp::moduleDefinition(type).displayName);
+                expect(telemetry.sequence != 0);
+                graph.refreshVisualizationForTesting();
+                juce::Image image(
+                    juce::Image::ARGB, 384, 120, true);
+                juce::Graphics graphics(image);
+                graph.paint(graphics);
+                expect(image.getPixelAt(192, 60).getAlpha() > 0);
+            }
         }
 
         beginTest("Bypassed slots suspend DSP and visualization capture");
@@ -574,8 +987,19 @@ public:
                     0.25f, 0.000001f);
 
             setBypass(suspendedProcessor, 0, false);
+            for (int channel = 0; channel < bypassed.getNumChannels();
+                 ++channel)
+                juce::FloatVectorOperations::fill(
+                    bypassed.getWritePointer(channel), 0.25f,
+                    bypassed.getNumSamples());
             suspendedProcessor.processBlock(bypassed, bypassMidi);
             expect(!suspendedProcessor.getRack().slotDspSuspended(0));
+            const auto capturedAfter = suspendedProcessor
+                .getVisualizationData().slotData(0).input.copyLatest(
+                    bypassCapture);
+            expect(capturedAfter > capturedBefore);
+            expectWithinAbsoluteError(
+                bypassCapture.back(), 0.25f, 0.000001f);
         }
 
         beginTest("Creative latency does not contribute to host PDC");
@@ -696,6 +1120,26 @@ public:
         exerciseTransition(false);
         exerciseTransition(true);
 
+        beginTest("Unsafe rack output is rejected before host handoff");
+        {
+            MegaDSPAudioProcessor safetyProcessor;
+            safetyProcessor.prepareToPlay(48000.0, 512);
+            juce::AudioBuffer<float> unsafe(
+                safetyProcessor.getTotalNumOutputChannels(), 512);
+            for (int channel = 0; channel < unsafe.getNumChannels();
+                 ++channel)
+                juce::FloatVectorOperations::fill(
+                    unsafe.getWritePointer(channel),
+                    std::numeric_limits<float>::infinity(),
+                    unsafe.getNumSamples());
+            safetyProcessor.processBlock(unsafe, midi);
+            for (int channel = 0; channel < unsafe.getNumChannels();
+                 ++channel)
+                expectWithinAbsoluteError(
+                    unsafe.getMagnitude(channel, unsafe.getNumSamples()),
+                    0.0f, 0.000001f);
+        }
+
         beginTest("Instance identity is normalized, notified, and restored");
         MegaDSPAudioProcessor identityProcessor;
         ProcessorChangeRecorder identityChanges;
@@ -745,6 +1189,74 @@ public:
             identityRestored.getInstanceName().length(),
             megadsp::ui::instanceNameMaximumLength);
         identityProcessor.removeListener(&identityChanges);
+
+        beginTest("Undo history restores parameter and topology edits");
+        {
+            MegaDSPAudioProcessor undoProcessor;
+            undoProcessor.prepareToPlay(48000.0, 512);
+            auto* input =
+                undoProcessor.parameters.getParameter("global.input");
+            expect(input != nullptr);
+            const auto initialInput =
+                input != nullptr ? input->getValue() : 0.5f;
+            if (input != nullptr)
+            {
+                input->beginChangeGesture();
+                input->setValueNotifyingHost(0.82f);
+                input->endChangeGesture();
+            }
+            expect(undoProcessor.canUndo());
+            expect(undoProcessor.undoDescription().contains("Input"));
+            expect(undoProcessor.undo());
+            if (input != nullptr)
+                expectWithinAbsoluteError(
+                    input->getValue(), initialInput, 0.000001f);
+            expect(undoProcessor.redo());
+            if (input != nullptr)
+                expectWithinAbsoluteError(
+                    input->getValue(), 0.82f, 0.000001f);
+
+            undoProcessor.addModule(megadsp::ModuleType::equalizer);
+            expectEquals(undoProcessor.getRack().activeSlotCount(), 1);
+            expectEquals(
+                undoProcessor.undoDescription(),
+                juce::String("Add module"));
+            expect(undoProcessor.undo());
+            expectEquals(undoProcessor.getRack().activeSlotCount(), 0);
+            expect(undoProcessor.redo());
+            expectEquals(undoProcessor.getRack().activeSlotCount(), 1);
+
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
+                undoProcessor, 820, 420);
+            expect(editor->keyPressed(juce::KeyPress(
+                'z', juce::ModifierKeys::commandModifier, 0)));
+            expectEquals(undoProcessor.getRack().activeSlotCount(), 0);
+            expect(editor->keyPressed(juce::KeyPress(
+                'z',
+                juce::ModifierKeys::commandModifier
+                    | juce::ModifierKeys::shiftModifier,
+                0)));
+            expectEquals(undoProcessor.getRack().activeSlotCount(), 1);
+        }
+
+        beginTest("Snapshot operations undo as complete state changes");
+        {
+            MegaDSPAudioProcessor snapshotUndo;
+            snapshotUndo.prepareToPlay(48000.0, 512);
+            snapshotUndo.addModule(megadsp::ModuleType::delay);
+            snapshotUndo.storeSnapshot(1, false);
+            expectEquals(snapshotUndo.getSelectedSnapshot(), 1);
+            expect(snapshotUndo.isSnapshotPopulated(1));
+            expectEquals(
+                snapshotUndo.undoDescription(),
+                juce::String("Store snapshot"));
+            expect(snapshotUndo.undo());
+            expectEquals(snapshotUndo.getSelectedSnapshot(), 0);
+            expect(!snapshotUndo.isSnapshotPopulated(1));
+            expect(snapshotUndo.redo());
+            expectEquals(snapshotUndo.getSelectedSnapshot(), 1);
+            expect(snapshotUndo.isSnapshotPopulated(1));
+        }
 
         beginTest(
             "Factory presets publish each parameter's final value exactly once");
@@ -1343,6 +1855,14 @@ public:
             expectEquals(
                 irBrowser.impulseResponseDirectory(0).getFullPathName(),
                 irDirectory.getFullPathName());
+            expectEquals(
+                irBrowser.undoDescription(),
+                juce::String("Load impulse response"));
+            expect(irBrowser.undo());
+            expect(irBrowser.impulseResponsePath(0).isEmpty());
+            expect(irBrowser.redo());
+            expectEquals(
+                irBrowser.impulseResponseName(0), secondIr.getFileName());
             expect(irBrowser.loadAdjacentImpulseResponse(0, 1).wasOk());
             expectEquals(
                 irBrowser.impulseResponseName(0), nestedIr.getFileName());

@@ -22,9 +22,11 @@ public:
     }
 
     template <size_t DestinationSize>
-    size_t copyLatest(std::array<float, DestinationSize>& destination) const
+    size_t copyLatest(
+        std::array<float, DestinationSize>& destination,
+        float emptyValue = 0.0f) const
     {
-        destination.fill(0.0f);
+        destination.fill(emptyValue);
         for (int attempt = 0; attempt < 2; ++attempt)
         {
             const auto end = writePosition.load(std::memory_order_acquire);
@@ -47,6 +49,11 @@ public:
         for (auto& sample : samples)
             sample.store(0.0f, std::memory_order_relaxed);
         writePosition.store(0, std::memory_order_release);
+    }
+
+    uint64_t position() const noexcept
+    {
+        return writePosition.load(std::memory_order_acquire);
     }
 
 private:

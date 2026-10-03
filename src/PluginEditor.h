@@ -4,7 +4,30 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include <cmath>
 #include <cstdint>
+
+namespace megadsp::ui
+{
+enum class WidgetSize;
+}
+
+class HorizontalRackViewport final : public juce::Viewport
+{
+public:
+    void mouseWheelMove(
+        const juce::MouseEvent& event,
+        const juce::MouseWheelDetails& wheel) override
+    {
+        auto horizontal = wheel;
+        if (std::abs(horizontal.deltaX) < std::abs(horizontal.deltaY))
+        {
+            horizontal.deltaX = horizontal.deltaY;
+            horizontal.deltaY = 0.0f;
+        }
+        juce::Viewport::mouseWheelMove(event, horizontal);
+    }
+};
 
 class MegaDSPAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                           public juce::DragAndDropContainer,
@@ -16,7 +39,10 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    void moved() override;
+    void parentHierarchyChanged() override;
     void visibilityChanged() override;
+    bool keyPressed(const juce::KeyPress&) override;
 #if defined(MEGADSP_TESTS)
     void clickCloseButtonForTesting(int slot);
     void simulateFocusGainDuringRefreshForTesting(int slot);
@@ -36,6 +62,9 @@ public:
         int slot, const juce::String& path) const;
     int cardCountForTesting() const { return static_cast<int>(cards.size()); }
     int cardHeightForTesting(int slot) const;
+    int cardWidthForTesting(int slot) const;
+    int cardGraphHeightForTesting(int slot) const;
+    int cardGraphWidthForTesting(int slot) const;
     int selectedCardForTesting() const { return selectedSlot; }
     int chainNavigatorButtonCountForTesting() const;
     int chainInsertButtonCountForTesting() const;
@@ -44,8 +73,13 @@ public:
     void setCardsEditorVisibleForTesting(bool);
     bool cardChildrenFitForTesting() const;
     bool cardGraphsAvoidControlsForTesting() const;
+    bool cardPresentsAllActiveControlsForTesting() const;
     bool cardHeightsMatchPreferencesForTesting() const;
+    juce::String cardControlTextForTesting(int slot, int control) const;
+    bool cardRotaryControlsWorkForTesting(int slot);
     bool rackOverflowsVerticallyForTesting() const;
+    bool rackOverflowsHorizontallyForTesting() const;
+    void setWidgetSizeForTesting(megadsp::ui::WidgetSize);
     juce::String commitHashForTesting() const
     {
         return commitHashButton.getButtonText();
@@ -81,6 +115,9 @@ private:
     void refreshIdentityPresentation();
     void refreshSnapshots();
     void showResult(const juce::Result&);
+    void setWidgetSize(megadsp::ui::WidgetSize, bool persist);
+    void refreshWidgetSizeButtons();
+    void updateEditorResizeLimits();
 #if defined(MEGADSP_CAPTURE_SCREENSHOTS)
     void advanceScreenshotCapture();
     void captureScreenshot(const juce::String&);
@@ -104,12 +141,15 @@ private:
     std::unique_ptr<HeaderMeter> headerMeter;
     juce::Label snapshotsLabel;
     juce::ToggleButton liveSafeButton { "LIVE SAFE" };
+    juce::TextButton smallWidgetsButton { "S" };
+    juce::TextButton mediumWidgetsButton { "M" };
+    juce::TextButton largeWidgetsButton { "L" };
     juce::Component snapshotsHost;
     std::array<std::unique_ptr<juce::TextButton>,
                megadsp::snapshotCount> snapshotButtons;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> inputAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputAttachment;
-    juce::Viewport rackViewport;
+    HorizontalRackViewport rackViewport;
     juce::Component chainNavigatorHost;
     juce::Label chainNavigatorLabel;
     std::array<std::unique_ptr<ChainSlotButton>,
@@ -120,12 +160,14 @@ private:
     std::vector<std::unique_ptr<ModuleCard>> cards;
     juce::TextButton addButton { "+ ADD MODULE" };
     std::unique_ptr<juce::FileChooser> fileChooser;
+    megadsp::ui::WidgetSize widgetSize;
     int selectedSlot = 0;
     int focusedSlot = -1;
     int knownActiveSlots = -1;
     std::uint64_t knownTopologyGeneration = 0;
     std::uint64_t knownSnapshotGeneration = 0;
     int knownThemeIndex = -1;
+    juce::Rectangle<int> knownDisplayUserArea;
     bool refreshingCards = false;
     enum class PendingCardMutation
     {

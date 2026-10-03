@@ -14,8 +14,120 @@ namespace
 using megadsp::ui::accent;
 using megadsp::ui::backgroundColour;
 using megadsp::ui::inputColour;
+using megadsp::ui::modulePaletteColour;
+using megadsp::ui::moduleSurfaceColour;
 using megadsp::ui::outputColour;
 using megadsp::ui::reductionColour;
+
+class WidgetActionButton final : public juce::Button
+{
+public:
+    enum class Icon
+    {
+        power,
+        reset,
+        remove
+    };
+
+    explicit WidgetActionButton(Icon iconToUse)
+        : juce::Button(
+              iconToUse == Icon::power ? "Bypass"
+              : iconToUse == Icon::reset ? "Reset" : "Remove"),
+          icon(iconToUse)
+    {
+    }
+
+    void paintButton(
+        juce::Graphics& graphics, bool highlighted, bool down) override
+    {
+        const auto enabled = isEnabled();
+        const auto bypassed =
+            icon == Icon::power && getToggleState();
+        auto background = juce::Colour(0xff26313d);
+        if (bypassed)
+            background = juce::Colour(0xff3b292b);
+        graphics.setColour(
+            enabled
+                ? background.brighter(
+                      down ? 0.16f : highlighted ? 0.08f : 0.0f)
+                : background.withAlpha(0.35f));
+        graphics.fillRoundedRectangle(
+            getLocalBounds().toFloat(), 5.0f);
+
+        auto bounds = getLocalBounds().toFloat().reduced(6.0f);
+        const auto centre = bounds.getCentre();
+        const auto colour =
+            !enabled ? juce::Colours::white.withAlpha(0.3f)
+            : bypassed ? reductionColour.withAlpha(0.9f)
+            : icon == Icon::power ? accent.withAlpha(0.95f)
+                                  : juce::Colours::white.withAlpha(0.82f);
+        graphics.setColour(colour);
+
+        juce::Path path;
+        if (icon == Icon::power)
+        {
+            const auto radius =
+                0.42f * juce::jmin(bounds.getWidth(), bounds.getHeight());
+            path.addCentredArc(
+                centre.x, centre.y + 0.8f, radius, radius, 0.0f,
+                0.24f * juce::MathConstants<float>::pi,
+                1.76f * juce::MathConstants<float>::pi, true);
+            path.startNewSubPath(
+                centre.x, centre.y - radius - 1.0f);
+            path.lineTo(centre.x, centre.y + 1.0f);
+            graphics.strokePath(
+                path, juce::PathStrokeType(
+                          1.8f, juce::PathStrokeType::curved,
+                          juce::PathStrokeType::rounded));
+            if (bypassed)
+            {
+                graphics.drawLine(
+                    bounds.getX(), bounds.getBottom(),
+                    bounds.getRight(), bounds.getY(), 1.4f);
+            }
+        }
+        else if (icon == Icon::reset)
+        {
+            const auto radius =
+                0.4f * juce::jmin(bounds.getWidth(), bounds.getHeight());
+            path.addCentredArc(
+                centre.x, centre.y, radius, radius, 0.0f,
+                -0.25f * juce::MathConstants<float>::pi,
+                1.45f * juce::MathConstants<float>::pi, true);
+            graphics.strokePath(
+                path, juce::PathStrokeType(
+                          1.7f, juce::PathStrokeType::curved,
+                          juce::PathStrokeType::rounded));
+            juce::Path arrow;
+            arrow.startNewSubPath(
+                centre.x - radius - 1.0f, centre.y - 1.0f);
+            arrow.lineTo(
+                centre.x - radius + 4.0f, centre.y - 3.5f);
+            arrow.lineTo(
+                centre.x - radius + 3.5f, centre.y + 2.5f);
+            arrow.closeSubPath();
+            graphics.fillPath(arrow);
+        }
+        else
+        {
+            const auto can = bounds.reduced(2.5f, 2.0f);
+            graphics.drawRoundedRectangle(
+                can.withTrimmedTop(3.5f), 1.5f, 1.5f);
+            graphics.drawLine(
+                can.getX() - 1.0f, can.getY() + 2.0f,
+                can.getRight() + 1.0f, can.getY() + 2.0f, 1.5f);
+            graphics.drawLine(
+                centre.x - 2.5f, can.getY(),
+                centre.x + 2.5f, can.getY(), 1.5f);
+            graphics.drawVerticalLine(
+                juce::roundToInt(centre.x),
+                can.getY() + 6.0f, can.getBottom() - 2.0f);
+        }
+    }
+
+private:
+    Icon icon;
+};
 
 class ThemePalette final : public juce::Component
 {
@@ -118,6 +230,41 @@ class MeteredSlider final : public juce::Slider,
                             private juce::Timer
 {
 public:
+    ~MeteredSlider() override
+    {
+        precisionOverlay.reset();
+    }
+
+    void setMusicalValueFunctions(
+        std::function<juce::String(double)> formatterToUse,
+        std::function<double(const juce::String&)> parserToUse)
+    {
+        formatter = std::move(formatterToUse);
+        parser = std::move(parserToUse);
+        updateText();
+    }
+
+    juce::String getTextFromValue(double value) override
+    {
+        return formatter != nullptr
+            ? formatter(value)
+            : juce::Slider::getTextFromValue(value);
+    }
+
+    double getValueFromText(const juce::String& text) override
+    {
+        return parser != nullptr
+            ? parser(text)
+            : juce::Slider::getValueFromText(text);
+    }
+
+    void enableCompactFineDragging()
+    {
+        compactFineDragging = true;
+        setSliderSnapsToMousePosition(false);
+        setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    }
+
     void setMeterSource(std::function<float()> source)
     {
         meterSource = std::move(source);
@@ -137,42 +284,257 @@ public:
 
     void paint(juce::Graphics& graphics) override
     {
-        if (!meterSource)
-        {
+        if (compactFineDragging
+            && getSliderStyle()
+                   == juce::Slider::RotaryHorizontalVerticalDrag)
+            paintCompactRotary(graphics);
+        else
             juce::Slider::paint(graphics);
+
+        if (!meterSource)
             return;
-        }
-
-        auto trackArea = getLocalBounds().toFloat().reduced(8.0f, 5.0f);
-        trackArea.removeFromBottom(22.0f);
-        auto meter = juce::Rectangle<float>(
-            18.0f, trackArea.getHeight()).withCentre(trackArea.getCentre());
-        graphics.setColour(juce::Colour(0xff141a21));
-        graphics.fillRoundedRectangle(meter, 5.0f);
+        auto meter = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
+        const auto textWidth = static_cast<float>(
+            juce::jlimit(38, 54, getWidth() / 2));
+        meter.removeFromRight(textWidth + 5.0f);
+        meter = meter.removeFromBottom(3.0f);
+        graphics.setColour(juce::Colour(0xff141a21).withAlpha(0.9f));
+        graphics.fillRoundedRectangle(meter, 1.5f);
         const auto levelDb = meterLevelDb;
-        const auto proportion = (levelDb + 60.0f) / 60.0f;
-        auto fill = meter;
-        fill.setY(meter.getBottom() - meter.getHeight() * proportion);
-        fill.setBottom(meter.getBottom());
+        const auto levelProportion =
+            juce::jlimit(0.0f, 1.0f, (levelDb + 60.0f) / 60.0f);
+        auto fill = meter.withWidth(
+            meter.getWidth() * levelProportion);
         graphics.setColour(levelDb > -6.0f ? reductionColour : outputColour);
-        graphics.fillRoundedRectangle(fill, 5.0f);
-
-        const auto threshold = static_cast<float>(
-            valueToProportionOfLength(getValue()));
-        const auto thresholdY =
-            meter.getBottom() - threshold * meter.getHeight();
-        graphics.setColour(accent);
-        graphics.drawHorizontalLine(
-            juce::roundToInt(thresholdY),
-            meter.getX() - 7.0f, meter.getRight() + 7.0f);
-        graphics.fillEllipse(meter.getCentreX() - 5.0f,
-                             thresholdY - 5.0f, 10.0f, 10.0f);
-        graphics.setColour(juce::Colours::white);
-        graphics.drawEllipse(meter.getCentreX() - 5.0f,
-                             thresholdY - 5.0f, 10.0f, 10.0f, 1.0f);
+        graphics.fillRoundedRectangle(fill, 1.5f);
     }
 
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        juce::Slider::mouseDown(event);
+        dragStartValue = getValue();
+        showPrecisionOverlay();
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (!compactFineDragging)
+        {
+            juce::Slider::mouseDrag(event);
+            if (precisionOverlay != nullptr)
+                precisionOverlay->repaint();
+            return;
+        }
+        applyCompactDrag(
+            event.getDistanceFromDragStartY(),
+            event.mods.isShiftDown(),
+            juce::sendNotificationSync);
+        if (precisionOverlay != nullptr)
+            precisionOverlay->repaint();
+    }
+
+    void mouseUp(const juce::MouseEvent& event) override
+    {
+        juce::Slider::mouseUp(event);
+        precisionOverlay.reset();
+    }
+
+#if defined(MEGADSP_TESTS)
+    bool compactInteractionWorksForTesting()
+    {
+        if (!compactFineDragging || getWidth() <= 0 || getHeight() <= 0)
+            return false;
+        juce::Image image(
+            juce::Image::ARGB, getWidth(), getHeight(), true);
+        juce::Graphics graphics(image);
+        paint(graphics);
+        const auto knobCentre = juce::Point<int>(
+            juce::jmin(getHeight(), 28) / 2 + 2,
+            getHeight() / 2);
+        const auto visible =
+            image.getPixelAt(
+                juce::jlimit(0, getWidth() - 1, knobCentre.x),
+                juce::jlimit(0, getHeight() - 1, knobCentre.y))
+                .getAlpha() > 0;
+        const auto original = getValue();
+        dragStartValue = proportionOfLengthToValue(0.5);
+        applyCompactDrag(-60, false, juce::dontSendNotification);
+        const auto upward = valueToProportionOfLength(getValue());
+        setValue(dragStartValue, juce::dontSendNotification);
+        applyCompactDrag(60, false, juce::dontSendNotification);
+        const auto downward = valueToProportionOfLength(getValue());
+        setValue(original, juce::dontSendNotification);
+        return visible && upward > 0.5 && downward < 0.5;
+    }
+#endif
+
 private:
+    void applyCompactDrag(
+        int verticalDistance, bool fine,
+        juce::NotificationType notification)
+    {
+        const auto fineScale = fine ? 4.0 : 1.0;
+        constexpr auto fullRangeDragPixels = 240.0;
+        const auto proportion = valueToProportionOfLength(dragStartValue)
+            - static_cast<double>(verticalDistance)
+                / (fullRangeDragPixels * fineScale);
+        setValue(
+            proportionOfLengthToValue(
+                juce::jlimit(0.0, 1.0, proportion)),
+            notification);
+    }
+
+    void drawKnob(
+        juce::Graphics& graphics, juce::Rectangle<float> bounds,
+        float proportion, float strokeWidth) const
+    {
+        const auto diameter =
+            juce::jmin(bounds.getWidth(), bounds.getHeight());
+        const auto knob = bounds.withSizeKeepingCentre(diameter, diameter)
+            .reduced(strokeWidth);
+        const auto rotary = getRotaryParameters();
+        const auto angle = juce::jmap(
+            juce::jlimit(0.0f, 1.0f, proportion),
+            rotary.startAngleRadians, rotary.endAngleRadians);
+        const auto radius = knob.getWidth() * 0.5f;
+        const auto centre = knob.getCentre();
+
+        graphics.setColour(
+            juce::Colour(0xff161d26).withMultipliedAlpha(
+                isEnabled() ? 1.0f : 0.48f));
+        graphics.fillEllipse(knob);
+        graphics.setColour(
+            findColour(juce::Slider::rotarySliderOutlineColourId)
+                .brighter(0.32f)
+                .withMultipliedAlpha(isEnabled() ? 1.0f : 0.48f));
+        graphics.drawEllipse(knob, strokeWidth);
+
+        juce::Path valueArc;
+        valueArc.addCentredArc(
+            centre.x, centre.y, radius - strokeWidth * 1.5f,
+            radius - strokeWidth * 1.5f, 0.0f,
+            rotary.startAngleRadians, angle, true);
+        graphics.setColour(
+            findColour(juce::Slider::rotarySliderFillColourId)
+                .withMultipliedAlpha(isEnabled() ? 1.0f : 0.48f));
+        graphics.strokePath(
+            valueArc,
+            juce::PathStrokeType(
+                strokeWidth * 1.45f,
+                juce::PathStrokeType::curved,
+                juce::PathStrokeType::rounded));
+
+        const auto indicatorStart = centre
+            + juce::Point<float>(
+                std::sin(angle), -std::cos(angle))
+                * radius * 0.24f;
+        const auto indicatorEnd = centre
+            + juce::Point<float>(
+                std::sin(angle), -std::cos(angle))
+                * radius * 0.68f;
+        graphics.setColour(
+            juce::Colours::white.withMultipliedAlpha(
+                isEnabled() ? 0.92f : 0.42f));
+        graphics.drawLine(
+            { indicatorStart, indicatorEnd },
+            strokeWidth * 1.15f);
+    }
+
+    void paintCompactRotary(juce::Graphics& graphics)
+    {
+        auto area = getLocalBounds().toFloat().reduced(2.0f, 1.0f);
+        const auto knobSize =
+            juce::jmin(28.0f, area.getHeight());
+        const auto knob = area.removeFromLeft(knobSize)
+            .withSizeKeepingCentre(knobSize, knobSize);
+        drawKnob(
+            graphics, knob,
+            static_cast<float>(
+                valueToProportionOfLength(getValue())),
+            1.35f);
+
+        graphics.setColour(
+            juce::Colours::white.withMultipliedAlpha(
+                isEnabled() ? 0.88f : 0.45f));
+        graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+        graphics.drawFittedText(
+            getTextFromValue(getValue()),
+            area.reduced(4.0f, 0.0f).toNearestInt(),
+            juce::Justification::centredLeft, 1, 0.72f);
+
+        if (hasKeyboardFocus(false))
+        {
+            graphics.setColour(
+                findColour(juce::Slider::rotarySliderFillColourId)
+                    .withAlpha(0.72f));
+            graphics.drawRoundedRectangle(
+                getLocalBounds().toFloat().reduced(0.75f),
+                4.0f, 1.25f);
+        }
+    }
+
+    class PrecisionOverlay final : public juce::Component
+    {
+    public:
+        explicit PrecisionOverlay(MeteredSlider& ownerToUse)
+            : owner(ownerToUse)
+        {
+            setInterceptsMouseClicks(false, false);
+            setAlwaysOnTop(true);
+        }
+
+        void paint(juce::Graphics& graphics) override
+        {
+            auto panel = getLocalBounds().toFloat().reduced(2.0f);
+            graphics.setColour(juce::Colour(0xf5161d26));
+            graphics.fillRoundedRectangle(panel, 12.0f);
+            graphics.setColour(accent.withAlpha(0.9f));
+            graphics.drawRoundedRectangle(panel, 12.0f, 1.5f);
+
+            graphics.setColour(juce::Colours::white.withAlpha(0.82f));
+            graphics.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+            graphics.drawFittedText(
+                owner.getTitle(),
+                getLocalBounds().removeFromTop(24).reduced(8, 2),
+                juce::Justification::centred, 1);
+
+            auto knob = getLocalBounds().toFloat()
+                .withSizeKeepingCentre(112.0f, 112.0f)
+                .translated(0.0f, -2.0f);
+            owner.drawKnob(
+                graphics, knob,
+                static_cast<float>(
+                    owner.valueToProportionOfLength(owner.getValue())),
+                3.0f);
+
+            graphics.setColour(juce::Colours::white);
+            graphics.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+            graphics.drawFittedText(
+                owner.getTextFromValue(owner.getValue()),
+                getLocalBounds().removeFromBottom(28).reduced(8, 2),
+                juce::Justification::centred, 1);
+        }
+
+    private:
+        MeteredSlider& owner;
+    };
+
+    void showPrecisionOverlay()
+    {
+        auto* host = getTopLevelComponent();
+        if (host == nullptr || host == this)
+            return;
+        precisionOverlay = std::make_unique<PrecisionOverlay>(*this);
+        host->addAndMakeVisible(*precisionOverlay);
+        const auto centre = host->getLocalPoint(
+            this, getLocalBounds().getCentre());
+        auto bounds = juce::Rectangle<int>(156, 172)
+            .withCentre(centre)
+            .constrainedWithin(host->getLocalBounds().reduced(6));
+        precisionOverlay->setBounds(bounds);
+        precisionOverlay->toFront(false);
+    }
+
     void timerCallback() override
     {
         if (meterSource)
@@ -182,7 +544,12 @@ private:
     }
 
     std::function<float()> meterSource;
+    std::function<juce::String(double)> formatter;
+    std::function<double(const juce::String&)> parser;
     float meterLevelDb = -60.0f;
+    double dragStartValue = 0.0;
+    bool compactFineDragging = false;
+    std::unique_ptr<PrecisionOverlay> precisionOverlay;
 };
 
 class SnapshotButton final : public juce::TextButton,
@@ -674,7 +1041,8 @@ class MegaDSPAudioProcessorEditor::ModuleCard final
       private juce::Timer
 {
 public:
-    ModuleCard(MegaDSPAudioProcessorEditor& editorToUse, int slotToUse)
+    ModuleCard(
+        MegaDSPAudioProcessorEditor& editorToUse, int slotToUse)
         : editor(editorToUse), processor(editorToUse.audioProcessor),
           slot(slotToUse),
           type(processor.getRack().moduleType(slot)),
@@ -690,9 +1058,8 @@ public:
           controlsOverlay(processor)
     {
         moduleName = megadsp::moduleDefinition(type).displayName;
-        name.setText("SLOT " + juce::String(slot + 1) + "  ·  " + moduleName,
-                     juce::dontSendNotification);
-        name.setFont(juce::FontOptions(22.0f, juce::Font::bold));
+        name.setText(moduleName, juce::dontSendNotification);
+        name.setFont(juce::FontOptions(16.0f, juce::Font::bold));
         name.setColour(juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible(name);
 
@@ -702,11 +1069,19 @@ public:
             syncBypassState();
         };
         addAndMakeVisible(bypass);
-        reset.setButtonText("Reset");
+        bypass.setTitle("Bypass " + moduleName);
+        bypass.setDescription(
+            "Toggles this module between processing and bypassed.");
+        bypass.setTooltip("Bypass this module.");
+        reset.setTitle("Reset " + moduleName);
+        reset.setDescription(
+            "Restores this module's musical starting point.");
         reset.setTooltip("Reset this module to its musical starting point.");
         reset.onClick = [this] { processor.resetModuleToDefaults(slot); };
         addAndMakeVisible(reset);
-        remove.setButtonText("Remove");
+        remove.setTitle("Remove " + moduleName);
+        remove.setDescription(
+            "Removes this module and closes the gap in the rack.");
         remove.setTooltip("Remove " + moduleName + " from the rack.");
         remove.onClick = [this]
         {
@@ -717,6 +1092,13 @@ public:
 
         if (supportsImpulseResponse)
         {
+            assetName.setColour(
+                juce::Label::textColourId,
+                juce::Colours::white.withAlpha(0.72f));
+            assetName.setFont(juce::FontOptions(10.0f));
+            assetName.setJustificationType(
+                juce::Justification::centredLeft);
+            addAndMakeVisible(assetName);
             loadImpulse.setButtonText(isWormhole ? "Load A..." : "Load IR...");
             loadImpulse.setTooltip(
                 "Load a WAV, AIFF, or FLAC impulse response.");
@@ -822,6 +1204,13 @@ public:
 
         if (supportsNamModel)
         {
+            assetName.setColour(
+                juce::Label::textColourId,
+                juce::Colours::white.withAlpha(0.72f));
+            assetName.setFont(juce::FontOptions(10.0f));
+            assetName.setJustificationType(
+                juce::Justification::centredLeft);
+            addAndMakeVisible(assetName);
             loadNam.setButtonText("Load NAM...");
             loadNam.setTooltip("Load a .nam neural amp model.");
             loadNam.onClick = [this]
@@ -845,6 +1234,16 @@ public:
                     });
             };
             addAndMakeVisible(loadNam);
+            previousNam.setButtonText("<");
+            previousNam.setTooltip(
+                "Load the previous model in the validated NAM library.");
+            previousNam.onClick = [this] { loadAdjacentNamModel(-1); };
+            addAndMakeVisible(previousNam);
+            nextNam.setButtonText(">");
+            nextNam.setTooltip(
+                "Load the next model in the validated NAM library.");
+            nextNam.onClick = [this] { loadAdjacentNamModel(1); };
+            addAndMakeVisible(nextNam);
             clearNam.setButtonText("Clear NAM");
             clearNam.setTooltip("Unload the current neural amp model.");
             clearNam.onClick = [this]
@@ -856,20 +1255,22 @@ public:
         }
 
         graph = std::make_unique<megadsp::ui::EffectGraph>(
-            processor, slot, type);
+            processor, slot, type, true);
         addAndMakeVisible(*graph);
         addAndMakeVisible(controlsOverlay);
         setWantsKeyboardFocus(true);
-        setTitle(moduleName + " module card, slot " + juce::String(slot + 1));
+        setTitle(moduleName + " module widget, slot " + juce::String(slot + 1));
         setDescription(
             "Signal-flow position " + juce::String(slot + 1)
-            + ". Use Up and Down to select adjacent module cards.");
+            + ". Use Left and Right to select adjacent module widgets.");
         setHelpText(
-            "Press Enter to select. Use Up and Down for adjacent cards. "
-            "Space or B toggles bypass. Drag the card header to reorder.");
+            "All module controls are available in this widget. Use Left and "
+            "Right for adjacent widgets. Space or B toggles bypass. Drag the "
+            "widget header to reorder.");
         addMouseListener(this, true);
         juce::Desktop::getInstance().addFocusChangeListener(this);
         syncBypassState();
+        syncAssetName();
 
         if (graph->usesFullPanel())
             return;
@@ -885,7 +1286,7 @@ public:
             const auto index = static_cast<size_t>(control);
             labels[index].setText(metadata.label, juce::dontSendNotification);
             labels[index].setJustificationType(juce::Justification::centred);
-            labels[index].setFont(juce::FontOptions(12.0f));
+            labels[index].setFont(juce::FontOptions(9.5f));
             labels[index].setTooltip(metadata.tooltip);
             addAndMakeVisible(labels[index]);
 
@@ -918,6 +1319,10 @@ public:
             {
                 auto& slider = sliders[index];
                 configureSlider(slider);
+                slider.setColour(
+                    juce::Slider::rotarySliderFillColourId,
+                    modulePaletteColour(type));
+                slider.enableCompactFineDragging();
                 if (metadata.kind == megadsp::ControlKind::horizontal)
                 {
                     slider.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -946,18 +1351,19 @@ public:
                     processor.parameters,
                     megadsp::controlParameterId(slot, control),
                     slider);
-                slider.textFromValueFunction = [this, control](double value)
-                {
-                    return megadsp::formatControlValue(
-                        type, control, static_cast<float>(value));
-                };
-                slider.valueFromTextFunction = [this, control, &slider](
-                                                   const juce::String& text)
-                {
-                    return static_cast<double>(
-                        megadsp::parseControlValue(type, control, text)
-                            .value_or(static_cast<float>(slider.getValue())));
-                };
+                slider.setMusicalValueFunctions(
+                    [this, control](double value)
+                    {
+                        return megadsp::formatControlValue(
+                            type, control, static_cast<float>(value));
+                    },
+                    [this, control, &slider](const juce::String& text)
+                    {
+                        return static_cast<double>(
+                            megadsp::parseControlValue(type, control, text)
+                                .value_or(
+                                    static_cast<float>(slider.getValue())));
+                    });
                 slider.updateText();
             }
         }
@@ -972,68 +1378,97 @@ public:
 
     void paint(juce::Graphics& graphics) override
     {
-        const auto panelColour = backgroundColour(
-            processor.getBackgroundThemeIndex()).brighter(0.16f);
+        const auto moduleColour = modulePaletteColour(type);
+        const auto panelColour = moduleSurfaceColour(
+            backgroundColour(processor.getBackgroundThemeIndex()),
+            type, 0.24f);
         graphics.setColour(panelColour);
         auto cardBounds = getLocalBounds().toFloat().reduced(1.0f);
         graphics.fillRoundedRectangle(cardBounds, 9.0f);
-        graphics.setColour(selected ? accent : juce::Colour(0xff465263));
+        graphics.setColour(
+            selected ? moduleColour.brighter(0.18f)
+                     : moduleColour.withAlpha(0.56f));
         graphics.drawRoundedRectangle(
             cardBounds, 9.0f, selected ? 2.0f : 1.0f);
         if (dragOver)
         {
-            graphics.setColour(accent);
+            graphics.setColour(moduleColour.brighter(0.2f));
             graphics.fillRect(
-                8.0f, dropAfter ? cardBounds.getBottom() - 4.0f : 1.0f,
-                cardBounds.getWidth() - 16.0f, 3.0f);
+                dropAfter ? cardBounds.getRight() - 4.0f : 1.0f,
+                8.0f, 3.0f, cardBounds.getHeight() - 16.0f);
         }
     }
 
     void resized() override
     {
-        auto bounds = getLocalBounds().reduced(14);
-        auto heading = bounds.removeFromTop(34);
-        name.setBounds(heading.removeFromLeft(
-            juce::jmin(310, juce::jmax(180, heading.getWidth() / 3))));
-        remove.setBounds(heading.removeFromRight(72).reduced(2));
-        reset.setBounds(heading.removeFromRight(64).reduced(2));
-        bypass.setBounds(heading.removeFromRight(54).reduced(2));
-        if (supportsImpulseResponse)
+        auto bounds = getLocalBounds().reduced(8);
+        auto heading = bounds.removeFromTop(28);
+        remove.setBounds(heading.removeFromRight(28).reduced(2));
+        reset.setBounds(heading.removeFromRight(28).reduced(2));
+        bypass.setBounds(heading.removeFromRight(28).reduced(2));
+        name.setBounds(heading);
+        if (supportsImpulseResponse || supportsNamModel)
         {
-            if (isWormhole)
+            bounds.removeFromTop(3);
+            auto assetRow = bounds.removeFromTop(28);
+            if (supportsNamModel)
             {
+                loadNam.setButtonText("LOAD");
+                clearNam.setButtonText("CLEAR");
+                clearNam.setBounds(
+                    assetRow.removeFromRight(48).reduced(1));
+                nextNam.setBounds(
+                    assetRow.removeFromRight(38).reduced(1));
+                previousNam.setBounds(
+                    assetRow.removeFromRight(38).reduced(1));
+                loadNam.setBounds(
+                    assetRow.removeFromRight(58).reduced(1));
+            }
+            else if (isWormhole)
+            {
+                clearImpulse2.setButtonText("B-");
+                loadImpulse2.setButtonText("B+");
+                clearImpulse.setButtonText("A-");
+                loadImpulse.setButtonText("A+");
                 clearImpulse2.setBounds(
-                    heading.removeFromRight(62).reduced(2));
+                    assetRow.removeFromRight(38).reduced(1));
                 loadImpulse2.setBounds(
-                    heading.removeFromRight(74).reduced(2));
+                    assetRow.removeFromRight(38).reduced(1));
                 clearImpulse.setBounds(
-                    heading.removeFromRight(62).reduced(2));
+                    assetRow.removeFromRight(38).reduced(1));
                 loadImpulse.setBounds(
-                    heading.removeFromRight(74).reduced(2));
+                    assetRow.removeFromRight(38).reduced(1));
                 previousImpulse.setBounds({});
                 nextImpulse.setBounds({});
+                impulseLibrary.setBounds({});
             }
             else
             {
-                nextImpulse.setBounds(
-                    heading.removeFromRight(46).reduced(2));
-                previousImpulse.setBounds(
-                    heading.removeFromRight(46).reduced(2));
+                loadImpulse.setButtonText("LOAD");
+                clearImpulse.setButtonText("CLEAR");
+                previousImpulse.setButtonText("<");
+                nextImpulse.setButtonText(">");
                 clearImpulse.setBounds(
-                    heading.removeFromRight(72).reduced(2));
-                impulseLibrary.setBounds(
-                    heading.removeFromRight(76).reduced(2));
+                    assetRow.removeFromRight(48).reduced(1));
+                nextImpulse.setBounds(
+                    assetRow.removeFromRight(38).reduced(1));
+                previousImpulse.setBounds(
+                    assetRow.removeFromRight(38).reduced(1));
+                if (isConvolution)
+                {
+                    impulseLibrary.setButtonText("LIB");
+                    impulseLibrary.setBounds(
+                        assetRow.removeFromRight(40).reduced(1));
+                }
+                else
+                    impulseLibrary.setBounds({});
                 loadImpulse.setBounds(
-                    heading.removeFromRight(88).reduced(2));
+                    assetRow.removeFromRight(58).reduced(1));
             }
+            assetName.setBounds(assetRow.reduced(4, 1));
         }
-        if (supportsNamModel)
-        {
-            clearNam.setBounds(
-                heading.removeFromRight(80).reduced(2));
-            loadNam.setBounds(
-                heading.removeFromRight(100).reduced(2));
-        }
+        else
+            assetName.setBounds({});
         bounds.removeFromTop(6);
         if (graph->usesFullPanel())
         {
@@ -1043,12 +1478,27 @@ public:
             return;
         }
         controlsOverlay.setVisible(true);
+        for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+        {
+            const auto index = static_cast<size_t>(control);
+            labels[index].setBounds({});
+            sliders[index].setBounds({});
+            choices[index].setBounds({});
+            toggles[index].setBounds({});
+        }
 
         std::vector<int> mainControls;
         std::vector<std::pair<juce::String, std::vector<int>>> secondaryGroups;
         for (int control = 0; control < megadsp::controlsPerSlot; ++control)
         {
             if (!controlVisible[static_cast<size_t>(control)])
+                continue;
+            if (type == megadsp::ModuleType::compressor
+                && (control == 0
+                    || (control == 7
+                        && !processor.hasExternalSidechain())))
+                continue;
+            if (type == megadsp::ModuleType::equalizer)
                 continue;
             const auto& metadata = megadsp::controlMetadata(type, control);
             if (metadata.essential)
@@ -1074,6 +1524,59 @@ public:
             && mainControls.size() == 2
             && mainControls[0] == 2 && mainControls[1] == 4)
             std::swap(mainControls[0], mainControls[1]);
+        if (type == megadsp::ModuleType::convolutionReverb)
+        {
+            constexpr std::array<int, 4> compactOrder {
+                4, 2, 5, 3
+            };
+            std::stable_sort(
+                mainControls.begin(), mainControls.end(),
+                [&](int left, int right)
+                {
+                    const auto rank = [&](int control)
+                    {
+                        const auto found = std::find(
+                            compactOrder.begin(),
+                            compactOrder.end(), control);
+                        return found == compactOrder.end()
+                            ? static_cast<int>(compactOrder.size())
+                            : static_cast<int>(
+                                  std::distance(
+                                      compactOrder.begin(), found));
+                    };
+                    return rank(left) < rank(right);
+                });
+        }
+
+        controlPresented.fill(false);
+        for (const auto control : mainControls)
+            controlPresented[static_cast<size_t>(control)] = true;
+        for (const auto& group : secondaryGroups)
+            for (const auto control : group.second)
+                controlPresented[static_cast<size_t>(control)] = true;
+        for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+        {
+            const auto index = static_cast<size_t>(control);
+            const auto shown =
+                controlVisible[index] && controlPresented[index];
+            const auto enabled = shown && controlEnabled[index];
+            const auto sliderShown =
+                shown && sliderAttachments[index] != nullptr;
+            const auto choiceShown =
+                shown && choiceAttachments[index] != nullptr;
+            const auto toggleShown =
+                shown && toggleAttachments[index] != nullptr;
+            sliders[index].setVisible(sliderShown);
+            choices[index].setVisible(choiceShown);
+            toggles[index].setVisible(toggleShown);
+            labels[index].setVisible(shown && !toggleShown);
+            sliders[index].setWantsKeyboardFocus(
+                sliderShown && enabled);
+            choices[index].setWantsKeyboardFocus(
+                choiceShown && enabled);
+            toggles[index].setWantsKeyboardFocus(
+                toggleShown && enabled);
+        }
 
         const auto visibleControlCount =
             static_cast<int>(mainControls.size())
@@ -1083,49 +1586,80 @@ public:
                 {
                     return total + static_cast<int>(group.second.size());
                 });
-        const auto overlayHeight = visibleControlCount <= 4
-            ? 112
-            : juce::jlimit(112, 146, bounds.getHeight() * 56 / 100);
+        if (visibleControlCount == 0)
+        {
+            controlsOverlay.setVisible(false);
+            graph->setBounds(bounds.withTrimmedBottom(4));
+            return;
+        }
+        const auto columns =
+            type == megadsp::ModuleType::compressor ? 4
+            : editor.widgetSize == megadsp::ui::WidgetSize::small
+            ? 3
+            : (editor.widgetSize
+                       == megadsp::ui::WidgetSize::medium
+                   ? 4
+                   : 6);
+        const auto rows = juce::jmax(
+            1, (visibleControlCount + columns - 1) / columns);
+        const auto rowHeight =
+            editor.widgetSize == megadsp::ui::WidgetSize::small
+            ? 38 : editor.widgetSize == megadsp::ui::WidgetSize::medium
+                ? 40 : 42;
+        const auto overlayHeight = juce::jmin(
+            bounds.getHeight() - 34, rows * rowHeight + 8);
         const auto overlayBounds =
-            bounds.removeFromBottom(overlayHeight).reduced(8, 5);
+            bounds.removeFromBottom(overlayHeight).reduced(4, 2);
         graph->setBounds(bounds.withTrimmedBottom(4));
         controlsOverlay.setBounds(overlayBounds);
-        auto overlayArea = controlsOverlay.getLocalBounds().reduced(1);
-        std::vector<ControlGroupFrame> frames;
-        const auto groupCount = static_cast<int>(secondaryGroups.size());
-        const auto mainWidth = groupCount == 0
-            ? overlayArea.getWidth()
-            : juce::jlimit(
-                  260, 420, overlayArea.getWidth() * 42 / 100);
-        auto mainBounds =
-            overlayArea.removeFromLeft(mainWidth).reduced(1);
-        frames.push_back({ "Main", mainBounds, true });
-        layoutGroup(
-            mainBounds.translated(
-                overlayBounds.getX(), overlayBounds.getY())
-                .reduced(8, 10),
-            mainControls);
-
-        if (groupCount > 0)
-            overlayArea.removeFromLeft(5);
-        auto secondaryBounds = overlayArea;
-        for (int groupIndex = 0; groupIndex < groupCount; ++groupIndex)
+        controlsOverlay.setFrames({});
+        std::vector<int> controls = mainControls;
+        for (const auto& group : secondaryGroups)
+            controls.insert(
+                controls.end(), group.second.begin(), group.second.end());
+        if (type == megadsp::ModuleType::compressor)
         {
-            const auto groupsLeft = groupCount - groupIndex;
-            auto groupBounds = secondaryBounds.removeFromLeft(
-                secondaryBounds.getWidth() / groupsLeft).reduced(2, 1);
-            frames.push_back({
-                secondaryGroups[static_cast<size_t>(groupIndex)].first,
-                groupBounds, false
-            });
-            layoutGroup(
-                groupBounds.translated(
-                    overlayBounds.getX(), overlayBounds.getY())
-                    .reduced(7, 10),
-                secondaryGroups[static_cast<size_t>(groupIndex)].second);
+            constexpr std::array<int, 9> compressorOrder {
+                0, 1, 4, 2, 3, 8, 5, 6, 7
+            };
+            std::stable_sort(
+                controls.begin(), controls.end(),
+                [&](int left, int right)
+                {
+                    const auto rank =
+                        [&](int control)
+                        {
+                            const auto found = std::find(
+                                compressorOrder.begin(),
+                                compressorOrder.end(), control);
+                            return found == compressorOrder.end()
+                                ? static_cast<int>(
+                                      compressorOrder.size())
+                                : static_cast<int>(
+                                      std::distance(
+                                          compressorOrder.begin(), found));
+                        };
+                    return rank(left) < rank(right);
+                });
         }
-
-        controlsOverlay.setFrames(std::move(frames));
+        auto controlArea = overlayBounds.reduced(2);
+        for (int position = 0;
+             position < static_cast<int>(controls.size()); ++position)
+        {
+            const auto row = position / columns;
+            const auto column = position % columns;
+            const auto x = controlArea.getX()
+                + column * controlArea.getWidth() / columns;
+            const auto right = controlArea.getX()
+                + (column + 1) * controlArea.getWidth() / columns;
+            const auto y = controlArea.getY()
+                + row * controlArea.getHeight() / rows;
+            const auto bottom = controlArea.getY()
+                + (row + 1) * controlArea.getHeight() / rows;
+            layoutGroup(
+                { x, y, right - x, bottom - y },
+                { controls[static_cast<size_t>(position)] });
+        }
     }
 
     int preferredHeight() const
@@ -1133,6 +1667,16 @@ public:
         return graph != nullptr
             ? graph->preferredCardHeight()
             : megadsp::ui::moduleCardHeight;
+    }
+
+    int graphHeightForTesting() const
+    {
+        return graph != nullptr ? graph->getHeight() : 0;
+    }
+
+    int graphWidthForTesting() const
+    {
+        return graph != nullptr ? graph->getWidth() : 0;
     }
 
     void setSelected(bool shouldBeSelected)
@@ -1153,14 +1697,51 @@ public:
             slider.setMeterActive(active);
     }
 
+    void reassertVisualizationCapture()
+    {
+        graph->setVisualizationActive(
+            graph->isVisualizationActive());
+    }
+
     void syncBypassState()
     {
         const auto isBypassed = processor.isSlotBypassed(slot);
-        bypass.setButtonText(isBypassed ? "BYP" : "ON");
         bypass.setToggleState(isBypassed, juce::dontSendNotification);
+        bypass.setTitle(
+            juce::String(isBypassed ? "Enable " : "Bypass ")
+            + moduleName);
+        bypass.setDescription(
+            isBypassed
+                ? "Enables processing for this module."
+                : "Bypasses this module while preserving latency.");
         bypass.setTooltip(
-            isBypassed ? "BYP - module is bypassed"
-                       : "ON - module is processing");
+            isBypassed ? "Module bypassed. Click to enable processing."
+                       : "Module processing. Click to bypass.");
+        bypass.repaint();
+    }
+
+    void syncAssetName()
+    {
+        if (supportsNamModel)
+        {
+            const auto path = processor.namModelPath(slot);
+            assetName.setText(
+                path.isEmpty()
+                    ? "MODEL  No model loaded"
+                    : "MODEL  "
+                          + juce::File(path)
+                                .getFileNameWithoutExtension(),
+                juce::dontSendNotification);
+        }
+        else if (supportsImpulseResponse)
+        {
+            const auto impulse = processor.impulseResponseName(slot);
+            assetName.setText(
+                impulse.isEmpty()
+                    ? "IR  No impulse loaded"
+                    : "IR  " + impulse,
+                juce::dontSendNotification);
+        }
     }
 
 #if defined(MEGADSP_TESTS)
@@ -1189,6 +1770,61 @@ public:
     {
         return graph->usesFullPanel()
             || !graph->getBounds().intersects(controlsOverlay.getBounds());
+    }
+    bool presentsAllActiveControlsForTesting() const
+    {
+        for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+        {
+            const auto index = static_cast<size_t>(control);
+            const auto unavailableCompressorDetector =
+                type == megadsp::ModuleType::compressor
+                && control == 7 && controlVisible[index]
+                && !controlEnabled[index] && !controlPresented[index];
+            const auto graphOwnedCompressorThreshold =
+                type == megadsp::ModuleType::compressor
+                && control == 0 && controlVisible[index]
+                && !controlPresented[index];
+            const auto graphOwnedEqualizerControl =
+                type == megadsp::ModuleType::equalizer
+                && controlVisible[index] && !controlPresented[index];
+            if (unavailableCompressorDetector
+                || graphOwnedCompressorThreshold
+                || graphOwnedEqualizerControl)
+                continue;
+            if (controlVisible[index] != controlPresented[index])
+                return false;
+        }
+        return true;
+    }
+    bool compactRotaryControlsWorkForTesting()
+    {
+        auto found = false;
+        for (auto& slider : sliders)
+        {
+            if (!slider.isVisible()
+                || slider.getSliderStyle()
+                       != juce::Slider::RotaryHorizontalVerticalDrag)
+                continue;
+            found = true;
+            if (!slider.compactInteractionWorksForTesting())
+                return false;
+        }
+        return found;
+    }
+    juce::String controlTextForTesting(int control) const
+    {
+        if (!juce::isPositiveAndBelow(
+                control, megadsp::controlsPerSlot))
+            return {};
+        const auto& slider =
+            sliders[static_cast<size_t>(control)];
+        for (int child = 0; child < slider.getNumChildComponents();
+             ++child)
+            if (const auto* label = dynamic_cast<const juce::Label*>(
+                    slider.getChildComponent(child)))
+                return label->getText();
+        return const_cast<MeteredSlider&>(slider)
+            .getTextFromValue(slider.getValue());
     }
     bool acceptsAssetDropForTesting(const juce::String& path) const
     {
@@ -1264,15 +1900,10 @@ public:
 
     bool keyPressed(const juce::KeyPress& key) override
     {
-        if (key.getKeyCode() == juce::KeyPress::upKey)
+        if (key.getKeyCode() == juce::KeyPress::leftKey)
             return selectAdjacent(-1);
-        if (key.getKeyCode() == juce::KeyPress::downKey)
+        if (key.getKeyCode() == juce::KeyPress::rightKey)
             return selectAdjacent(1);
-        if (key.getKeyCode() == juce::KeyPress::returnKey)
-        {
-            editor.selectSlot(slot);
-            return true;
-        }
         if (key.getKeyCode() == juce::KeyPress::spaceKey
             || key.getTextCharacter() == 'b'
             || key.getTextCharacter() == 'B')
@@ -1362,21 +1993,35 @@ private:
         graph->repaint();
     }
 
+    void loadAdjacentNamModel(int direction)
+    {
+        const auto result =
+            processor.loadAdjacentNamModel(slot, direction);
+        if (result.failed())
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                "Could not browse NAM models",
+                result.getErrorMessage());
+        syncAssetName();
+        graph->repaint();
+    }
+
     void showImpulseLibraryMenu()
     {
         juce::PopupMenu menu;
         const auto root =
             processor.impulseResponseRootDirectory();
         menu.addSectionHeader(
-            "IR LIBRARY  ·  "
+            "IR LIBRARY - "
             + juce::String(processor.impulseResponseLibrarySize())
-            + " VALID");
+            + " FILES");
         menu.addItem(1, "Choose Root Directory...");
         menu.addItem(3, "Rebuild Index");
         if (root.isDirectory())
         {
             menu.addSeparator();
-            menu.addSectionHeader(root.getFullPathName());
+            menu.addSectionHeader(
+                "ROOT: " + root.getFileName().substring(0, 36));
         }
         juce::Component::SafePointer<ModuleCard> safeThis(this);
         menu.showMenuAsync(
@@ -1482,15 +2127,19 @@ private:
             controlEnabled[index] = enabled;
 
             const auto sliderVisible =
-                visible && sliderAttachments[index] != nullptr;
+                visible && controlPresented[index]
+                && sliderAttachments[index] != nullptr;
             const auto choiceVisible =
-                visible && choiceAttachments[index] != nullptr;
+                visible && controlPresented[index]
+                && choiceAttachments[index] != nullptr;
             const auto toggleVisible =
-                visible && toggleAttachments[index] != nullptr;
+                visible && controlPresented[index]
+                && toggleAttachments[index] != nullptr;
             sliders[index].setVisible(sliderVisible);
             choices[index].setVisible(choiceVisible);
             toggles[index].setVisible(toggleVisible);
-            labels[index].setVisible(visible && !toggleVisible);
+            labels[index].setVisible(
+                visible && controlPresented[index] && !toggleVisible);
             sliders[index].setEnabled(enabled);
             choices[index].setEnabled(enabled);
             toggles[index].setEnabled(enabled);
@@ -1515,7 +2164,11 @@ private:
         repaint();
     }
 
-    void timerCallback() override { updateContext(); }
+    void timerCallback() override
+    {
+        updateContext();
+        syncAssetName();
+    }
 
     bool selectAdjacent(int direction)
     {
@@ -1527,21 +2180,21 @@ private:
         editor.selectSlot(target);
         auto* card = editor.cards[static_cast<size_t>(target)].get();
         card->grabKeyboardFocus();
-        const auto viewTop = editor.rackViewport.getViewPositionY();
-        const auto viewBottom = viewTop + editor.rackViewport.getViewHeight();
-        if (card->getY() < viewTop)
+        const auto viewLeft = editor.rackViewport.getViewPositionX();
+        const auto viewRight = viewLeft + editor.rackViewport.getViewWidth();
+        if (card->getX() < viewLeft)
             editor.rackViewport.setViewPosition(
-                editor.rackViewport.getViewPositionX(), card->getY());
-        else if (card->getBottom() > viewBottom)
+                card->getX(), editor.rackViewport.getViewPositionY());
+        else if (card->getRight() > viewRight)
             editor.rackViewport.setViewPosition(
-                editor.rackViewport.getViewPositionX(),
-                card->getBottom() - editor.rackViewport.getViewHeight());
+                card->getRight() - editor.rackViewport.getViewWidth(),
+                editor.rackViewport.getViewPositionY());
         return true;
     }
 
     void updateDropPosition(const SourceDetails& details)
     {
-        const auto after = details.localPosition.y > getHeight() / 2;
+        const auto after = details.localPosition.x > getWidth() / 2;
         if (after != dropAfter)
         {
             dropAfter = after;
@@ -1562,7 +2215,7 @@ private:
             auto controlArea = juce::Rectangle<int>(
                 area.getX() + position * area.getWidth() / columns,
                 area.getY(), area.getWidth() / columns,
-                area.getHeight()).reduced(3, 1);
+                area.getHeight()).reduced(2, 1);
             if (toggleAttachments[index] != nullptr)
             {
                 labels[index].setBounds({});
@@ -1572,26 +2225,22 @@ private:
                 toggles[index].setBounds(
                     juce::Rectangle<int>(
                         buttonWidth,
-                        juce::jmin(34, controlArea.getHeight()))
+                        juce::jmin(24, controlArea.getHeight()))
                         .withCentre(controlArea.getCentre()));
                 continue;
             }
-            labels[index].setBounds(controlArea.removeFromTop(22));
+            labels[index].setBounds(controlArea.removeFromTop(11));
             if (choiceAttachments[index] != nullptr)
                 choices[index].setBounds(
-                    controlArea.removeFromTop(32).reduced(4, 2));
+                    controlArea.reduced(2, 0));
             else
             {
-                if (megadsp::controlMetadata(type, control).kind
-                        == megadsp::ControlKind::horizontal)
-                {
-                    sliders[index].setTextBoxStyle(
-                        controlArea.getWidth() < 120
-                            ? juce::Slider::TextBoxBelow
-                            : juce::Slider::TextBoxRight,
-                        false, 72, 20);
-                }
+                sliders[index].setSliderStyle(
+                    juce::Slider::RotaryHorizontalVerticalDrag);
+                sliders[index].setTextBoxStyle(
+                    juce::Slider::NoTextBox, false, 0, 0);
                 sliders[index].setBounds(controlArea);
+                sliders[index].updateText();
             }
         }
     }
@@ -1606,9 +2255,10 @@ private:
     bool isWormhole = false;
     bool supportsNamModel = false;
     juce::Label name;
-    juce::ToggleButton bypass;
-    juce::TextButton reset;
-    juce::TextButton remove;
+    WidgetActionButton bypass { WidgetActionButton::Icon::power };
+    juce::Label assetName;
+    WidgetActionButton reset { WidgetActionButton::Icon::reset };
+    WidgetActionButton remove { WidgetActionButton::Icon::remove };
     juce::TextButton loadImpulse;
     juce::TextButton previousImpulse;
     juce::TextButton nextImpulse;
@@ -1620,6 +2270,8 @@ private:
     juce::TextButton clearImpulse2;
     std::unique_ptr<juce::FileChooser> impulseChooser2;
     juce::TextButton loadNam;
+    juce::TextButton previousNam;
+    juce::TextButton nextNam;
     juce::TextButton clearNam;
     std::unique_ptr<juce::FileChooser> namChooser;
     std::unique_ptr<megadsp::ui::EffectGraph> graph;
@@ -1631,6 +2283,7 @@ private:
     std::array<bool, megadsp::controlsPerSlot> controlPresent {};
     std::array<bool, megadsp::controlsPerSlot> controlVisible {};
     std::array<bool, megadsp::controlsPerSlot> controlEnabled {};
+    std::array<bool, megadsp::controlsPerSlot> controlPresented {};
     std::array<std::unique_ptr<SliderAttachment>, megadsp::controlsPerSlot>
         sliderAttachments;
     std::array<std::unique_ptr<ChoiceParameterAttachment>,
@@ -1864,7 +2517,7 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     : AudioProcessorEditor(processorToUse), audioProcessor(processorToUse)
 {
     title.setText("megaDSP", juce::dontSendNotification);
-    title.setFont(juce::FontOptions(23.0f, juce::Font::bold));
+    title.setFont(juce::FontOptions(18.0f, juce::Font::bold));
     title.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(title);
 
@@ -2020,6 +2673,32 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
         refreshSnapshots();
     };
     snapshotsHost.addAndMakeVisible(liveSafeButton);
+    for (auto* button : {
+             &smallWidgetsButton,
+             &mediumWidgetsButton,
+             &largeWidgetsButton })
+    {
+        button->setClickingTogglesState(false);
+        snapshotsHost.addAndMakeVisible(*button);
+    }
+    smallWidgetsButton.setTooltip(
+        "Use compact 300-pixel module widgets.");
+    mediumWidgetsButton.setTooltip(
+        "Use medium 440-pixel module widgets.");
+    largeWidgetsButton.setTooltip(
+        "Use large 640-pixel module widgets.");
+    smallWidgetsButton.onClick = [this]
+    {
+        setWidgetSize(megadsp::ui::WidgetSize::small, true);
+    };
+    mediumWidgetsButton.onClick = [this]
+    {
+        setWidgetSize(megadsp::ui::WidgetSize::medium, true);
+    };
+    largeWidgetsButton.onClick = [this]
+    {
+        setWidgetSize(megadsp::ui::WidgetSize::large, true);
+    };
     for (int index = 0; index < megadsp::snapshotCount; ++index)
     {
         auto button = std::make_unique<SnapshotButton>(
@@ -2057,29 +2736,6 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     }
     refreshSnapshots();
 
-    chainNavigatorLabel.setText("CHAIN", juce::dontSendNotification);
-    chainNavigatorLabel.setFont(
-        juce::FontOptions(10.5f, juce::Font::bold));
-    chainNavigatorLabel.setColour(
-        juce::Label::textColourId, juce::Colour(0xffa8b3c0));
-    chainNavigatorLabel.setJustificationType(
-        juce::Justification::centredLeft);
-    addAndMakeVisible(chainNavigatorHost);
-    chainNavigatorHost.addAndMakeVisible(chainNavigatorLabel);
-    for (int slot = 0; slot < megadsp::slotCount; ++slot)
-    {
-        auto button = std::make_unique<ChainSlotButton>(*this, slot);
-        button->setClickingTogglesState(false);
-        button->setTitle("Signal chain slot " + juce::String(slot + 1));
-        button->onClick = [this, slot]
-        {
-            selectSlot(slot);
-            revealSelectedCard(true);
-        };
-        chainNavigatorHost.addAndMakeVisible(*button);
-        chainNavigatorButtons[static_cast<size_t>(slot)] =
-            std::move(button);
-    }
     for (int position = 0; position <= megadsp::slotCount; ++position)
     {
         auto button = std::make_unique<ChainIconButton>(
@@ -2091,42 +2747,46 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
         {
             showModuleBrowser(position);
         };
-        chainNavigatorHost.addAndMakeVisible(*button);
+        rackContent.addAndMakeVisible(*button);
         chainInsertButtons[static_cast<size_t>(position)] =
             std::move(button);
     }
 
     addAndMakeVisible(rackViewport);
     rackViewport.setViewedComponent(&rackContent, false);
-    rackViewport.setScrollBarsShown(true, false);
+    rackViewport.setScrollBarsShown(false, true);
     rackViewport.setWantsKeyboardFocus(false);
     rackViewport.setTitle("Module rack");
     rackViewport.setDescription(
-        "Modules process audio from top to bottom.");
-    addButton.setTooltip("Browse and add a module after the last card.");
+        "Modules process audio from left to right.");
+    addButton.setTooltip("Browse and add a module after the last widget.");
     addButton.onClick = [this] { showModuleBrowser(); };
     rackContent.addAndMakeVisible(addButton);
+    widgetSize = megadsp::ui::widgetSizeFromId(
+        audioProcessor.globalWidgetSizeId());
+    refreshWidgetSizeButtons();
     selectedSlot = audioProcessor.getSelectedTab();
     refreshCards();
 
     setResizable(true, true);
-    setResizeLimits(
-        megadsp::ui::editorMinimumWidth,
-        megadsp::ui::editorMinimumHeight,
-        megadsp::ui::editorMaximumWidth,
-        megadsp::ui::editorMaximumHeight);
+    updateEditorResizeLimits();
+    const auto limits = megadsp::ui::calculateEditorResizeLimits(
+        knownDisplayUserArea);
     setSize(
         juce::jlimit(
-            megadsp::ui::editorMinimumWidth,
-            megadsp::ui::editorMaximumWidth, width),
+            limits.getX(), limits.getWidth(), width),
         juce::jlimit(
-            megadsp::ui::editorMinimumHeight,
-            megadsp::ui::editorMaximumHeight, height));
+            limits.getY(), limits.getHeight(), height));
 #if defined(MEGADSP_CAPTURE_SCREENSHOTS)
-    setSize(1100, 720);
-    audioProcessor.setInstanceName("Vocal Chain");
+    setSize(1000, 300);
+    audioProcessor.setInstanceName("Amp Space");
     audioProcessor.setBackgroundThemeIndex(0);
-    audioProcessor.loadFactoryPreset(1);
+    while (audioProcessor.getRack().activeSlotCount() > 0)
+        audioProcessor.removeSlot(0);
+    audioProcessor.addModule(megadsp::ModuleType::neuralAmpModeler);
+    audioProcessor.addModule(megadsp::ModuleType::convolutionReverb);
+    widgetSize = megadsp::ui::WidgetSize::small;
+    refreshWidgetSizeButtons();
     selectedSlot = 0;
     refreshCards();
 #endif
@@ -2147,7 +2807,7 @@ void MegaDSPAudioProcessorEditor::paint(juce::Graphics& graphics)
         audioProcessor.getBackgroundThemeIndex());
     graphics.fillAll(theme);
     graphics.setColour(theme.brighter(0.22f));
-    graphics.fillRect(0, 0, getWidth(), 92);
+    graphics.fillRect(0, 0, getWidth(), 38);
 }
 
 void MegaDSPAudioProcessorEditor::visibilityChanged()
@@ -2159,18 +2819,84 @@ void MegaDSPAudioProcessorEditor::visibilityChanged()
         audioProcessor.getVisualizationData().clearActiveSlots();
 }
 
+void MegaDSPAudioProcessorEditor::moved()
+{
+    updateEditorResizeLimits();
+}
+
+void MegaDSPAudioProcessorEditor::parentHierarchyChanged()
+{
+    updateEditorResizeLimits();
+    resized();
+    const auto showing = isShowing();
+    for (auto& card : cards)
+        card->setEditorVisible(showing);
+    repaint();
+}
+
+void MegaDSPAudioProcessorEditor::updateEditorResizeLimits()
+{
+    const auto& displays =
+        juce::Desktop::getInstance().getDisplays();
+    const auto* display =
+        displays.getDisplayForRect(getScreenBounds());
+    if (display == nullptr)
+        display = displays.getPrimaryDisplay();
+    const auto userArea = display != nullptr
+        ? display->userArea : juce::Rectangle<int> {};
+    if (userArea == knownDisplayUserArea)
+        return;
+    knownDisplayUserArea = userArea;
+    const auto limits =
+        megadsp::ui::calculateEditorResizeLimits(userArea);
+    setResizeLimits(
+        limits.getX(), limits.getY(),
+        limits.getWidth(), limits.getHeight());
+}
+
+bool MegaDSPAudioProcessorEditor::keyPressed(
+    const juce::KeyPress& key)
+{
+    const auto modifiers = key.getModifiers();
+    const auto shortcut =
+        modifiers.isCommandDown() || modifiers.isCtrlDown();
+    const auto keyCharacter = juce::CharacterFunctions::toLowerCase(
+        static_cast<juce::juce_wchar>(key.getKeyCode()));
+    if (shortcut && !modifiers.isAltDown() && keyCharacter == 'z')
+    {
+        const auto redo = modifiers.isShiftDown();
+        const auto description = redo
+            ? audioProcessor.redoDescription()
+            : audioProcessor.undoDescription();
+        const auto changed = redo
+            ? audioProcessor.redo()
+            : audioProcessor.undo();
+        if (!changed)
+            return false;
+        status.setText(
+            juce::String(redo ? "Redo: " : "Undo: ") + description,
+            juce::dontSendNotification);
+        refreshCards(true);
+        refreshSnapshots();
+        refreshIdentityPresentation();
+        resized();
+        repaint();
+        return true;
+    }
+    return AudioProcessorEditor::keyPressed(key);
+}
+
 void MegaDSPAudioProcessorEditor::resized()
 {
     if (getWidth() > 0 && getHeight() > 0)
         audioProcessor.rememberEditorSize(getWidth(), getHeight());
     auto bounds = getLocalBounds();
-    auto header = bounds.removeFromTop(92).reduced(10, 5);
-    auto headerTop = header.removeFromTop(34);
+    auto headerTop = bounds.removeFromTop(38).reduced(8, 4);
     const auto identityLayout =
         megadsp::ui::calculateIdentityHeaderLayout(getWidth());
     auto titleArea =
         headerTop.removeFromLeft(identityLayout.titleWidth);
-    title.setBounds(titleArea.removeFromTop(24));
+    title.setBounds(titleArea.removeFromTop(18));
     commitHashButton.setBounds(titleArea);
     instanceLabel.setBounds(
         headerTop.removeFromLeft(identityLayout.labelWidth));
@@ -2186,86 +2912,70 @@ void MegaDSPAudioProcessorEditor::resized()
         headerTop.removeFromLeft(identityLayout.loadWidth).reduced(2));
     diagnosticsButton.setBounds(
         headerTop.removeFromRight(70).reduced(2));
-    status.setBounds(headerTop);
-
-    auto headerBottom = header.reduced(0, 2);
-    auto inputArea = headerBottom.removeFromLeft(185);
-    inputLabel.setBounds(inputArea.removeFromLeft(42));
-    inputGain.setBounds(inputArea);
-    auto outputArea = headerBottom.removeFromRight(205);
-    outputLabel.setBounds(outputArea.removeFromLeft(70));
+    auto outputArea = headerTop.removeFromRight(134);
+    outputLabel.setBounds(outputArea.removeFromLeft(44));
     outputGain.setBounds(outputArea);
-    headerMeter->setBounds(headerBottom.reduced(8, 0));
+    auto inputArea = headerTop.removeFromLeft(126);
+    inputLabel.setBounds(inputArea.removeFromLeft(32));
+    inputGain.setBounds(inputArea);
+    headerMeter->setBounds(headerTop.reduced(4, 1));
+    status.setBounds({});
 
     snapshotsHost.setBounds(
-        bounds.removeFromTop(42).reduced(10, 3));
+        bounds.removeFromTop(24).reduced(8, 1));
     auto snapshotBounds = snapshotsHost.getLocalBounds();
-    snapshotsLabel.setBounds(snapshotBounds.removeFromLeft(82));
+    snapshotsLabel.setBounds(snapshotBounds.removeFromLeft(66));
     liveSafeButton.setBounds(
-        snapshotBounds.removeFromRight(94).reduced(2));
+        snapshotBounds.removeFromRight(84).reduced(1));
+    largeWidgetsButton.setBounds(
+        snapshotBounds.removeFromRight(28).reduced(1));
+    mediumWidgetsButton.setBounds(
+        snapshotBounds.removeFromRight(28).reduced(1));
+    smallWidgetsButton.setBounds(
+        snapshotBounds.removeFromRight(28).reduced(1));
     const auto snapshotWidth =
         juce::jmax(1, snapshotBounds.getWidth()
                        / megadsp::snapshotCount);
     for (auto& button : snapshotButtons)
         button->setBounds(
-            snapshotBounds.removeFromLeft(snapshotWidth).reduced(2));
+            snapshotBounds.removeFromLeft(snapshotWidth).reduced(1));
 
-    if (chainNavigatorHost.isVisible())
-        chainNavigatorHost.setBounds(
-            bounds.removeFromTop(40).reduced(10, 3));
-    else
-        chainNavigatorHost.setBounds({});
-    auto navigatorBounds = chainNavigatorHost.getLocalBounds();
-    chainNavigatorLabel.setBounds(navigatorBounds.removeFromLeft(58));
-    const auto active = static_cast<int>(cards.size());
-    constexpr auto insertWidth = 24;
-    const auto tabWidth = active > 0
-        ? juce::jmax(
-              1, (navigatorBounds.getWidth()
-                  - insertWidth * (active + 1)) / active)
-        : 0;
-    for (int position = 0; position <= active; ++position)
-    {
-        chainInsertButtons[static_cast<size_t>(position)]->setBounds(
-            navigatorBounds.removeFromLeft(insertWidth).reduced(2));
-        if (position < active)
-            chainNavigatorButtons[static_cast<size_t>(position)]->setBounds(
-                navigatorBounds.removeFromLeft(tabWidth).reduced(2));
-    }
-    for (int slot = active; slot < megadsp::slotCount; ++slot)
-        chainNavigatorButtons[static_cast<size_t>(slot)]->setBounds({});
-    for (int position = active + 1;
-         position <= megadsp::slotCount; ++position)
-        chainInsertButtons[static_cast<size_t>(position)]->setBounds({});
+    chainNavigatorHost.setBounds({});
 
-    rackViewport.setBounds(bounds.reduced(10, 6));
+    rackViewport.setBounds(bounds.reduced(8, 4));
     constexpr auto rackPadding = 8;
-    const auto showAddButton = addButton.isVisible();
-    std::vector<int> moduleHeights;
-    moduleHeights.reserve(cards.size());
-    for (const auto& card : cards)
-        moduleHeights.push_back(card->preferredHeight());
-    const auto contentHeight = megadsp::ui::calculateRackContentHeight(
-        moduleHeights, showAddButton)
+    const auto showAddButton =
+        static_cast<int>(cards.size()) < megadsp::slotCount;
+    const auto contentWidth = megadsp::ui::calculateRackContentWidth(
+        static_cast<int>(cards.size()), widgetSize, showAddButton)
         + rackPadding * 2;
+    const auto targetWidth =
+        juce::jmax(rackViewport.getWidth(), contentWidth);
     const auto targetHeight =
-        juce::jmax(rackViewport.getHeight(), contentHeight);
-    rackContent.setSize(juce::jmax(1, rackViewport.getWidth()), targetHeight);
-    rackContent.setSize(
-        juce::jmax(1, rackViewport.getMaximumVisibleWidth()), targetHeight);
-    auto cardBounds = rackContent.getLocalBounds().reduced(rackPadding, 0);
-    cardBounds.removeFromTop(rackPadding);
+        juce::jmax(1, rackViewport.getMaximumVisibleHeight());
+    rackContent.setSize(targetWidth, targetHeight);
+    for (auto& button : chainInsertButtons)
+        button->setBounds({});
+    auto cardBounds = rackContent.getLocalBounds().reduced(0, rackPadding);
+    cardBounds.removeFromLeft(rackPadding);
     for (int index = 0; index < static_cast<int>(cards.size()); ++index)
     {
+        if (showAddButton)
+            chainInsertButtons[static_cast<size_t>(index)]->setBounds(
+                cardBounds.removeFromLeft(24).reduced(2));
         auto& card = cards[static_cast<size_t>(index)];
         card->setBounds(
-            cardBounds.removeFromTop(card->preferredHeight()));
-        if (index + 1 < static_cast<int>(cards.size()) || showAddButton)
-            cardBounds.removeFromTop(megadsp::ui::moduleCardGap);
+            cardBounds.removeFromLeft(
+                megadsp::ui::widgetWidth(widgetSize)));
+        if (index + 1 < static_cast<int>(cards.size()))
+            cardBounds.removeFromLeft(megadsp::ui::moduleCardGap);
     }
     if (showAddButton)
-        addButton.setBounds(
-            cardBounds.removeFromTop(megadsp::ui::addModuleCardHeight));
+        chainInsertButtons[cards.size()]->setBounds(
+            cardBounds.removeFromLeft(24).reduced(2));
+    addButton.setBounds({});
+    for (auto& card : cards)
+        card->reassertVisualizationCapture();
 }
 
 void MegaDSPAudioProcessorEditor::timerCallback()
@@ -2362,8 +3072,10 @@ void MegaDSPAudioProcessorEditor::selectSlot(int slot)
     for (int index = 0; index < static_cast<int>(cards.size()); ++index)
         cards[static_cast<size_t>(index)]->setSelected(index == selectedSlot);
     for (int index = 0; index < megadsp::slotCount; ++index)
-        chainNavigatorButtons[static_cast<size_t>(index)]->setToggleState(
-            index == selectedSlot, juce::dontSendNotification);
+        if (auto* button =
+                chainNavigatorButtons[static_cast<size_t>(index)].get())
+            button->setToggleState(
+                index == selectedSlot, juce::dontSendNotification);
     if (!isShowing())
         audioProcessor.getVisualizationData().clearActiveSlots();
 }
@@ -2386,7 +3098,6 @@ void MegaDSPAudioProcessorEditor::refreshCards(
 {
     if (refreshingCards)
         return;
-
     const auto active = audioProcessor.getRack().activeSlotCount();
     const auto hadRackFocus = std::any_of(
         cards.begin(), cards.end(),
@@ -2413,7 +3124,7 @@ void MegaDSPAudioProcessorEditor::refreshCards(
             card->setEditorVisible(isShowing());
             cards.push_back(std::move(card));
         }
-        addButton.setVisible(active < megadsp::slotCount);
+        addButton.setVisible(false);
     }
     refreshChainNavigator();
     selectSlot(juce::jmin(selectedSlot, juce::jmax(0, active - 1)));
@@ -2425,11 +3136,13 @@ void MegaDSPAudioProcessorEditor::refreshChainNavigator()
 {
     const auto active = static_cast<int>(cards.size());
     const auto canInsert = active < megadsp::slotCount;
-    chainNavigatorHost.setVisible(active > 0 || canInsert);
+    chainNavigatorHost.setVisible(false);
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
         auto& button =
             chainNavigatorButtons[static_cast<size_t>(slot)];
+        if (button == nullptr)
+            continue;
         const auto visible = slot < active;
         button->setVisible(visible);
         if (!visible)
@@ -2454,7 +3167,7 @@ void MegaDSPAudioProcessorEditor::refreshChainNavigator()
     {
         auto& button =
             chainInsertButtons[static_cast<size_t>(position)];
-        const auto visible = position <= active;
+        const auto visible = canInsert && position <= active;
         button->setVisible(visible);
         button->setEnabled(canInsert);
         if (!visible)
@@ -2483,20 +3196,60 @@ void MegaDSPAudioProcessorEditor::revealSelectedCard(bool focus)
             selectedSlot, static_cast<int>(cards.size())))
         return;
     auto* card = cards[static_cast<size_t>(selectedSlot)].get();
-    const auto viewTop = rackViewport.getViewPositionY();
-    const auto viewBottom = viewTop + rackViewport.getViewHeight();
-    if (card->getHeight() > rackViewport.getViewHeight())
+    const auto viewLeft = rackViewport.getViewPositionX();
+    const auto viewRight = viewLeft + rackViewport.getViewWidth();
+    if (card->getWidth() > rackViewport.getViewWidth())
         rackViewport.setViewPosition(
-            rackViewport.getViewPositionX(), card->getY());
-    else if (card->getY() < viewTop)
+            card->getX(), rackViewport.getViewPositionY());
+    else if (card->getX() < viewLeft)
         rackViewport.setViewPosition(
-            rackViewport.getViewPositionX(), card->getY());
-    else if (card->getBottom() > viewBottom)
+            card->getX(), rackViewport.getViewPositionY());
+    else if (card->getRight() > viewRight)
         rackViewport.setViewPosition(
-            rackViewport.getViewPositionX(),
-            card->getBottom() - rackViewport.getViewHeight());
+            card->getRight() - rackViewport.getViewWidth(),
+            rackViewport.getViewPositionY());
     if (focus)
         card->grabKeyboardFocus();
+}
+
+void MegaDSPAudioProcessorEditor::setWidgetSize(
+    megadsp::ui::WidgetSize size, bool persist)
+{
+    if (widgetSize == size)
+        return;
+    widgetSize = size;
+    refreshWidgetSizeButtons();
+    resized();
+    revealSelectedCard(false);
+    if (persist)
+    {
+        const auto result = audioProcessor.setGlobalWidgetSizeId(
+            megadsp::ui::widgetSizeId(size));
+        if (result.failed())
+            showResult(result);
+    }
+}
+
+void MegaDSPAudioProcessorEditor::refreshWidgetSizeButtons()
+{
+    const auto update =
+        [this](juce::TextButton& button,
+               megadsp::ui::WidgetSize size)
+    {
+        const auto selected = widgetSize == size;
+        button.setToggleState(
+            selected, juce::dontSendNotification);
+        button.setColour(
+            juce::TextButton::buttonColourId,
+            selected ? accent : juce::Colour(0xff1a222c));
+        button.setColour(
+            juce::TextButton::textColourOffId,
+            selected ? juce::Colours::black
+                     : juce::Colours::white);
+    };
+    update(smallWidgetsButton, megadsp::ui::WidgetSize::small);
+    update(mediumWidgetsButton, megadsp::ui::WidgetSize::medium);
+    update(largeWidgetsButton, megadsp::ui::WidgetSize::large);
 }
 
 #if defined(MEGADSP_TESTS)
@@ -2513,9 +3266,18 @@ void MegaDSPAudioProcessorEditor::reorderChainNavigatorForTesting(
     int source, int target, bool dropAfter)
 {
     if (juce::isPositiveAndBelow(
+            source, static_cast<int>(cards.size()))
+        && juce::isPositiveAndBelow(
             target, static_cast<int>(cards.size())))
-        chainNavigatorButtons[static_cast<size_t>(target)]
-            ->reorderFrom(source, dropAfter);
+    {
+        auto destination = target + (dropAfter ? 1 : 0);
+        if (source < destination)
+            --destination;
+        requestReorderSlot(
+            source, juce::jlimit(
+                        0, static_cast<int>(cards.size()) - 1,
+                        destination));
+    }
     applyPendingCardMutation();
 }
 
@@ -2562,11 +3324,11 @@ bool MegaDSPAudioProcessorEditor::selectedCardVisibleForTesting() const
             selectedSlot, static_cast<int>(cards.size())))
         return false;
     const auto* card = cards[static_cast<size_t>(selectedSlot)].get();
-    const auto viewTop = rackViewport.getViewPositionY();
-    const auto viewBottom = viewTop + rackViewport.getViewHeight();
-    if (card->getHeight() > rackViewport.getViewHeight())
-        return card->getY() >= viewTop && card->getY() < viewBottom;
-    return card->getY() >= viewTop && card->getBottom() <= viewBottom;
+    const auto viewLeft = rackViewport.getViewPositionX();
+    const auto viewRight = viewLeft + rackViewport.getViewWidth();
+    if (card->getWidth() > rackViewport.getViewWidth())
+        return card->getX() >= viewLeft && card->getX() < viewRight;
+    return card->getX() >= viewLeft && card->getRight() <= viewRight;
 }
 
 int MegaDSPAudioProcessorEditor::cardHeightForTesting(int slot) const
@@ -2574,6 +3336,28 @@ int MegaDSPAudioProcessorEditor::cardHeightForTesting(int slot) const
     return juce::isPositiveAndBelow(
                slot, static_cast<int>(cards.size()))
         ? cards[static_cast<size_t>(slot)]->getHeight()
+        : 0;
+}
+
+int MegaDSPAudioProcessorEditor::cardWidthForTesting(int slot) const
+{
+    return juce::isPositiveAndBelow(
+               slot, static_cast<int>(cards.size()))
+        ? cards[static_cast<size_t>(slot)]->getWidth()
+        : 0;
+}
+
+int MegaDSPAudioProcessorEditor::cardGraphHeightForTesting(int slot) const
+{
+    return juce::isPositiveAndBelow(slot, static_cast<int>(cards.size()))
+        ? cards[static_cast<size_t>(slot)]->graphHeightForTesting()
+        : 0;
+}
+
+int MegaDSPAudioProcessorEditor::cardGraphWidthForTesting(int slot) const
+{
+    return juce::isPositiveAndBelow(slot, static_cast<int>(cards.size()))
+        ? cards[static_cast<size_t>(slot)]->graphWidthForTesting()
         : 0;
 }
 
@@ -2613,6 +3397,36 @@ bool MegaDSPAudioProcessorEditor::cardGraphsAvoidControlsForTesting() const
 }
 
 bool MegaDSPAudioProcessorEditor::
+    cardPresentsAllActiveControlsForTesting() const
+{
+    return std::all_of(
+        cards.begin(), cards.end(),
+        [](const auto& card)
+        {
+            return card->presentsAllActiveControlsForTesting();
+        });
+}
+
+juce::String MegaDSPAudioProcessorEditor::cardControlTextForTesting(
+    int slot, int control) const
+{
+    if (!juce::isPositiveAndBelow(
+            slot, static_cast<int>(cards.size())))
+        return {};
+    return cards[static_cast<size_t>(slot)]
+        ->controlTextForTesting(control);
+}
+
+bool MegaDSPAudioProcessorEditor::
+    cardRotaryControlsWorkForTesting(int slot)
+{
+    return juce::isPositiveAndBelow(
+               slot, static_cast<int>(cards.size()))
+        && cards[static_cast<size_t>(slot)]
+               ->compactRotaryControlsWorkForTesting();
+}
+
+bool MegaDSPAudioProcessorEditor::
     cardHeightsMatchPreferencesForTesting() const
 {
     return std::all_of(
@@ -2626,6 +3440,17 @@ bool MegaDSPAudioProcessorEditor::
 bool MegaDSPAudioProcessorEditor::rackOverflowsVerticallyForTesting() const
 {
     return rackContent.getHeight() > rackViewport.getHeight();
+}
+
+bool MegaDSPAudioProcessorEditor::rackOverflowsHorizontallyForTesting() const
+{
+    return rackContent.getWidth() > rackViewport.getWidth();
+}
+
+void MegaDSPAudioProcessorEditor::setWidgetSizeForTesting(
+    megadsp::ui::WidgetSize size)
+{
+    setWidgetSize(size, false);
 }
 
 void MegaDSPAudioProcessorEditor::clickCloseButtonForTesting(int slot)
@@ -2695,11 +3520,16 @@ void MegaDSPAudioProcessorEditor::addModuleAt(
     if (active >= megadsp::slotCount)
         return;
     const auto insertion = juce::jlimit(0, active, position);
+    audioProcessor.beginUndoTransaction("Insert module");
     audioProcessor.addModule(type);
     if (audioProcessor.getRack().activeSlotCount() != active + 1)
+    {
+        audioProcessor.endUndoTransaction();
         return;
+    }
     if (insertion < active)
         audioProcessor.moveSlot(active, insertion);
+    audioProcessor.endUndoTransaction();
     selectedSlot = insertion;
     refreshCards();
     revealSelectedCard(true);

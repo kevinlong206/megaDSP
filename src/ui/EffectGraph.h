@@ -21,10 +21,13 @@ class EffectGraph final : public juce::Component,
                           private juce::Timer
 {
 public:
-    EffectGraph(MegaDSPAudioProcessor&, int slot, ModuleType);
+    EffectGraph(
+        MegaDSPAudioProcessor&, int slot, ModuleType,
+        bool compactPresentation = false);
     ~EffectGraph() override;
 
     void paint(juce::Graphics&) override;
+    void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
@@ -38,9 +41,31 @@ public:
     bool isInterestedInFileDrag(const juce::StringArray&) override;
     void filesDropped(const juce::StringArray&, int x, int y) override;
     bool usesFullPanel() const;
+    bool isCompactPresentation() const { return compact; }
     int preferredCardHeight() const;
     void setVisualizationActive(bool);
     bool isVisualizationActive() const { return visualizationActive; }
+    static size_t spectrumBinForProportion(
+        float proportion, double sampleRate);
+#if defined(MEGADSP_TESTS)
+    void refreshVisualizationForTesting();
+    void setCompactCompressorThresholdFromYForTesting(float y);
+    void setCompactEqualizerBandFromPointForTesting(
+        int band, juce::Point<float>);
+    void setCompactEqualizerOutputFromYForTesting(float);
+    juce::Rectangle<float> compactEqualizerPlotAreaForTesting() const
+    {
+        return compactEqualizerPlotArea();
+    }
+    float compactEqualizerResponseDbForTesting(float frequency) const
+    {
+        return compactEqualizerResponseDb(frequency);
+    }
+    float namSpectrumFreshnessForTesting() const
+    {
+        return namSpectrumFreshness;
+    }
+#endif
 
     float value(int control) const;
     juce::RangedAudioParameter* parameter(int control) const;
@@ -90,7 +115,24 @@ public:
 private:
     class GraphAccessibilityHandler;
 
+    void paintCompact(juce::Graphics&, juce::Rectangle<float>);
+    juce::Rectangle<float> compactCompressorLevelArea() const;
+    void setCompactCompressorThresholdFromY(float);
+    juce::Rectangle<float> compactEqualizerPlotArea() const;
+    juce::Rectangle<float> compactEqualizerModeArea() const;
+    juce::Rectangle<float> compactEqualizerOutputArea() const;
+    juce::Point<float> compactEqualizerPoint(int band) const;
+    juce::dsp::IIR::Coefficients<float>::Ptr
+        compactEqualizerCoefficients(int band) const;
+    float compactEqualizerResponseDb(
+        float frequency, int onlyBand = -1) const;
+    juce::String compactEqualizerBandReadout(int band) const;
+    int compactEqualizerBandAt(juce::Point<float>) const;
+    void setCompactEqualizerBandFromPoint(
+        int band, juce::Point<float>);
+    void setCompactEqualizerOutputFromY(float);
     void timerCallback() override;
+    void refreshVisualization();
     void calculateSpectrum(
         const std::array<float, graphFftSize>&,
         std::array<float, graphFftSize / 2>&);
@@ -128,10 +170,15 @@ private:
     std::array<float, graphFftSize / 2> outputSpectrum {};
     int dragPrimary = -1;
     int dragSecondary = -1;
+    int compactEqualizerBand = -1;
+    uint64_t lastInputHistoryPosition = 0;
+    uint64_t lastOutputHistoryPosition = 0;
+    float namSpectrumFreshness = 0.0f;
     int focusedControl = -1;
     juce::String dragReadout;
     std::unique_ptr<ModuleView> moduleView;
     bool bypassVisualsSuspended = false;
     bool visualizationActive = false;
+    bool compact = false;
 };
 } // namespace megadsp::ui
