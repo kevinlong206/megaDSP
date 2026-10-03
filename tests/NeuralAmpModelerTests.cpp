@@ -853,6 +853,45 @@ public:
                 browser.namModelPath(0),
                 ampModel.getFullPathName());
 
+            const auto testCache =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getChildFile("megaDSP-tests")
+                    .getChildFile(
+                        "nam-model-library-cache.xml");
+            expect(!testCache.existsAsFile()
+                   || testCache.deleteFile());
+            MegaDSPAudioProcessor coldBrowser;
+            coldBrowser.prepareToPlay(48000.0, 64);
+            coldBrowser.addModule(ModuleType::neuralAmpModeler);
+            bool coldCompleted = false;
+            const auto coldStart =
+                juce::Time::getHighResolutionTicks();
+            expect(coldBrowser.loadAdjacentNamModelAsync(
+                0, 1,
+                [&coldCompleted](const juce::Result& result)
+                {
+                    coldCompleted = result.wasOk();
+                }).wasOk());
+            const auto coldRequestMicros =
+                juce::Time::highResolutionTicksToSeconds(
+                    juce::Time::getHighResolutionTicks() - coldStart)
+                * 1000000.0;
+            expect(
+                coldRequestMicros < 500000.0,
+                "A cold catalog rebuild must not run on the UI thread.");
+            coldBrowser.finishNamModelLoadForTesting();
+            expect(coldCompleted);
+            expectEquals(
+                coldBrowser.namModelPath(0),
+                ampModel.getFullPathName());
+
+            expect(pedalModel.replaceWithText("{ cache probe }"));
+            MegaDSPAudioProcessor cachedBrowser;
+            expectEquals(cachedBrowser.namModelLibrarySize(), 3);
+            expect(pedalModel.replaceWithText(
+                juce::String(pedalJson.dump())));
+
             MegaDSPAudioProcessor inherited;
             expectEquals(
                 inherited.namModelRootDirectory().getFullPathName(),

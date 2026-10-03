@@ -354,6 +354,7 @@ private:
     void ensureImpulseResponseLibrary();
     void ensureNamModelLibrary();
     void finishPendingNamModelLoad();
+    void disposeNamModelAsync(megadsp::PreparedNamModelPtr);
     void serializeSnapshots(juce::ValueTree&) const;
     void restoreSnapshots(const juce::ValueTree&, int sourceSchema);
     megadsp::RackState& selectedSnapshotState() noexcept
@@ -442,6 +443,7 @@ private:
     juce::CriticalSection pendingNamModelLoadLock;
     std::unique_ptr<PendingNamModelLoad> pendingNamModelLoad;
     juce::ThreadPool namModelLoadPool { 1 };
+    juce::ThreadPool namModelDisposalPool { 1 };
     int hostBypassWritePosition = 0;
     int lastHostBypassLatency = 0;
     std::atomic<bool> topologyMutationInProgress { false };

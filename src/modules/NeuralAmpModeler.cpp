@@ -593,12 +593,18 @@ bool NeuralAmpModelerModule::commitPreparedNamModel(PreparedNamModelPtr& p)
 {
     auto* ld = dynamic_cast<PreparedLoad*>(p.get());
     if (!ld) return false;
+    auto retired = std::make_unique<PreparedLoad>();
     for (int ch = 0; ch < maxChannels; ++ch)
+    {
+        retired->ch[ch] = std::move(channels[ch]);
         channels[ch] = std::move(ld->ch[ch]);
+    }
     reportedLatency.store(ld->latency, std::memory_order_relaxed);
     { const juce::ScopedLock sl(infoLock); currentInfo = ld->info; }
     modelReady.store(true, std::memory_order_release);
-    p.reset();
+    // Return the displaced graphs to the caller so asynchronous hosts can
+    // destroy their large weight buffers away from the message thread.
+    p = std::move(retired);
     return true;
 }
 

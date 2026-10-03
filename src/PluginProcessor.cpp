@@ -101,6 +101,12 @@ juce::File globalSettingsFile()
 #endif
 }
 
+juce::File namModelLibraryCacheFile()
+{
+    return globalSettingsFile().getSiblingFile(
+        "nam-model-library-cache.xml");
+}
+
 juce::PropertiesFile::Options globalSettingsOptions()
 {
     juce::PropertiesFile::Options options;
@@ -333,6 +339,7 @@ std::optional<NamModelLibraryEntry> inspectNamModel(
                 highest = maximum->get<double>();
                 effectiveModel = &*model;
             }
+
         }
         if (effectiveModel == nullptr)
             return std::nullopt;
@@ -428,6 +435,86 @@ std::optional<NamModelLibraryEntry> inspectNamModel(
             entry.cabIncluded = 0;
     }
     return entry;
+}
+
+bool restoreNamModelLibraryCache(
+    const juce::File& root,
+    std::vector<NamModelLibraryEntry>& destination)
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto cache = namModelLibraryCacheFile();
+    if (!cache.existsAsFile())
+        return false;
+    const auto xml = juce::XmlDocument::parse(cache);
+    if (xml == nullptr
+        || !xml->hasTagName("NAM_LIBRARY")
+        || xml->getIntAttribute("schema") != 1
+        || xml->getStringAttribute("root") != root.getFullPathName())
+        return false;
+
+    std::vector<NamModelLibraryEntry> restored;
+    forEachXmlChildElementWithTagName(*xml, child, "MODEL")
+    {
+        NamModelLibraryEntry entry;
+        entry.relativePath = child->getStringAttribute("path");
+        if (entry.relativePath.isEmpty())
+            continue;
+        entry.file = root.getChildFile(entry.relativePath);
+        entry.displayName = child->getStringAttribute("display");
+        entry.metadataTitle = child->getStringAttribute("title");
+        entry.architecture = child->getStringAttribute("architecture");
+        entry.captureDescription = child->getStringAttribute("capture");
+        entry.gearType = child->getStringAttribute("gear");
+        entry.sampleRate = child->getDoubleAttribute("sampleRate");
+        entry.inputLevelDbU = child->hasAttribute("inputLevelDbU")
+            ? child->getDoubleAttribute("inputLevelDbU")
+            : std::numeric_limits<double>::quiet_NaN();
+        entry.submodelCount = child->getIntAttribute("submodels", 1);
+        entry.cabIncluded = child->getIntAttribute("cab", -1);
+        entry.isA2 = child->getBoolAttribute("a2");
+        restored.push_back(std::move(entry));
+    }
+    if (restored.empty())
+        return false;
+    destination = std::move(restored);
+    return true;
+}
+
+juce::Result persistNamModelLibraryCache(
+    const juce::File& root,
+    const std::vector<NamModelLibraryEntry>& entries)
+{
+    juce::XmlElement xml("NAM_LIBRARY");
+    xml.setAttribute("schema", 1);
+    xml.setAttribute("root", root.getFullPathName());
+    for (const auto& entry : entries)
+    {
+        auto child = std::make_unique<juce::XmlElement>("MODEL");
+        child->setAttribute("path", entry.relativePath);
+        child->setAttribute("display", entry.displayName);
+        child->setAttribute("title", entry.metadataTitle);
+        child->setAttribute("architecture", entry.architecture);
+        child->setAttribute("capture", entry.captureDescription);
+        child->setAttribute("gear", entry.gearType);
+        child->setAttribute("sampleRate", entry.sampleRate);
+        if (std::isfinite(entry.inputLevelDbU))
+            child->setAttribute("inputLevelDbU", entry.inputLevelDbU);
+        child->setAttribute("submodels", entry.submodelCount);
+        child->setAttribute("cab", entry.cabIncluded);
+        child->setAttribute("a2", entry.isA2);
+        xml.addChildElement(child.release());
+    }
+
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto cache = namModelLibraryCacheFile();
+    const auto directoryResult =
+        cache.getParentDirectory().createDirectory();
+    if (directoryResult.failed())
+        return directoryResult;
+    return xml.writeTo(cache)
+        ? juce::Result::ok()
+        : juce::Result::fail(
+              "Could not save the NAM model library cache.");
 }
 
 float smoothSnapshotFade(float position) noexcept
@@ -548,6 +635,7 @@ MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
 {
     stopTimer();
     namModelLoadPool.removeAllJobs(true, 30000);
+    namModelDisposalPool.removeAllJobs(true, 30000);
     {
         const juce::ScopedLock lock(pendingNamModelLoadLock);
         if (pendingNamModelLoad != nullptr
@@ -3216,7 +3304,12 @@ juce::Result MegaDSPAudioProcessor::rebuildNamModelLibrary()
         namModelLibrary = std::move(rebuilt);
         indexedNamModelRoot = root.getFullPathName();
     }
-    return juce::Result::ok();
+    std::vector<NamModelLibraryEntry> cached;
+    {
+        const juce::ScopedLock lock(namModelLibraryLock);
+        cached = namModelLibrary;
+    }
+    return persistNamModelLibraryCache(root, cached);
 }
 
 void MegaDSPAudioProcessor::ensureNamModelLibrary()
@@ -3233,6 +3326,15 @@ void MegaDSPAudioProcessor::ensureNamModelLibrary()
         const juce::ScopedLock lock(namModelLibraryLock);
         if (root == indexedNamModelRoot)
             return;
+    }
+    std::vector<NamModelLibraryEntry> cached;
+    const auto rootDirectory = juce::File(root);
+    if (restoreNamModelLibraryCache(rootDirectory, cached))
+    {
+        const juce::ScopedLock lock(namModelLibraryLock);
+        namModelLibrary = std::move(cached);
+        indexedNamModelRoot = root;
+        return;
     }
     rebuildNamModelLibrary();
 }
@@ -3353,34 +3455,99 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentNamModelAsync(
         return juce::Result::fail(
             "Choose either the previous or next NAM model.");
 
-    ensureNamModelLibrary();
     juce::File targetFile;
     {
         const juce::ScopedLock lock(namModelLibraryLock);
-        if (namModelLibrary.empty())
-            return juce::Result::fail(
-                "The NAM model library contains no valid .nam files.");
-        const auto currentFile = juce::File(namModelPath(slot));
-        const auto current = std::find_if(
-            namModelLibrary.begin(), namModelLibrary.end(),
-            [&currentFile](const NamModelLibraryEntry& candidate)
-            {
-                return candidate.file == currentFile;
-            });
-        auto target = direction > 0
-            ? 0 : static_cast<int>(namModelLibrary.size()) - 1;
-        if (current != namModelLibrary.end())
+        const auto root = namModelRootDirectory().getFullPathName();
+        if (root == indexedNamModelRoot && !namModelLibrary.empty())
         {
-            const auto currentIndex = static_cast<int>(
-                std::distance(namModelLibrary.begin(), current));
-            const auto count = static_cast<int>(namModelLibrary.size());
-            target =
-                (currentIndex + (direction > 0 ? 1 : count - 1)) % count;
+            const auto currentFile = juce::File(namModelPath(slot));
+            const auto current = std::find_if(
+                namModelLibrary.begin(), namModelLibrary.end(),
+                [&currentFile](const NamModelLibraryEntry& candidate)
+                {
+                    return candidate.file == currentFile;
+                });
+            auto target = direction > 0
+                ? 0 : static_cast<int>(namModelLibrary.size()) - 1;
+            if (current != namModelLibrary.end())
+            {
+                const auto currentIndex = static_cast<int>(
+                    std::distance(namModelLibrary.begin(), current));
+                const auto count =
+                    static_cast<int>(namModelLibrary.size());
+                target = (currentIndex
+                          + (direction > 0 ? 1 : count - 1))
+                    % count;
+            }
+            targetFile =
+                namModelLibrary[static_cast<size_t>(target)].file;
         }
-        targetFile =
-            namModelLibrary[static_cast<size_t>(target)].file;
     }
-    return loadNamModelAsync(slot, targetFile, std::move(callback));
+    if (targetFile.existsAsFile())
+        return loadNamModelAsync(
+            slot, targetFile, std::move(callback));
+
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "A model or topology update is already in progress.");
+
+    const auto snapshot = getSelectedSnapshot();
+    auto* rack = snapshotRacks[static_cast<size_t>(snapshot)].get();
+    const auto currentFile = juce::File(namModelPath(slot));
+    namModelLoadPool.addJob(std::function<void()> {
+        [this, rack, snapshot, slot, direction, currentFile,
+         completionCallback = std::move(callback)]() mutable
+        {
+            auto completed = std::make_unique<PendingNamModelLoad>();
+            completed->rack = rack;
+            completed->snapshot = snapshot;
+            completed->callback = std::move(completionCallback);
+            ensureNamModelLibrary();
+
+            juce::File resolved;
+            {
+                const juce::ScopedLock lock(namModelLibraryLock);
+                if (!namModelLibrary.empty())
+                {
+                    const auto current = std::find_if(
+                        namModelLibrary.begin(), namModelLibrary.end(),
+                        [&currentFile](
+                            const NamModelLibraryEntry& candidate)
+                        {
+                            return candidate.file == currentFile;
+                        });
+                    auto target = direction > 0
+                        ? 0
+                        : static_cast<int>(namModelLibrary.size()) - 1;
+                    if (current != namModelLibrary.end())
+                    {
+                        const auto currentIndex = static_cast<int>(
+                            std::distance(
+                                namModelLibrary.begin(), current));
+                        const auto count =
+                            static_cast<int>(namModelLibrary.size());
+                        target = (currentIndex
+                                  + (direction > 0 ? 1 : count - 1))
+                            % count;
+                    }
+                    resolved = namModelLibrary[
+                        static_cast<size_t>(target)].file;
+                }
+            }
+            completed->result = resolved.existsAsFile()
+                ? rack->prepareNamModel(
+                      slot, resolved, completed->load)
+                : juce::Result::fail(
+                      "The NAM model library contains no valid .nam files.");
+            {
+                const juce::ScopedLock lock(pendingNamModelLoadLock);
+                pendingNamModelLoad = std::move(completed);
+            }
+        } });
+    return juce::Result::ok();
 }
 
 juce::Result MegaDSPAudioProcessor::loadNamModelAsync(
@@ -3439,6 +3606,8 @@ void MegaDSPAudioProcessor::finishPendingNamModelLoad()
         }
         else
         {
+            disposeNamModelAsync(
+                std::move(completed->load.prepared));
             if (completed->snapshot == getSelectedSnapshot())
                 publishSnapshotToParameters(completed->snapshot);
             updateHostDisplay(
@@ -3450,6 +3619,20 @@ void MegaDSPAudioProcessor::finishPendingNamModelLoad()
         triggerAsyncUpdate();
     if (completed->callback)
         completed->callback(result);
+}
+
+void MegaDSPAudioProcessor::disposeNamModelAsync(
+    megadsp::PreparedNamModelPtr model)
+{
+    if (model == nullptr)
+        return;
+    auto retired =
+        std::shared_ptr<megadsp::PreparedNamModel>(std::move(model));
+    namModelDisposalPool.addJob(std::function<void()> {
+        [retired = std::move(retired)]() mutable
+        {
+            retired.reset();
+        } });
 }
 
 juce::Result MegaDSPAudioProcessor::loadNamModel(
