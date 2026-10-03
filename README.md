@@ -248,7 +248,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | Module | What it does |
 |---|---|
 | **Guitar Cabinet** | Cabinet convolution with 23 bundled mono/stereo IRs, user IR loading, wet-path passband and tone shaping, drive, mix, and output |
-| **Neural Amp Modeler** | Loads standard, A2, and slimmable `.nam` models at full quality; its validated recursive catalog is cached across REAPER restarts and provides name/path/metadata search plus A1, A2, Cab, Amp, Rig, and Pedal filters. Model parsing, stereo graph construction, resampling setup, and prewarming run in the background while the current model keeps processing; the prepared replacement is swapped in briefly and displaced model graphs are destroyed on a separate worker. |
+| **Neural Amp Modeler** | Loads standard, A2, and slimmable `.nam` models at full quality; its validated recursive catalog is cached across REAPER restarts and provides name/path/metadata search plus A1, A2, Cab, Amp, Rig, and Pedal filters. Without a cache, previous/next enumerates paths and prepares the first valid adjacent model without waiting for a full metadata scan. Model parsing, stereo graph construction, resampling setup, and prewarming run in the background while the current model keeps processing; the prepared replacement is swapped in briefly and displaced model graphs are destroyed on a separate worker. |
 | **Velvet Drive** | Purely modeled touch-sensitive boutique amplifier with cascaded tube-style overdrive, interactive tone stack, power-supply bloom, and analytic speaker loads |
 
 ### Time-Based

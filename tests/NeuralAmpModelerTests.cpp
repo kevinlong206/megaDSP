@@ -886,6 +886,7 @@ public:
                 coldBrowser.namModelPath(0),
                 ampModel.getFullPathName());
 
+            expect(browser.rebuildNamModelLibrary().wasOk());
             expect(pedalModel.replaceWithText("{ cache probe }"));
             MegaDSPAudioProcessor cachedBrowser;
             expectEquals(cachedBrowser.namModelLibrarySize(), 3);

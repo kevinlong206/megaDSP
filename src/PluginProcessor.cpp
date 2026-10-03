@@ -3505,9 +3505,17 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentNamModelAsync(
             completed->rack = rack;
             completed->snapshot = snapshot;
             completed->callback = std::move(completionCallback);
-            ensureNamModelLibrary();
 
             juce::File resolved;
+            const auto root = namModelRootDirectory();
+            std::vector<NamModelLibraryEntry> cached;
+            if (root.isDirectory()
+                && restoreNamModelLibraryCache(root, cached))
+            {
+                const juce::ScopedLock lock(namModelLibraryLock);
+                namModelLibrary = std::move(cached);
+                indexedNamModelRoot = root.getFullPathName();
+            }
             {
                 const juce::ScopedLock lock(namModelLibraryLock);
                 if (!namModelLibrary.empty())
@@ -3537,11 +3545,68 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentNamModelAsync(
                         static_cast<size_t>(target)].file;
                 }
             }
-            completed->result = resolved.existsAsFile()
-                ? rack->prepareNamModel(
-                      slot, resolved, completed->load)
-                : juce::Result::fail(
-                      "The NAM model library contains no valid .nam files.");
+            auto prepared = false;
+            auto preparationResult = juce::Result::fail(
+                "The NAM model library contains no valid .nam files.");
+            if (!resolved.existsAsFile() && root.isDirectory())
+            {
+                juce::Array<juce::File> discovered;
+                root.findChildFiles(
+                    discovered, juce::File::findFiles, true);
+                std::vector<juce::File> models;
+                models.reserve(static_cast<size_t>(discovered.size()));
+                for (const auto& candidate : discovered)
+                    if (candidate.hasFileExtension("nam"))
+                        models.push_back(candidate);
+                std::sort(
+                    models.begin(), models.end(),
+                    [&root](const auto& left, const auto& right)
+                    {
+                        return left.getRelativePathFrom(root)
+                                   .compareIgnoreCase(
+                                       right.getRelativePathFrom(root))
+                            < 0;
+                    });
+                const auto current =
+                    std::find(models.begin(), models.end(), currentFile);
+                auto target = direction > 0
+                    ? 0 : static_cast<int>(models.size()) - 1;
+                if (current != models.end())
+                {
+                    const auto currentIndex = static_cast<int>(
+                        std::distance(models.begin(), current));
+                    const auto count = static_cast<int>(models.size());
+                    target = (currentIndex
+                              + (direction > 0 ? 1 : count - 1))
+                        % count;
+                }
+                const auto count = static_cast<int>(models.size());
+                for (int attempt = 0; attempt < count; ++attempt)
+                {
+                    const auto candidateIndex =
+                        (target
+                         + (direction > 0 ? attempt : count - attempt))
+                        % count;
+                    const auto& candidate =
+                        models[static_cast<size_t>(candidateIndex)];
+                    preparationResult = rack->prepareNamModel(
+                        slot, candidate, completed->load);
+                    if (preparationResult.wasOk())
+                    {
+                        resolved = candidate;
+                        prepared = true;
+                        break;
+                    }
+                }
+            }
+            if (!prepared && resolved.existsAsFile())
+            {
+                preparationResult = rack->prepareNamModel(
+                    slot, resolved, completed->load);
+                prepared = preparationResult.wasOk();
+            }
+            completed->result = prepared
+                ? juce::Result::ok() : preparationResult;
             {
                 const juce::ScopedLock lock(pendingNamModelLoadLock);
                 pendingNamModelLoad = std::move(completed);
