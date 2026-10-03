@@ -29,7 +29,8 @@ serial slots and twelve fixed generic controls per slot.
 - Processing after `prepare()` must be allocation-free, lock-free, finite, and
   safe for mono or stereo buffers.
 - Do not launch REAPER during automated validation. Install the validated VST3
-  and ask for a full REAPER restart when it was already running.
+  only while REAPER is closed, back up the existing live bundle first, and ask
+  for a full REAPER restart after installation.
 
 ## Architecture
 
@@ -45,18 +46,106 @@ serial slots and twelve fixed generic controls per slot.
   latency alignment, visualization capture, and tail aggregation.
 - `src/SnapshotState.*`: independent fixed rack states for eight prepared
   snapshots, including external asset references and schema serialization.
-- `src/PluginProcessor.*`: host buses, state, presets, latency reporting, and
-  rack topology operations plus sample-accurate snapshot recall and spill.
+- `src/PluginProcessor.*`: host buses, state, presets, latency reporting, rack
+  topology operations, sample-accurate snapshot recall and spill, persistent
+  NAM/IR library indexes, and background external-asset preparation/commit.
 - `src/PluginEditor.*`: header identity, snapshots, sticky chain navigator,
-  vertically scrolling card rack, and semantic module controls.
+  compact-card rack, semantic module controls, and the active NAM/IR search
+  popovers.
 - `src/ui/*`: reusable effect graph shell, module view interface, and factory.
 - `src/ui/modules/*`: module-specific graph rendering and interactions.
+- `src/ReaperEmbeddedUI.*`: REAPER TCP/MCP embedded-chain rendering, scaling,
+  interaction forwarding, and supported VST3 host extensions.
 - `tests/DspModuleTests.cpp`: focused DSP module tests.
-- `tests/TestMain.cpp`: rack, host-contract, state, and integration tests.
+- `tests/ProcessorTests.cpp`: processor topology, snapshots, compact cards,
+  REAPER embedding, IR libraries, undo, PDC, and host-contract tests.
+- `tests/NeuralAmpModelerTests.cpp`: NAM format/DSP, state, library search,
+  cache, and asynchronous-load tests.
+- `tests/TestMain.cpp`: rack, state, registry, and integration tests.
 
 Every new processor must be wired through Parameters, `src/modules`, EffectRack,
 registry presentation metadata, the UI module-view factory, defaults,
 parsing/formatting, and tests.
+
+The compact `MegaDSPAudioProcessorEditor::ModuleCard` workflow is the
+user-facing source of truth. Do not add a primary workflow only to a legacy
+full-panel module view. NAM and every user-IR-capable module must expose asset
+search from its compact card; Wormhole Convolution must preserve independent
+lane A and B search/load targets.
+
+## External asset libraries
+
+- NAM and IR roots are global user preferences inherited by new instances while
+  project state retains the relevant external asset references.
+- Validated indexes persist under the megaDSP application-data directory as
+  `nam-model-library-cache.xml` and
+  `impulse-response-library-cache.xml`. Tests use their isolated temporary
+  application-data directory, never the production cache.
+- A cold search must return a lightweight filename/path index immediately and
+  schedule metadata validation on `libraryIndexPool`. Never parse every NAM
+  file or open every audio file on the message thread merely to display search
+  results. Publish `libraryGeneration` when quick or validated results change
+  so an open search popover refreshes.
+- Precompute lowercase searchable text when building/restoring an index.
+  Per-keystroke search must not repeatedly concatenate and lowercase metadata
+  for thousands of entries.
+- Validated NAM search includes relative path, filename, display/title metadata,
+  architecture, capture description, gear type, A1/A2, cab/amp/rig/pedal
+  classification, and sample rate. Validated IR search includes relative path,
+  filename, mono/stereo, duration, and sample rate.
+- Treat persisted metadata as a fast snapshot. Explicit root selection or
+  **REBUILD** validates the library and rewrites the cache; missing target files
+  still fail explicitly.
+- Search result activation must use `loadNamModelAsync()` or
+  `loadImpulseResponseAsync()`. File decoding, JSON parsing, graph/engine
+  construction, resampler setup, and prewarming stay off both the message and
+  audio threads.
+- Keep the current NAM/IR processing until the replacement is completely
+  prepared. Commit on the processor timer under the existing short processing
+  suspension, then publish state and invoke the completion callback.
+- NAM channel two must construct independent DSP state from the first channel's
+  already parsed model data; do not reread/reparse the `.nam` file. Destroy
+  displaced NAM graphs on `namModelDisposalPool`, not on the message thread.
+- `topologyMutationInProgress` serializes asset and topology changes. Async
+  completion must always release it, surface failures, refresh latency/state as
+  needed, and create undo history around the successful commit rather than the
+  background preparation.
+- Search popovers use a real `TextEditor`, visible match/indexing status,
+  Up/Down selection, Return or double-click activation, root selection, and
+  explicit rebuild. Preserve compact-card fit at small, medium, and large
+  widget sizes.
+
+## REAPER host integration
+
+- REAPER embedding uses `IReaperUIEmbedInterface` through JUCE's VST3 extension
+  hook. Keep horizontal TCP and vertical MCP layouts adaptive and capable of
+  representing all eight slots without replacing the normal plug-in editor.
+- Honor REAPER's 24.8 advisory UI scaling. On macOS Retina displays, embedded
+  bitmap coordinates also require the native two-times backing scale; scale
+  typography, padding, controls, meters, and hit targets together.
+- Embedded dynamics meters show gain reduction persistently from right to left
+  in amber. Ordinary activity meters remain left to right.
+- Module-title clicks and tile double-clicks must pass through to REAPER so the
+  normal plug-in editor can be foregrounded. Preserve direct bypass, drag, and
+  wheel interactions elsewhere in the tile.
+- Implement native compressor telemetry through the PreSonus
+  `IGainReductionInfo` VST3 extension used by REAPER. Sum measured reduction
+  from active dynamics stages and report zero for bypassed stages.
+- Keep adapted third-party SDK declarations and their licenses together in the
+  source tree; do not invent or copy undocumented host ABI definitions.
+
+## Latency and undo
+
+- Sum aligned module latency and publish it with `setLatencySamples()`.
+  Latency-bearing bypass must use delayed dry routing so bypass does not break
+  host alignment.
+- Immediate-dry creative modules intentionally treat analysis, pitch-shifter,
+  or convolution delay as wet pre-delay and contribute zero host PDC. Do not
+  change this policy merely because internal wet processing has latency.
+- Undo/redo is bounded and per instance. It covers parameters, topology,
+  snapshots, themes/names, presets, NAM/IR assets, convolution settings, and
+  other non-parameter state. Preserve platform-standard shortcuts and make
+  asynchronous asset replacement one coherent undo transaction at commit.
 
 ## DSP expectations
 
@@ -291,17 +380,34 @@ ctest --test-dir build --output-on-failure
 On non-Apple platforms, omit `megaDSP_AU`. Use the existing build and test
 tooling; do not introduce a new framework for a local change.
 
-After every code change, rebuild `megaDSP_VST3` and reinstall the freshly built
-bundle in the platform's local VST3 plugin directory. Never leave the installed
-development copy stale. Do not launch REAPER; if it was already running, ask
-for a full restart after installation.
+After every code change, rebuild `megaDSP_VST3`. Install the freshly built
+bundle only when REAPER is closed; never overwrite an in-use plug-in bundle or
+launch REAPER during automated validation. Before copying, create a timestamped
+backup of the live VST3. Never leave a purportedly installed development copy
+stale or different from the bundle that was validated.
 
-Before installing a release:
+Before installing a release or user-requested development build:
 
-1. Run pluginval at strictness 10 with GUI tests skipped.
-2. Run pluginval at strictness 5 with editor tests enabled.
-3. Verify bundle signatures and version metadata.
-4. Install the exact validated VST3 bundle.
+1. Commit the intended source, then reconfigure so the embedded seven-character
+   Git hash identifies the exact commit being installed.
+2. Build `megaDSPTests` and `megaDSP_VST3`, then run the complete test suite.
+3. Scan the JUCE test-runner output for `FAILED` and `Test N failed`; its process
+   can exit zero despite a reported test failure.
+4. Remove the test-generated repository-root `megadsp-rack-ir.wav`.
+5. Verify deep bundle signing, version metadata, and the embedded commit hash.
+6. Run pluginval at strictness 10 with GUI tests skipped.
+7. Run pluginval at strictness 5 with editor tests enabled.
+8. Confirm REAPER is closed, back up the live VST3 with a timestamp, and install
+   the exact validated bundle.
+9. Verify the installed bundle is byte-identical to the validated bundle, its
+   deep signature is valid, and its binary contains the expected commit hash.
+
+`Unsafe rack output is rejected before host handoff` is a known randomized
+test flake: it can occasionally report arbitrary finite output and then pass
+unchanged on rerun. Treat every occurrence as a failure first, inspect the
+reported value and neighboring tests, and rerun to distinguish the known flake
+from a regression. Do not hide it, weaken the assertion, or disregard repeated
+failures.
 
 Test stereo DSP with duplicated mono, asymmetric stereo, hard-panned input,
 mono fold-down, one-channel fallback, automation steps, and supported sample
