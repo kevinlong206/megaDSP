@@ -60,6 +60,7 @@ public:
     void refreshCardsForTesting();
     bool cardAcceptsAssetDropForTesting(
         int slot, const juce::String& path) const;
+    bool cardHasAssetSearchForTesting(int slot) const;
     int cardCountForTesting() const { return static_cast<int>(cards.size()); }
     int cardHeightForTesting(int slot) const;
     int cardWidthForTesting(int slot) const;

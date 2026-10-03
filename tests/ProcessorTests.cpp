@@ -646,6 +646,9 @@ public:
                 1, "amp.NAM"));
             expect(!editor->cardAcceptsAssetDropForTesting(
                 1, "room.flac"));
+            expect(editor->cardHasAssetSearchForTesting(0));
+            expect(editor->cardHasAssetSearchForTesting(1));
+            expect(editor->cardChildrenFitForTesting());
 
             rackProcessor->storeSnapshot(1, false);
             rackProcessor->removeSlot(1);

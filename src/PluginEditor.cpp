@@ -226,6 +226,318 @@ void configureSlider(juce::Slider& slider)
                      juce::Colours::transparentBlack);
 }
 
+struct AssetSearchRow
+{
+    juce::File file;
+    juce::String title;
+    juce::String detail;
+};
+
+class AssetLibraryBrowser final : public juce::Component,
+                                  private juce::ListBoxModel,
+                                  private juce::KeyListener,
+                                  private juce::Timer
+{
+public:
+    AssetLibraryBrowser(
+        juce::String headingText,
+        juce::String placeholder,
+        std::function<std::vector<AssetSearchRow>(const juce::String&)>
+            searchFunction,
+        std::function<void(const juce::File&)> chooseFunction,
+        std::function<juce::File()> rootFunction,
+        std::function<void()> chooseRootFunction,
+        std::function<void()> rebuildFunction,
+        std::function<bool()> indexingFunction,
+        std::function<std::uint64_t()> generationFunction)
+        : searchRows(std::move(searchFunction)),
+          choose(std::move(chooseFunction)),
+          currentRoot(std::move(rootFunction)),
+          chooseRoot(std::move(chooseRootFunction)),
+          rebuild(std::move(rebuildFunction)),
+          isIndexing(std::move(indexingFunction)),
+          generation(std::move(generationFunction))
+    {
+        setSize(540, 420);
+        setWantsKeyboardFocus(true);
+        addKeyListener(this);
+
+        heading.setText(std::move(headingText), juce::dontSendNotification);
+        heading.setFont(juce::FontOptions(17.0f, juce::Font::bold));
+        heading.setColour(juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible(heading);
+
+        root.setColour(
+            juce::Label::textColourId,
+            juce::Colours::white.withAlpha(0.62f));
+        root.setFont(juce::FontOptions(10.0f));
+        root.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(root);
+
+        rootButton.setButtonText("ROOT...");
+        rootButton.onClick = [this]
+        {
+            if (chooseRoot)
+                chooseRoot();
+        };
+        addAndMakeVisible(rootButton);
+        rebuildButton.setButtonText("REBUILD");
+        rebuildButton.onClick = [this]
+        {
+            if (rebuild)
+                rebuild();
+            refresh();
+        };
+        addAndMakeVisible(rebuildButton);
+
+        search.setTextToShowWhenEmpty(
+            std::move(placeholder), juce::Colour(0xff7f8b99));
+        search.setMultiLine(false);
+        search.setReturnKeyStartsNewLine(false);
+        search.setColour(
+            juce::TextEditor::backgroundColourId,
+            juce::Colour(0xff111820));
+        search.setColour(
+            juce::TextEditor::textColourId, juce::Colours::white);
+        search.setColour(
+            juce::TextEditor::outlineColourId,
+            juce::Colour(0xff3a4553));
+        search.setColour(
+            juce::TextEditor::focusedOutlineColourId, accent);
+        search.addKeyListener(this);
+        search.onTextChange = [this] { refresh(); };
+        search.onReturnKey = [this] { activateSelection(); };
+        search.onEscapeKey = [this] { dismiss(); };
+        addAndMakeVisible(search);
+
+        list.setModel(this);
+        list.setRowHeight(48);
+        list.setColour(
+            juce::ListBox::backgroundColourId,
+            juce::Colour(0xff111820));
+        list.setColour(
+            juce::ListBox::outlineColourId,
+            juce::Colour(0xff3a4553));
+        list.addKeyListener(this);
+        addAndMakeVisible(list);
+
+        status.setColour(
+            juce::Label::textColourId,
+            juce::Colours::white.withAlpha(0.58f));
+        status.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        status.setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(status);
+
+        observedGeneration = generation ? generation() : 0;
+        refresh();
+        startTimerHz(10);
+    }
+
+    ~AssetLibraryBrowser() override
+    {
+        list.setModel(nullptr);
+    }
+
+    void focusSearch()
+    {
+        search.grabKeyboardFocus();
+    }
+
+    void paint(juce::Graphics& graphics) override
+    {
+        graphics.fillAll(juce::Colour(0xff17202a));
+        graphics.setColour(juce::Colour(0xff3a4553));
+        graphics.drawRoundedRectangle(
+            getLocalBounds().toFloat().reduced(0.5f), 7.0f, 1.0f);
+    }
+
+    void resized() override
+    {
+        auto bounds = getLocalBounds().reduced(10);
+        heading.setBounds(bounds.removeFromTop(28));
+        auto rootRow = bounds.removeFromTop(28);
+        rebuildButton.setBounds(rootRow.removeFromRight(76).reduced(1));
+        rootButton.setBounds(rootRow.removeFromRight(64).reduced(1));
+        root.setBounds(rootRow.reduced(4, 1));
+        bounds.removeFromTop(5);
+        search.setBounds(bounds.removeFromTop(34));
+        bounds.removeFromTop(6);
+        status.setBounds(bounds.removeFromBottom(22));
+        list.setBounds(bounds);
+    }
+
+private:
+    int getNumRows() override
+    {
+        return static_cast<int>(rows.size());
+    }
+
+    void paintListBoxItem(
+        int row, juce::Graphics& graphics, int width, int height,
+        bool selected) override
+    {
+        if (!juce::isPositiveAndBelow(
+                row, static_cast<int>(rows.size())))
+            return;
+        const auto& result = rows[static_cast<size_t>(row)];
+        const auto bounds =
+            juce::Rectangle<int>(0, 0, width, height).reduced(2, 1);
+        graphics.setColour(
+            selected ? accent.withAlpha(0.20f)
+                     : juce::Colour(0xff17202a));
+        graphics.fillRoundedRectangle(bounds.toFloat(), 4.0f);
+        graphics.setColour(
+            selected ? accent : juce::Colours::white);
+        graphics.setFont(juce::FontOptions(12.5f, juce::Font::bold));
+        graphics.drawFittedText(
+            result.title, bounds.withTrimmedBottom(height / 2),
+            juce::Justification::centredLeft, 1, 0.75f);
+        graphics.setColour(juce::Colours::white.withAlpha(0.56f));
+        graphics.setFont(juce::FontOptions(9.5f));
+        graphics.drawFittedText(
+            result.detail, bounds.withTrimmedTop(height / 2),
+            juce::Justification::centredLeft, 1, 0.7f);
+    }
+
+    void listBoxItemClicked(
+        int row, const juce::MouseEvent&) override
+    {
+        list.selectRow(row);
+    }
+
+    void listBoxItemDoubleClicked(
+        int row, const juce::MouseEvent&) override
+    {
+        list.selectRow(row);
+        activateSelection();
+    }
+
+    bool keyPressed(
+        const juce::KeyPress& key, juce::Component*) override
+    {
+        if (key.getKeyCode() == juce::KeyPress::upKey)
+        {
+            list.selectRow(rows.empty()
+                ? -1 : juce::jmax(0, list.getSelectedRow() - 1));
+            list.scrollToEnsureRowIsOnscreen(list.getSelectedRow());
+            return true;
+        }
+        if (key.getKeyCode() == juce::KeyPress::downKey)
+        {
+            list.selectRow(juce::jmin(
+                static_cast<int>(rows.size()) - 1,
+                rows.empty() ? -1 : list.getSelectedRow() + 1));
+            list.scrollToEnsureRowIsOnscreen(list.getSelectedRow());
+            return true;
+        }
+        if (key.getKeyCode() == juce::KeyPress::returnKey)
+        {
+            activateSelection();
+            return true;
+        }
+        if (key.getKeyCode() == juce::KeyPress::escapeKey)
+        {
+            dismiss();
+            return true;
+        }
+        return false;
+    }
+
+    void timerCallback() override
+    {
+        const auto nextGeneration = generation ? generation() : 0;
+        if (nextGeneration != observedGeneration)
+        {
+            observedGeneration = nextGeneration;
+            refresh();
+        }
+        updateRootAndStatus();
+    }
+
+    void refresh()
+    {
+        const auto selectedFile =
+            juce::isPositiveAndBelow(
+                list.getSelectedRow(), static_cast<int>(rows.size()))
+            ? rows[static_cast<size_t>(list.getSelectedRow())].file
+            : juce::File();
+        rows = searchRows ? searchRows(search.getText())
+                          : std::vector<AssetSearchRow> {};
+        list.updateContent();
+        auto selection = rows.empty() ? -1 : 0;
+        if (selectedFile.existsAsFile())
+        {
+            const auto found = std::find_if(
+                rows.begin(), rows.end(),
+                [&selectedFile](const auto& row)
+                {
+                    return row.file == selectedFile;
+                });
+            if (found != rows.end())
+                selection =
+                    static_cast<int>(std::distance(rows.begin(), found));
+        }
+        list.selectRow(selection);
+        updateRootAndStatus();
+        list.repaint();
+    }
+
+    void updateRootAndStatus()
+    {
+        const auto directory =
+            currentRoot ? currentRoot() : juce::File();
+        root.setText(
+            directory.isDirectory()
+                ? directory.getFullPathName()
+                : "No library root selected",
+            juce::dontSendNotification);
+        status.setText(
+            isIndexing && isIndexing()
+                ? juce::String(rows.size())
+                    + " matches - enriching metadata..."
+                : juce::String(rows.size())
+                    + " matches - double-click or press Return",
+            juce::dontSendNotification);
+    }
+
+    void activateSelection()
+    {
+        const auto selected = list.getSelectedRow();
+        if (!juce::isPositiveAndBelow(
+                selected, static_cast<int>(rows.size())))
+            return;
+        const auto file = rows[static_cast<size_t>(selected)].file;
+        if (choose)
+            choose(file);
+        dismiss();
+    }
+
+    void dismiss()
+    {
+        if (auto* callout =
+                findParentComponentOfClass<juce::CallOutBox>())
+            callout->dismiss();
+    }
+
+    std::function<std::vector<AssetSearchRow>(const juce::String&)>
+        searchRows;
+    std::function<void(const juce::File&)> choose;
+    std::function<juce::File()> currentRoot;
+    std::function<void()> chooseRoot;
+    std::function<void()> rebuild;
+    std::function<bool()> isIndexing;
+    std::function<std::uint64_t()> generation;
+    juce::Label heading;
+    juce::Label root;
+    juce::TextButton rootButton;
+    juce::TextButton rebuildButton;
+    juce::TextEditor search;
+    juce::ListBox list;
+    juce::Label status;
+    std::vector<AssetSearchRow> rows;
+    std::uint64_t observedGeneration = 0;
+};
+
 class MeteredSlider final : public juce::Slider,
                             private juce::Timer
 {
@@ -1167,19 +1479,15 @@ public:
                 loadAdjacentImpulseResponse(1);
             };
             addAndMakeVisible(nextImpulse);
-            if (isConvolution)
+            impulseLibrary.setButtonText(
+                isWormhole ? "FIND A" : "FIND");
+            impulseLibrary.setTooltip(
+                "Search the indexed impulse-response library.");
+            impulseLibrary.onClick = [this]
             {
-                impulseLibrary.setButtonText("IR Root...");
-                impulseLibrary.setTooltip(
-                    "Choose the persistent root directory or rebuild its "
-                    "validated recursive index. Search is available directly "
-                    "in the module.");
-                impulseLibrary.onClick = [this]
-                {
-                    showImpulseLibraryMenu();
-                };
-                addAndMakeVisible(impulseLibrary);
-            }
+                showAssetLibrarySearch(0, impulseLibrary);
+            };
+            addAndMakeVisible(impulseLibrary);
             clearImpulse.setButtonText("Clear IR");
             clearImpulse.setTooltip(
                 "Unload the current impulse response.");
@@ -1199,6 +1507,14 @@ public:
                     graph->repaint();
                 };
                 addAndMakeVisible(clearImpulse2);
+                impulseLibrary2.setButtonText("FIND B");
+                impulseLibrary2.setTooltip(
+                    "Search the indexed impulse-response library for lane B.");
+                impulseLibrary2.onClick = [this]
+                {
+                    showAssetLibrarySearch(1, impulseLibrary2);
+                };
+                addAndMakeVisible(impulseLibrary2);
             }
         }
 
@@ -1244,6 +1560,14 @@ public:
                 "Load the next model in the validated NAM library.");
             nextNam.onClick = [this] { loadAdjacentNamModel(1); };
             addAndMakeVisible(nextNam);
+            namLibrary.setButtonText("FIND");
+            namLibrary.setTooltip(
+                "Search the indexed NAM model library.");
+            namLibrary.onClick = [this]
+            {
+                showAssetLibrarySearch(0, namLibrary);
+            };
+            addAndMakeVisible(namLibrary);
             clearNam.setButtonText("Clear NAM");
             clearNam.setTooltip("Unload the current neural amp model.");
             clearNam.onClick = [this]
@@ -1421,6 +1745,8 @@ public:
                     assetRow.removeFromRight(38).reduced(1));
                 previousNam.setBounds(
                     assetRow.removeFromRight(38).reduced(1));
+                namLibrary.setBounds(
+                    assetRow.removeFromRight(44).reduced(1));
                 loadNam.setBounds(
                     assetRow.removeFromRight(58).reduced(1));
             }
@@ -1434,13 +1760,16 @@ public:
                     assetRow.removeFromRight(38).reduced(1));
                 loadImpulse2.setBounds(
                     assetRow.removeFromRight(38).reduced(1));
+                impulseLibrary2.setBounds(
+                    assetRow.removeFromRight(48).reduced(1));
                 clearImpulse.setBounds(
                     assetRow.removeFromRight(38).reduced(1));
                 loadImpulse.setBounds(
                     assetRow.removeFromRight(38).reduced(1));
+                impulseLibrary.setBounds(
+                    assetRow.removeFromRight(48).reduced(1));
                 previousImpulse.setBounds({});
                 nextImpulse.setBounds({});
-                impulseLibrary.setBounds({});
             }
             else
             {
@@ -1454,14 +1783,8 @@ public:
                     assetRow.removeFromRight(38).reduced(1));
                 previousImpulse.setBounds(
                     assetRow.removeFromRight(38).reduced(1));
-                if (isConvolution)
-                {
-                    impulseLibrary.setButtonText("LIB");
-                    impulseLibrary.setBounds(
-                        assetRow.removeFromRight(40).reduced(1));
-                }
-                else
-                    impulseLibrary.setBounds({});
+                impulseLibrary.setBounds(
+                    assetRow.removeFromRight(44).reduced(1));
                 loadImpulse.setBounds(
                     assetRow.removeFromRight(58).reduced(1));
             }
@@ -1830,6 +2153,19 @@ public:
     {
         return acceptsAssetFile(juce::File(path));
     }
+    bool hasAssetSearchForTesting() const
+    {
+        if (supportsNamModel)
+            return namLibrary.isVisible()
+                && !namLibrary.getBounds().isEmpty();
+        if (!supportsImpulseResponse)
+            return false;
+        return impulseLibrary.isVisible()
+            && !impulseLibrary.getBounds().isEmpty()
+            && (!isWormhole
+                || (impulseLibrary2.isVisible()
+                    && !impulseLibrary2.getBounds().isEmpty()));
+    }
 #endif
 
     bool isInterestedInFileDrag(
@@ -2005,14 +2341,33 @@ private:
             }
             return;
         }
-        const auto result =
-            processor.loadImpulseResponse(slot, impulseLane, file);
+        if (impulseResponseLoadPending)
+            return;
+        impulseResponseLoadPending = true;
+        const juce::Component::SafePointer<ModuleCard> safeThis(this);
+        const auto result = processor.loadImpulseResponseAsync(
+            slot, impulseLane, file,
+            [safeThis](const juce::Result& completed)
+            {
+                if (safeThis == nullptr)
+                    return;
+                safeThis->impulseResponseLoadPending = false;
+                if (completed.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not load impulse response",
+                        completed.getErrorMessage());
+                safeThis->syncAssetName();
+                safeThis->graph->repaint();
+            });
         if (result.failed())
+        {
+            impulseResponseLoadPending = false;
             juce::AlertWindow::showMessageBoxAsync(
                 juce::MessageBoxIconType::WarningIcon,
                 "Could not load impulse response",
                 result.getErrorMessage());
-        graph->repaint();
+        }
     }
 
     void loadAdjacentImpulseResponse(int direction)
@@ -2065,42 +2420,165 @@ private:
         }
     }
 
-    void showImpulseLibraryMenu()
+    void showAssetLibrarySearch(
+        int impulseLane, juce::Component& target)
     {
-        juce::PopupMenu menu;
-        const auto root =
-            processor.impulseResponseRootDirectory();
-        menu.addSectionHeader(
-            "IR LIBRARY - "
-            + juce::String(processor.impulseResponseLibrarySize())
-            + " FILES");
-        menu.addItem(1, "Choose Root Directory...");
-        menu.addItem(3, "Rebuild Index");
-        if (root.isDirectory())
-        {
-            menu.addSeparator();
-            menu.addSectionHeader(
-                "ROOT: " + root.getFileName().substring(0, 36));
-        }
         juce::Component::SafePointer<ModuleCard> safeThis(this);
-        menu.showMenuAsync(
-            juce::PopupMenu::Options{}.withTargetComponent(&impulseLibrary),
-            [safeThis](int result)
+        auto searchFunction =
+            [safeThis](const juce::String& query)
+            {
+                std::vector<AssetSearchRow> rows;
+                if (safeThis == nullptr)
+                    return rows;
+                if (safeThis->supportsNamModel)
+                {
+                    const auto matches =
+                        safeThis->processor.searchNamModels(query, 500);
+                    rows.reserve(matches.size());
+                    for (const auto& entry : matches)
+                    {
+                        juce::StringArray details;
+                        details.add(entry.relativePath);
+                        if (entry.architecture.isNotEmpty())
+                            details.add(entry.architecture);
+                        if (entry.captureDescription.isNotEmpty())
+                            details.add(entry.captureDescription);
+                        rows.push_back({
+                            entry.file,
+                            entry.displayName.isNotEmpty()
+                                ? entry.displayName
+                                : entry.file.getFileNameWithoutExtension(),
+                            details.joinIntoString("  |  ")
+                        });
+                    }
+                    return rows;
+                }
+                const auto matches =
+                    safeThis->processor.searchImpulseResponses(query, 500);
+                rows.reserve(matches.size());
+                for (const auto& entry : matches)
+                {
+                    auto metadata = entry.relativePath;
+                    if (entry.channelCount > 0)
+                        metadata += "  |  "
+                            + juce::String(
+                                entry.channelCount == 1
+                                    ? "Mono" : "Stereo")
+                            + "  |  "
+                            + juce::String(entry.sampleRate / 1000.0, 1)
+                            + " kHz  |  "
+                            + juce::String(entry.durationSeconds, 2)
+                            + " s";
+                    rows.push_back({
+                        entry.file,
+                        entry.file.getFileNameWithoutExtension(),
+                        metadata
+                    });
+                }
+                return rows;
+            };
+        auto chooseFunction =
+            [safeThis, impulseLane](const juce::File& file)
+            {
+                if (safeThis != nullptr)
+                    safeThis->loadAssetFile(file, impulseLane);
+            };
+        auto rootFunction =
+            [safeThis]
+            {
+                if (safeThis == nullptr)
+                    return juce::File();
+                return safeThis->supportsNamModel
+                    ? safeThis->processor.namModelRootDirectory()
+                    : safeThis->processor.impulseResponseRootDirectory();
+            };
+        auto chooseRootFunction =
+            [safeThis]
             {
                 if (safeThis == nullptr)
                     return;
-                if (result == 1)
+                if (safeThis->supportsNamModel)
+                    safeThis->chooseNamModelRoot();
+                else
                     safeThis->chooseImpulseResponseRoot();
-                else if (result == 3)
-                {
-                    const auto rebuilt =
-                        safeThis->processor.rebuildImpulseResponseLibrary();
-                    if (rebuilt.failed())
-                        juce::AlertWindow::showMessageBoxAsync(
-                            juce::MessageBoxIconType::WarningIcon,
-                            "Could not index IR library",
-                            rebuilt.getErrorMessage());
-                }
+            };
+        auto rebuildFunction =
+            [safeThis]
+            {
+                if (safeThis == nullptr)
+                    return;
+                const auto result = safeThis->supportsNamModel
+                    ? safeThis->processor.rebuildNamModelLibrary()
+                    : safeThis->processor.rebuildImpulseResponseLibrary();
+                if (result.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not rebuild asset library",
+                        result.getErrorMessage());
+            };
+        auto indexingFunction =
+            [safeThis]
+            {
+                if (safeThis == nullptr)
+                    return false;
+                return safeThis->supportsNamModel
+                    ? safeThis->processor.isNamModelLibraryIndexing()
+                    : safeThis->processor
+                          .isImpulseResponseLibraryIndexing();
+            };
+        auto generationFunction =
+            [safeThis]
+            {
+                return safeThis != nullptr
+                    ? safeThis->processor.assetLibraryGeneration()
+                    : std::uint64_t { 0 };
+            };
+        auto browser = std::make_unique<AssetLibraryBrowser>(
+            supportsNamModel ? "Search NAM Models"
+                             : (isWormhole && impulseLane == 1
+                                    ? "Search IR Library - Lane B"
+                                    : "Search Impulse Responses"),
+            supportsNamModel
+                ? "Search model, amp, tone, author..."
+                : "Search filename or path...",
+            std::move(searchFunction), std::move(chooseFunction),
+            std::move(rootFunction), std::move(chooseRootFunction),
+            std::move(rebuildFunction), std::move(indexingFunction),
+            std::move(generationFunction));
+        auto* browserPointer = browser.get();
+        auto& callout = juce::CallOutBox::launchAsynchronously(
+            std::move(browser),
+            editor.getLocalArea(&target, target.getLocalBounds()),
+            &editor);
+        callout.setDismissalMouseClicksAreAlwaysConsumed(true);
+        browserPointer->focusSearch();
+    }
+
+    void chooseNamModelRoot()
+    {
+        namRootChooser = std::make_unique<juce::FileChooser>(
+            "Choose NAM model root directory",
+            processor.namModelRootDirectory());
+        const auto flags =
+            juce::FileBrowserComponent::openMode
+            | juce::FileBrowserComponent::canSelectDirectories;
+        juce::Component::SafePointer<ModuleCard> safeThis(this);
+        namRootChooser->launchAsync(
+            flags, [safeThis](const juce::FileChooser& chooser)
+            {
+                if (safeThis == nullptr)
+                    return;
+                const auto directory = chooser.getResult();
+                if (!directory.isDirectory())
+                    return;
+                const auto result =
+                    safeThis->processor.setNamModelRootDirectory(
+                        directory);
+                if (result.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not index NAM library",
+                        result.getErrorMessage());
             });
     }
 
@@ -2314,6 +2792,7 @@ private:
     bool isWormhole = false;
     bool supportsNamModel = false;
     bool namModelLoadPending = false;
+    bool impulseResponseLoadPending = false;
     juce::Label name;
     WidgetActionButton bypass { WidgetActionButton::Icon::power };
     juce::Label assetName;
@@ -2323,6 +2802,7 @@ private:
     juce::TextButton previousImpulse;
     juce::TextButton nextImpulse;
     juce::TextButton impulseLibrary;
+    juce::TextButton impulseLibrary2;
     juce::TextButton clearImpulse;
     std::unique_ptr<juce::FileChooser> impulseChooser;
     std::unique_ptr<juce::FileChooser> impulseRootChooser;
@@ -2332,8 +2812,10 @@ private:
     juce::TextButton loadNam;
     juce::TextButton previousNam;
     juce::TextButton nextNam;
+    juce::TextButton namLibrary;
     juce::TextButton clearNam;
     std::unique_ptr<juce::FileChooser> namChooser;
+    std::unique_ptr<juce::FileChooser> namRootChooser;
     std::unique_ptr<megadsp::ui::EffectGraph> graph;
     ControlsOverlay controlsOverlay;
     std::array<MeteredSlider, megadsp::controlsPerSlot> sliders;
@@ -3570,6 +4052,15 @@ bool MegaDSPAudioProcessorEditor::cardAcceptsAssetDropForTesting(
     return juce::isPositiveAndBelow(slot, static_cast<int>(cards.size()))
         && cards[static_cast<size_t>(slot)]
                ->acceptsAssetDropForTesting(path);
+}
+
+bool MegaDSPAudioProcessorEditor::cardHasAssetSearchForTesting(
+    int slot) const
+{
+    return juce::isPositiveAndBelow(
+            slot, static_cast<int>(cards.size()))
+        && cards[static_cast<size_t>(slot)]
+            ->hasAssetSearchForTesting();
 }
 #endif
 
