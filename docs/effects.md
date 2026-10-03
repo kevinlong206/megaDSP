@@ -875,17 +875,18 @@ and A2 Nano (3-channel) fast-path models.
 
 The widget keeps model loading and clearing beside the current model name. The
 adjacent **<** and **>** buttons step through the validated recursive library
-and wrap at either end. Its live graph shows the loaded model's output
-spectrum and decays naturally to silence when audio callbacks stop instead of
-freezing on the final frame. The recursive model library uses one root
-directory, and megaDSP persists it in both project state and user settings so
-new instances inherit it across DAW restarts. The catalog accepts structurally
-valid supported `.nam` files and ignores malformed or unsupported entries.
-Search covers model names, relative paths, amp/capture metadata, authors, and
-architectures; queries also accept `sr:48000`. The **A1**, **A2**, **CAB**, and
-**AMP** pills filter architecture generation and whether capture metadata says
-the cabinet is included. Results show model, capture, architecture, sample
-rate, and cabinet status and load directly when clicked.
+and wrap at either end. Its compact visualization is a continuously scrollable
+list of the indexed library; clicking a row once schedules that model for
+immediate background preparation and swaps it in when ready. The recursive
+model library uses one root directory, and megaDSP persists it in both project
+state and user settings so new instances inherit it across DAW restarts. The
+catalog accepts structurally valid supported `.nam` files and ignores malformed
+or unsupported entries. **FIND** opens filtered search over model names,
+relative paths, amp/capture metadata, authors, and architectures; queries also
+accept `sr:48000`. The **A1**, **A2**, **CAB**, and **AMP** pills filter
+architecture generation and whether capture metadata says the cabinet is
+included. Results show model, capture, architecture, sample rate, and cabinet
+status and load directly when clicked.
 
 ### Controls
 

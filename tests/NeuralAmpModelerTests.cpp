@@ -2,6 +2,7 @@
 #include "modules/NeuralAmpModeler.h"
 #include "PluginProcessor.h"
 #include "EffectRack.h"
+#include "ui/EffectGraph.h"
 
 #include <NAM/wavenet/a2_fast.h>
 #include <json.hpp>
@@ -852,6 +853,27 @@ public:
             expectEquals(
                 browser.namModelPath(0),
                 ampModel.getFullPathName());
+
+            {
+                MegaDSPAudioProcessor compactBrowser;
+                compactBrowser.prepareToPlay(48000.0, 64);
+                compactBrowser.addModule(
+                    ModuleType::neuralAmpModeler);
+                megadsp::ui::EffectGraph graph(
+                    compactBrowser, 0,
+                    ModuleType::neuralAmpModeler);
+                graph.setBounds(0, 0, 384, 70);
+                expectEquals(
+                    graph.compactNamLibraryModelCountForTesting(), 3);
+                graph.scrollCompactNamLibraryForTesting(1);
+                expectEquals(
+                    graph.compactNamFirstVisibleModelForTesting(), 1);
+                graph.activateCompactNamModelForTesting(0);
+                compactBrowser.finishNamModelLoadForTesting();
+                expect(
+                    compactBrowser.namModelPath(0).isNotEmpty(),
+                    "Clicking a compact NAM library row must load it.");
+            }
 
             const auto testCache =
                 juce::File::getSpecialLocation(

@@ -1,8 +1,6 @@
 #include "EffectGraph.h"
 
 #include "GraphStyle.h"
-#include "ModuleView.h"
-#include "ModuleViewFactory.h"
 #include "../modules/AnalogTape.h"
 #include "../modules/AutoWah.h"
 #include "../modules/ChaosField.h"
@@ -14,220 +12,52 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 
 namespace megadsp::ui
 {
-class EffectGraph::GraphAccessibilityHandler final
-    : public juce::AccessibilityHandler
-{
-public:
-    explicit GraphAccessibilityHandler(EffectGraph& graphToUse)
-        : juce::AccessibilityHandler(
-              graphToUse, roleFor(graphToUse),
-              makeActions(graphToUse),
-              makeInterfaces(graphToUse)),
-          graph(graphToUse)
-    {
-    }
-
-    juce::String getTitle() const override
-    {
-        const auto control = graph.focusedControlLabel();
-        return control.isEmpty()
-            ? graph.getTitle()
-            : graph.getTitle() + " - " + control;
-    }
-
-    juce::String getDescription() const override
-    {
-        return graph.focusedControlReadout();
-    }
-
-    juce::String getHelp() const override
-    {
-        return graph.getHelpText();
-    }
-
-    juce::AccessibleState getCurrentState() const override
-    {
-        auto state = juce::AccessibilityHandler::getCurrentState();
-        if (focusedKind(graph) != ControlKind::toggle)
-            return state;
-        state = state.withCheckable();
-        return graph.moduleView != nullptr && graph.focusedControl >= 0
-                   && graph.moduleView->keyboardAccessibilityValue(
-                          graph.focusedControl) >= 0.5
-            ? state.withChecked() : state;
-    }
-
-private:
-    class ValueInterface final
-        : public juce::AccessibilityValueInterface
-    {
-    public:
-        explicit ValueInterface(EffectGraph& graphToUse)
-            : graph(graphToUse)
-        {
-        }
-
-        bool isReadOnly() const override
-        {
-            return graph.moduleView == nullptr
-                   || graph.focusedControl < 0;
-        }
-
-        double getCurrentValue() const override
-        {
-            if (isReadOnly())
-                return 0.0;
-            return graph.moduleView->keyboardAccessibilityValue(
-                graph.focusedControl);
-        }
-
-        juce::String getCurrentValueAsString() const override
-        {
-            return graph.focusedControlReadout();
-        }
-
-        void setValue(double newValue) override
-        {
-            graph.setFocusedAccessibilityValue(newValue);
-        }
-
-        void setValueAsString(
-            const juce::String& newValue) override
-        {
-            graph.setFocusedAccessibilityValueAsString(newValue);
-        }
-
-        AccessibleValueRange getRange() const override
-        {
-            if (isReadOnly())
-                return { { 0.0, 1.0 }, 1.0 };
-            const auto kind =
-                graph.moduleView->keyboardKind(graph.focusedControl);
-            if (kind == ControlKind::toggle
-                || kind == ControlKind::choice)
-                return {};
-            return {
-                { 0.0,
-                  graph.moduleView->keyboardAccessibilityMaximum(
-                      graph.focusedControl) },
-                graph.moduleView->keyboardAccessibilityInterval(
-                    graph.focusedControl)
-            };
-        }
-
-    private:
-        EffectGraph& graph;
-    };
-
-    static juce::AccessibilityActions makeActions(
-        EffectGraph& graph)
-    {
-        juce::AccessibilityActions actions;
-        actions.addAction(
-            juce::AccessibilityActionType::focus,
-            [&graph] { graph.grabKeyboardFocus(); });
-        const auto kind = focusedKind(graph);
-        if (kind == ControlKind::toggle || kind == ControlKind::choice)
-            actions.addAction(
-                juce::AccessibilityActionType::press,
-                [&graph] { graph.activateFocusedControl(); });
-        if (kind == ControlKind::toggle)
-            actions.addAction(
-                juce::AccessibilityActionType::toggle,
-                [&graph] { graph.activateFocusedControl(); });
-        return actions;
-    }
-
-    static ControlKind focusedKind(const EffectGraph& graph)
-    {
-        return graph.moduleView != nullptr && graph.focusedControl >= 0
-            ? graph.moduleView->keyboardKind(graph.focusedControl)
-            : ControlKind::rotary;
-    }
-
-    static juce::AccessibilityRole roleFor(const EffectGraph& graph)
-    {
-        switch (focusedKind(graph))
-        {
-            case ControlKind::toggle:
-                return juce::AccessibilityRole::toggleButton;
-            case ControlKind::choice:
-                return juce::AccessibilityRole::comboBox;
-            case ControlKind::rotary:
-            case ControlKind::horizontal:
-            case ControlKind::level:
-                return juce::AccessibilityRole::slider;
-        }
-        return juce::AccessibilityRole::slider;
-    }
-
-    static juce::AccessibilityHandler::Interfaces makeInterfaces(
-        EffectGraph& graph)
-    {
-        return juce::AccessibilityHandler::Interfaces {
-            std::make_unique<ValueInterface>(graph)
-        };
-    }
-
-    EffectGraph& graph;
-};
-
 EffectGraph::EffectGraph(
     MegaDSPAudioProcessor& processorToUse, int slotToUse,
-    ModuleType typeToUse, bool compactPresentation)
+    ModuleType typeToUse)
     : processor(processorToUse), slot(slotToUse), type(typeToUse),
       fft(graphFftOrder),
-      window(graphFftSize, juce::dsp::WindowingFunction<float>::hann),
-      compact(compactPresentation)
+      window(graphFftSize, juce::dsp::WindowingFunction<float>::hann)
 {
     setOpaque(true);
-    moduleView = createModuleView(moduleDefinition(type).presentation, *this);
-    jassert(moduleView != nullptr);
-    if (moduleView != nullptr)
+    const auto compactCompressor = type == ModuleType::compressor;
+    const auto compactEqualizer = type == ModuleType::equalizer;
+    const auto compactNam = type == ModuleType::neuralAmpModeler;
+    setWantsKeyboardFocus(
+        compactCompressor || compactEqualizer || compactNam);
+    if (compactCompressor)
     {
-        moduleView->configureAccessibility(*this);
-        const auto compactCompressor =
-            compact && type == ModuleType::compressor;
-        const auto compactEqualizer =
-            compact && type == ModuleType::equalizer;
-        setWantsKeyboardFocus(
-            compactCompressor || compactEqualizer
-            || (!compact && moduleView->usesFullPanel()));
-        if (compactCompressor)
-        {
-            setTitle("Compressor threshold");
-            setDescription(
-                "Drag vertically to set the compression threshold.");
-            setHelpText(
-                "Drag the threshold line vertically. Up and Down adjust it; "
-                "hold Shift for fine adjustment. Home or double-click resets.");
-            setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
-            focusedControl = 0;
-        }
-        if (compactEqualizer)
-        {
-            compactEqualizerBand = 1;
-            setTitle("Equalizer graph");
-            setDescription(
-                "Drag the low, mid, and high nodes to set frequency and gain.");
-            setHelpText(
-                "Drag a node horizontally for frequency and vertically for "
-                "gain. The mouse wheel adjusts Q. Double-click resets a band.");
-        }
-        if (!compact && moduleView->usesFullPanel())
-        {
-            setHelpText(
-                getHelpText()
-                + " Keyboard: Left/Right selects a control; Up/Down edits "
-                  "(hold Shift for fine changes); Space or Return activates "
-                  "choices and switches; Home restores the selected default. "
-                  "Tab/Shift+Tab leaves the graph.");
-            refreshFocusedControl(false);
-        }
+        setTitle("Compressor threshold");
+        setDescription(
+            "Drag vertically to set the compression threshold.");
+        setHelpText(
+            "Drag the threshold line vertically. Up and Down adjust it; "
+            "hold Shift for fine adjustment. Home or double-click resets.");
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    }
+    if (compactEqualizer)
+    {
+        compactEqualizerBand = 1;
+        setTitle("Equalizer graph");
+        setDescription(
+            "Drag the low, mid, and high nodes to set frequency and gain.");
+        setHelpText(
+            "Drag a node horizontally for frequency and vertically for "
+            "gain. The mouse wheel adjusts Q. Double-click resets a band.");
+    }
+    if (compactNam)
+    {
+        setTitle("NAM model library");
+        setDescription(
+            "Scrollable model library. Click a model to load it.");
+        setHelpText(
+            "Scroll to browse the indexed NAM library and click a model "
+            "to prepare and load it.");
     }
     inputSpectrum.fill(-100.0f);
     outputSpectrum.fill(-100.0f);
@@ -235,6 +65,8 @@ EffectGraph::EffectGraph(
     outputLevels.fill(-60.0f);
     visualizationActive =
         processor.getVisualizationData().isSlotActive(slot);
+    if (type == ModuleType::neuralAmpModeler)
+        refreshCompactNamLibrary();
     startTimerHz(30);
 }
 
@@ -248,9 +80,229 @@ void EffectGraph::resized()
     repaint();
 }
 
+int EffectGraph::compactNamVisibleRowCount() const
+{
+    constexpr auto headerHeight = 16.0f;
+    constexpr auto rowHeight = 30.0f;
+    const auto height =
+        getLocalBounds().toFloat().reduced(8.0f, 3.0f).getHeight()
+        - headerHeight;
+    return juce::jmax(1, static_cast<int>(height / rowHeight));
+}
+
+void EffectGraph::refreshCompactNamLibrary()
+{
+    compactNamLibraryGeneration =
+        processor.assetLibraryGeneration();
+    compactNamModels = processor.searchNamModels(
+        {}, std::numeric_limits<int>::max());
+    const auto loadedPath = processor.namModelPath(slot);
+    const auto loaded = std::find_if(
+        compactNamModels.begin(), compactNamModels.end(),
+        [&loadedPath](const auto& entry)
+        {
+            return entry.file.getFullPathName() == loadedPath;
+        });
+    if (loaded != compactNamModels.end())
+    {
+        compactNamSelected = static_cast<int>(
+            std::distance(compactNamModels.begin(), loaded));
+        const auto visibleRows = compactNamVisibleRowCount();
+        if (compactNamSelected < compactNamFirstVisible)
+            compactNamFirstVisible = compactNamSelected;
+        else if (compactNamSelected
+                 >= compactNamFirstVisible + visibleRows)
+            compactNamFirstVisible =
+                compactNamSelected - visibleRows + 1;
+    }
+    else if (compactNamModels.empty())
+        compactNamSelected = -1;
+
+    const auto maximumFirst = juce::jmax(
+        0, static_cast<int>(compactNamModels.size())
+               - compactNamVisibleRowCount());
+    compactNamFirstVisible = juce::jlimit(
+        0, maximumFirst, compactNamFirstVisible);
+}
+
+void EffectGraph::activateCompactNamModel(int index)
+{
+    if (compactNamLoadPending
+        || !juce::isPositiveAndBelow(
+            index, static_cast<int>(compactNamModels.size())))
+        return;
+
+    compactNamSelected = index;
+    compactNamLoadPending = true;
+    const juce::Component::SafePointer<EffectGraph> safeThis(this);
+    const auto result = processor.loadNamModelAsync(
+        slot, compactNamModels[static_cast<size_t>(index)].file,
+        [safeThis](const juce::Result& completed)
+        {
+            if (safeThis == nullptr)
+                return;
+            safeThis->compactNamLoadPending = false;
+            if (completed.failed())
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Could not load NAM model",
+                    completed.getErrorMessage());
+            safeThis->repaint();
+        });
+    if (result.failed())
+    {
+        compactNamLoadPending = false;
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "Could not load NAM model", result.getErrorMessage());
+    }
+    repaint();
+}
+
+void EffectGraph::scrollCompactNamLibrary(int rows)
+{
+    const auto maximumFirst = juce::jmax(
+        0, static_cast<int>(compactNamModels.size())
+               - compactNamVisibleRowCount());
+    compactNamFirstVisible = juce::jlimit(
+        0, maximumFirst, compactNamFirstVisible + rows);
+    repaint();
+}
+
+int EffectGraph::compactNamModelAt(juce::Point<float> position) const
+{
+    constexpr auto headerHeight = 16.0f;
+    constexpr auto rowHeight = 30.0f;
+    auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
+    area.removeFromTop(headerHeight);
+    if (!area.contains(position))
+        return -1;
+    const auto row = static_cast<int>(
+        (position.y - area.getY()) / rowHeight);
+    if (row < 0 || row >= compactNamVisibleRowCount())
+        return -1;
+    const auto index = compactNamFirstVisible + row;
+    return juce::isPositiveAndBelow(
+               index, static_cast<int>(compactNamModels.size()))
+        ? index : -1;
+}
+
+void EffectGraph::paintCompactNamLibrary(
+    juce::Graphics& graphics, juce::Rectangle<float> area)
+{
+    constexpr auto headerHeight = 16.0f;
+    constexpr auto rowHeight = 30.0f;
+    const auto header = area.removeFromTop(headerHeight);
+    graphics.setColour(juce::Colours::white.withAlpha(0.56f));
+    graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
+    const auto status = processor.isNamModelLibraryIndexing()
+        ? "INDEXING..."
+        : juce::String(compactNamModels.size()) + " MODELS";
+    graphics.drawText(
+        "NAM LIBRARY", header.toNearestInt(),
+        juce::Justification::centredLeft);
+    graphics.drawText(
+        status, header.toNearestInt(),
+        juce::Justification::centredRight);
+
+    if (compactNamModels.empty())
+    {
+        graphics.setColour(juce::Colours::white.withAlpha(0.52f));
+        graphics.setFont(juce::FontOptions(10.0f));
+        graphics.drawFittedText(
+            processor.namModelRootDirectory().isDirectory()
+                ? "Indexing the NAM library..."
+                : "Choose FIND, then ROOT, to select a NAM library.",
+            area.reduced(8.0f).toNearestInt(),
+            juce::Justification::centred, 2, 0.8f);
+        return;
+    }
+
+    const auto loadedPath = processor.namModelPath(slot);
+    const auto visibleRows = compactNamVisibleRowCount();
+    for (int row = 0; row < visibleRows; ++row)
+    {
+        const auto index = compactNamFirstVisible + row;
+        if (!juce::isPositiveAndBelow(
+                index, static_cast<int>(compactNamModels.size())))
+            break;
+        const auto& entry =
+            compactNamModels[static_cast<size_t>(index)];
+        auto rowBounds = area.removeFromTop(rowHeight).reduced(1.0f);
+        const auto loaded =
+            entry.file.getFullPathName() == loadedPath;
+        const auto selected = index == compactNamSelected;
+        graphics.setColour(
+            loaded ? accent.withAlpha(0.23f)
+                   : selected ? accent.withAlpha(0.12f)
+                   : juce::Colours::white.withAlpha(
+                         row % 2 == 0 ? 0.035f : 0.06f));
+        graphics.fillRoundedRectangle(rowBounds, 3.0f);
+        if (selected)
+        {
+            graphics.setColour(accent.withAlpha(0.7f));
+            graphics.drawRoundedRectangle(rowBounds, 3.0f, 1.0f);
+        }
+
+        auto text = rowBounds.reduced(6.0f, 2.0f);
+        graphics.setColour(
+            loaded ? accent : juce::Colours::white.withAlpha(0.9f));
+        graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        graphics.drawFittedText(
+            entry.displayName.isNotEmpty()
+                ? entry.displayName
+                : entry.file.getFileNameWithoutExtension(),
+            text.removeFromTop(14.0f).toNearestInt(),
+            juce::Justification::centredLeft, 1, 0.75f);
+        graphics.setColour(juce::Colours::white.withAlpha(0.48f));
+        graphics.setFont(juce::FontOptions(8.0f));
+        graphics.drawFittedText(
+            entry.relativePath,
+            text.toNearestInt(),
+            juce::Justification::centredLeft, 1, 0.72f);
+        if (loaded || (selected && compactNamLoadPending))
+        {
+            graphics.setColour(accent.withAlpha(0.9f));
+            graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
+            graphics.drawText(
+                loaded ? "LOADED" : "LOADING...",
+                rowBounds.reduced(6.0f, 0.0f).toNearestInt(),
+                juce::Justification::centredRight);
+        }
+    }
+
+    if (static_cast<int>(compactNamModels.size()) > visibleRows)
+    {
+        auto track = getLocalBounds().toFloat()
+            .reduced(3.0f, 20.0f)
+            .removeFromRight(3.0f);
+        const auto thumbHeight = juce::jmax(
+            10.0f,
+            track.getHeight()
+                * static_cast<float>(visibleRows)
+                / static_cast<float>(compactNamModels.size()));
+        const auto maximumFirst = juce::jmax(
+            1, static_cast<int>(compactNamModels.size()) - visibleRows);
+        const auto thumbY = track.getY()
+            + (track.getHeight() - thumbHeight)
+                * static_cast<float>(compactNamFirstVisible)
+                / static_cast<float>(maximumFirst);
+        graphics.setColour(juce::Colours::white.withAlpha(0.1f));
+        graphics.fillRoundedRectangle(track, 1.5f);
+        graphics.setColour(accent.withAlpha(0.6f));
+        graphics.fillRoundedRectangle(
+            track.withY(thumbY).withHeight(thumbHeight), 1.5f);
+    }
+}
+
 void EffectGraph::paintCompact(
     juce::Graphics& graphics, juce::Rectangle<float> area)
 {
+    if (type == ModuleType::neuralAmpModeler)
+    {
+        paintCompactNamLibrary(graphics, area);
+        return;
+    }
     auto visualizationLabel = "";
     const auto energy = juce::jlimit(
         0.0f, 1.0f,
@@ -1560,19 +1612,7 @@ void EffectGraph::paintCompact(
 
         case CompactVisualization::spectral:
         {
-            visualizationLabel =
-                type == ModuleType::neuralAmpModeler
-                ? "MODEL SPECTRUM" : "SPECTRAL FIELD";
-            const auto namPeakDb =
-                type == ModuleType::neuralAmpModeler
-                ? *std::max_element(
-                      outputSpectrum.begin() + 1,
-                      outputSpectrum.begin()
-                          + static_cast<std::ptrdiff_t>(
-                              spectrumBinForProportion(
-                                  1.0f, processor.getSampleRate()) + 1))
-                : -100.0f;
-            const auto namHasSignal = namPeakDb > -90.0f;
+            visualizationLabel = "SPECTRAL FIELD";
             for (int band = 0; band < 32; ++band)
             {
                 const auto firstBin = spectrumBinForProportion(
@@ -1588,17 +1628,8 @@ void EffectGraph::paintCompact(
                         + static_cast<std::ptrdiff_t>(firstBin),
                     outputSpectrum.begin()
                         + static_cast<std::ptrdiff_t>(endBin));
-                const auto magnitude =
-                    type == ModuleType::neuralAmpModeler
-                    ? namHasSignal
-                        ? juce::jlimit(
-                              0.0f, 1.0f,
-                              (peak - namPeakDb + 54.0f) / 54.0f)
-                              * namSpectrumFreshness
-                        : 0.0f
-                    : juce::jlimit(
-                          0.0f, 1.0f,
-                          (peak + 78.0f) / 78.0f);
+                const auto magnitude = juce::jlimit(
+                    0.0f, 1.0f, (peak + 78.0f) / 78.0f);
                 const auto x = area.getX()
                     + static_cast<float>(band)
                         * area.getWidth() / 32.0f;
@@ -2057,33 +2088,23 @@ void EffectGraph::paint(juce::Graphics& graphics)
     graphics.fillAll(moduleSurfaceColour(
         backgroundColour(processor.getBackgroundThemeIndex()).darker(0.18f),
         type, 0.16f));
-    auto area = compact
-        ? getLocalBounds().toFloat().reduced(8.0f, 3.0f)
-        : getLocalBounds().toFloat().reduced(12.0f);
-    if (compact)
+    auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
+    paintCompact(graphics, area);
+    if (type != ModuleType::compressor
+        && compactVisualizationShowsGainReduction(type))
     {
-        paintCompact(graphics, area);
-        if (type != ModuleType::compressor
-            && compactVisualizationShowsGainReduction(type))
+        const auto reduction = juce::jlimit(
+            0.0f, 24.0f,
+            processor.getRack().slotMeter(slot));
+        if (reduction > 0.01f)
         {
-            const auto reduction = juce::jlimit(
-                0.0f, 24.0f,
-                processor.getRack().slotMeter(slot));
-            if (reduction > 0.01f)
-            {
-                graphics.setColour(reductionColour);
-                graphics.setFont(juce::FontOptions(10.0f));
-                graphics.drawText(
-                    "GR " + juce::String(reduction, 1) + " dB",
-                    area.removeFromTop(16.0f).toNearestInt(),
-                    juce::Justification::topRight);
-            }
+            graphics.setColour(reductionColour);
+            graphics.setFont(juce::FontOptions(10.0f));
+            graphics.drawText(
+                "GR " + juce::String(reduction, 1) + " dB",
+                area.removeFromTop(16.0f).toNearestInt(),
+                juce::Justification::topRight);
         }
-    }
-    else if (moduleView != nullptr)
-    {
-        drawGrid(graphics, area);
-        moduleView->paint(graphics, area);
     }
     if (processor.isSlotBypassed(slot))
     {
@@ -2097,14 +2118,9 @@ void EffectGraph::paint(juce::Graphics& graphics)
             "BYPASSED - DSP SUSPENDED", label.toNearestInt(),
             juce::Justification::centred);
     }
-    const auto showSharedReadout =
-        moduleView == nullptr || moduleView->showsSharedControlReadout();
-    const auto keyboardReadout =
-        showSharedReadout && hasKeyboardFocus(false)
-            ? focusedControlReadout() : juce::String {};
     const auto readout =
-        showSharedReadout && dragPrimary >= 0 && dragReadout.isNotEmpty()
-            ? dragReadout : keyboardReadout;
+        dragPrimary >= 0 && dragReadout.isNotEmpty()
+            ? dragReadout : juce::String {};
     if (readout.isNotEmpty())
     {
         auto bubble = area.withSizeKeepingCentre(
@@ -2127,163 +2143,142 @@ void EffectGraph::paint(juce::Graphics& graphics)
 
 void EffectGraph::mouseDown(const juce::MouseEvent& event)
 {
-    if (compact)
+    if (type == ModuleType::neuralAmpModeler)
     {
-        if (type == ModuleType::compressor
-            && compactCompressorLevelArea().contains(event.position))
+        grabKeyboardFocus();
+        const auto index = compactNamModelAt(event.position);
+        if (index >= 0)
+            activateCompactNamModel(index);
+    }
+    else if (type == ModuleType::compressor
+             && compactCompressorLevelArea().contains(event.position))
+    {
+        grabKeyboardFocus();
+        dragPrimary = 0;
+        beginGestures();
+        setCompactCompressorThresholdFromY(event.position.y);
+    }
+    else if (type == ModuleType::equalizer)
+    {
+        if (compactEqualizerOutputArea().contains(event.position))
         {
             grabKeyboardFocus();
-            dragPrimary = 0;
+            dragPrimary = 9;
             beginGestures();
-            setCompactCompressorThresholdFromY(event.position.y);
+            setCompactEqualizerOutputFromY(event.position.y);
+            return;
         }
-        else if (type == ModuleType::equalizer)
+        const auto modeArea = compactEqualizerModeArea();
+        if ((compactEqualizerBand == 0
+             || compactEqualizerBand == 2)
+            && modeArea.contains(event.position))
         {
-            if (compactEqualizerOutputArea().contains(event.position))
-            {
-                grabKeyboardFocus();
-                dragPrimary = 9;
-                beginGestures();
-                setCompactEqualizerOutputFromY(event.position.y);
-                return;
-            }
-            const auto modeArea = compactEqualizerModeArea();
-            if ((compactEqualizerBand == 0
-                 || compactEqualizerBand == 2)
-                && modeArea.contains(event.position))
-            {
-                const auto mode = juce::jlimit(
-                    0, 2,
-                    static_cast<int>(
-                        (event.position.x - modeArea.getX())
-                        / juce::jmax(1.0f, modeArea.getWidth())
-                        * 3.0f));
-                dragPrimary =
-                    compactEqualizerBand == 0 ? 10 : 11;
-                beginGestures();
-                setValue(dragPrimary, static_cast<float>(mode) / 2.0f);
-                endGestures();
-                repaint();
-                return;
-            }
-            const auto band = compactEqualizerBandAt(event.position);
-            if (band >= 0)
-            {
-                grabKeyboardFocus();
-                compactEqualizerBand = band;
-                dragPrimary = band * 3;
-                const auto mode = band == 1
-                    ? EqualizerBandMode::bell
-                    : equalizerBandMode(value(band == 0 ? 10 : 11));
-                dragSecondary = band * 3
-                    + (mode == EqualizerBandMode::cut ? 2 : 1);
-                beginGestures();
-                setCompactEqualizerBandFromPoint(band, event.position);
-            }
+            const auto mode = juce::jlimit(
+                0, 2,
+                static_cast<int>(
+                    (event.position.x - modeArea.getX())
+                    / juce::jmax(1.0f, modeArea.getWidth())
+                    * 3.0f));
+            dragPrimary =
+                compactEqualizerBand == 0 ? 10 : 11;
+            beginGestures();
+            setValue(dragPrimary, static_cast<float>(mode) / 2.0f);
+            endGestures();
+            repaint();
+            return;
         }
-        return;
-    }
-    if (!getLocalBounds().toFloat().reduced(12.0f).contains(event.position))
-        return;
-    if (usesFullPanel())
-        grabKeyboardFocus();
-    if (moduleView != nullptr)
-    {
-        moduleView->mouseDown(event);
-        setInteractiveRefresh(true);
-        if (dragPrimary >= 0)
+        const auto band = compactEqualizerBandAt(event.position);
+        if (band >= 0)
         {
-            const auto controls = moduleView->keyboardControls();
-            if (std::find(controls.begin(), controls.end(), dragPrimary)
-                != controls.end()
-                && focusedControl != dragPrimary)
-            {
-                focusedControl = dragPrimary;
-                notifyFocusedControlChanged(true);
-            }
+            grabKeyboardFocus();
+            compactEqualizerBand = band;
+            dragPrimary = band * 3;
+            const auto mode = band == 1
+                ? EqualizerBandMode::bell
+                : equalizerBandMode(value(band == 0 ? 10 : 11));
+            dragSecondary = band * 3
+                + (mode == EqualizerBandMode::cut ? 2 : 1);
+            beginGestures();
+            setCompactEqualizerBandFromPoint(band, event.position);
         }
     }
 }
 
 void EffectGraph::mouseDrag(const juce::MouseEvent& event)
 {
-    if (compact)
+    if (type == ModuleType::compressor && dragPrimary == 0)
+        setCompactCompressorThresholdFromY(event.position.y);
+    else if (type == ModuleType::equalizer
+             && dragPrimary >= 0)
     {
-        if (type == ModuleType::compressor && dragPrimary == 0)
-            setCompactCompressorThresholdFromY(event.position.y);
-        else if (type == ModuleType::equalizer
-                 && dragPrimary >= 0)
-        {
-            if (dragPrimary == 9)
-                setCompactEqualizerOutputFromY(event.position.y);
-            else if (compactEqualizerBand >= 0)
-                setCompactEqualizerBandFromPoint(
-                    compactEqualizerBand, event.position);
-        }
-        return;
-    }
-    if (moduleView != nullptr)
-    {
-        setInteractiveRefresh(true);
-        moduleView->mouseDrag(event);
+        if (dragPrimary == 9)
+            setCompactEqualizerOutputFromY(event.position.y);
+        else if (compactEqualizerBand >= 0)
+            setCompactEqualizerBandFromPoint(
+                compactEqualizerBand, event.position);
     }
 }
 
 void EffectGraph::mouseUp(const juce::MouseEvent&)
 {
     endGestures();
-    setInteractiveRefresh(false);
     dragReadout.clear();
     repaint();
 }
 
 void EffectGraph::mouseDoubleClick(const juce::MouseEvent& event)
 {
-    if (compact)
+    if (type == ModuleType::compressor
+        && compactCompressorLevelArea().contains(event.position))
     {
-        if (type == ModuleType::compressor
-            && compactCompressorLevelArea().contains(event.position))
+        setValue(0, moduleDefaults(type)[0]);
+        dragReadout = formatControlValue(type, 0, value(0));
+        repaint();
+    }
+    else if (type == ModuleType::equalizer)
+    {
+        if (compactEqualizerOutputArea().contains(event.position))
         {
-            setValue(0, moduleDefaults(type)[0]);
-            dragReadout = formatControlValue(type, 0, value(0));
+            setValue(9, moduleDefaults(type)[9]);
+            repaint();
+            return;
+        }
+        const auto band = compactEqualizerBandAt(event.position);
+        if (band >= 0)
+        {
+            compactEqualizerBand = band;
+            const auto defaults = moduleDefaults(type);
+            for (int offset = 0; offset < 3; ++offset)
+                setValue(
+                    band * 3 + offset,
+                    defaults[static_cast<size_t>(
+                        band * 3 + offset)]);
+            if (band != 1)
+                setValue(
+                    band == 0 ? 10 : 11,
+                    defaults[static_cast<size_t>(
+                        band == 0 ? 10 : 11)]);
             repaint();
         }
-        else if (type == ModuleType::equalizer)
-        {
-            if (compactEqualizerOutputArea().contains(event.position))
-            {
-                setValue(9, moduleDefaults(type)[9]);
-                repaint();
-                return;
-            }
-            const auto band = compactEqualizerBandAt(event.position);
-            if (band >= 0)
-            {
-                compactEqualizerBand = band;
-                const auto defaults = moduleDefaults(type);
-                for (int offset = 0; offset < 3; ++offset)
-                    setValue(
-                        band * 3 + offset,
-                        defaults[static_cast<size_t>(
-                            band * 3 + offset)]);
-                if (band != 1)
-                    setValue(
-                        band == 0 ? 10 : 11,
-                        defaults[static_cast<size_t>(
-                            band == 0 ? 10 : 11)]);
-                repaint();
-            }
-        }
-        return;
     }
-    if (moduleView != nullptr)
-        moduleView->mouseDoubleClick(event);
 }
 
 void EffectGraph::mouseWheelMove(
     const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
 {
-    if (compact && type == ModuleType::equalizer)
+    if (type == ModuleType::neuralAmpModeler)
+    {
+        const auto movement =
+            wheel.deltaY != 0.0f ? wheel.deltaY : wheel.deltaX;
+        if (movement != 0.0f)
+        {
+            const auto rows = juce::jmax(
+                1, juce::roundToInt(std::abs(movement) * 4.0f));
+            scrollCompactNamLibrary(movement > 0.0f ? -rows : rows);
+            return;
+        }
+    }
+    if (type == ModuleType::equalizer)
     {
         const auto hit = compactEqualizerBandAt(event.position);
         const auto band = hit >= 0 ? hit : compactEqualizerBand;
@@ -2307,7 +2302,37 @@ void EffectGraph::mouseWheelMove(
 
 bool EffectGraph::keyPressed(const juce::KeyPress& key)
 {
-    if (compact && type == ModuleType::compressor)
+    if (type == ModuleType::neuralAmpModeler)
+    {
+        if (key.getKeyCode() == juce::KeyPress::upKey
+            || key.getKeyCode() == juce::KeyPress::downKey)
+        {
+            if (!compactNamModels.empty())
+            {
+                const auto direction =
+                    key.getKeyCode() == juce::KeyPress::upKey ? -1 : 1;
+                compactNamSelected = juce::jlimit(
+                    0, static_cast<int>(compactNamModels.size()) - 1,
+                    compactNamSelected < 0
+                        ? 0 : compactNamSelected + direction);
+                const auto visibleRows = compactNamVisibleRowCount();
+                if (compactNamSelected < compactNamFirstVisible)
+                    compactNamFirstVisible = compactNamSelected;
+                else if (compactNamSelected
+                         >= compactNamFirstVisible + visibleRows)
+                    compactNamFirstVisible =
+                        compactNamSelected - visibleRows + 1;
+                repaint();
+            }
+            return true;
+        }
+        if (key.getKeyCode() == juce::KeyPress::returnKey)
+        {
+            activateCompactNamModel(compactNamSelected);
+            return true;
+        }
+    }
+    if (type == ModuleType::compressor)
     {
         if (key.getKeyCode() == juce::KeyPress::upKey
             || key.getKeyCode() == juce::KeyPress::downKey)
@@ -2332,7 +2357,7 @@ bool EffectGraph::keyPressed(const juce::KeyPress& key)
         }
         return false;
     }
-    if (compact && type == ModuleType::equalizer)
+    if (type == ModuleType::equalizer)
     {
         if (key.getKeyCode() == juce::KeyPress::leftKey
             || key.getKeyCode() == juce::KeyPress::rightKey)
@@ -2398,35 +2423,11 @@ bool EffectGraph::keyPressed(const juce::KeyPress& key)
         }
         return false;
     }
-    if (!usesFullPanel())
-        return false;
-    if (moduleView != nullptr && moduleView->keyPressed(key))
-        return true;
-    const auto modifiers = key.getModifiers();
-    if (modifiers.isCommandDown() || modifiers.isCtrlDown()
-        || modifiers.isAltDown())
-        return false;
-    if (key.getKeyCode() == juce::KeyPress::leftKey)
-        return moveFocusedControl(-1);
-    if (key.getKeyCode() == juce::KeyPress::rightKey)
-        return moveFocusedControl(1);
-    if (key.getKeyCode() == juce::KeyPress::upKey)
-        return adjustFocusedControl(
-            1, key.getModifiers().isShiftDown());
-    if (key.getKeyCode() == juce::KeyPress::downKey)
-        return adjustFocusedControl(
-            -1, key.getModifiers().isShiftDown());
-    if (key.getKeyCode() == juce::KeyPress::spaceKey
-        || key.getKeyCode() == juce::KeyPress::returnKey)
-        return activateFocusedControl();
-    if (key.getKeyCode() == juce::KeyPress::homeKey)
-        return resetFocusedControl();
     return false;
 }
 
 void EffectGraph::focusGained(FocusChangeType)
 {
-    refreshFocusedControl(true);
     repaint();
 }
 
@@ -2435,64 +2436,14 @@ void EffectGraph::focusLost(FocusChangeType)
     repaint();
 }
 
-bool EffectGraph::isInterestedInFileDrag(const juce::StringArray& files)
-{
-    const auto supportsImpulseResponse = hasCapability(
-        moduleDefinition(type).capabilities,
-        ModuleCapability::impulseResponse);
-    if (supportsImpulseResponse)
-        return processor.getRack().activeModuleHasCapability(
-                   slot, ModuleCapability::impulseResponse)
-               && files.size() == 1
-               && juce::File(files[0]).existsAsFile();
-    return moduleView != nullptr
-           && moduleView->isInterestedInFileDrag(files);
-}
-
-void EffectGraph::filesDropped(
-    const juce::StringArray& files, int x, int y)
-{
-    if (hasCapability(
-            moduleDefinition(type).capabilities,
-            ModuleCapability::impulseResponse))
-    {
-        if (!isInterestedInFileDrag(files))
-            return;
-        const auto lane = type == ModuleType::wormholeConvolution
-            && y >= getHeight() / 2 ? 1 : 0;
-        const auto result = processor.loadImpulseResponse(
-            slot, lane, juce::File(files[0]));
-        if (result.failed())
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::MessageBoxIconType::WarningIcon,
-                "Could not load impulse response",
-                result.getErrorMessage());
-        repaint();
-        return;
-    }
-    if (moduleView != nullptr)
-        moduleView->filesDropped(files, x, y);
-}
-
-bool EffectGraph::usesFullPanel() const
-{
-    return !compact && moduleView != nullptr && moduleView->usesFullPanel();
-}
-
-int EffectGraph::preferredCardHeight() const
-{
-    return moduleView != nullptr
-        ? juce::jlimit(
-              moduleCardHeight, moduleCardMaximumHeight,
-              moduleView->preferredCardHeight())
-        : moduleCardHeight;
-}
-
 void EffectGraph::setVisualizationActive(bool active)
 {
     const auto changed = visualizationActive != active;
     visualizationActive = active;
-    processor.getVisualizationData().setSlotActive(slot, active);
+    const auto needsCapture =
+        active
+        && type != ModuleType::neuralAmpModeler;
+    processor.getVisualizationData().setSlotActive(slot, needsCapture);
     if (changed)
         repaint();
 }
@@ -2520,7 +2471,6 @@ void EffectGraph::setValue(int control, float normalized)
 
 void EffectGraph::beginGestures()
 {
-    focusKeyboardControl(dragPrimary);
     if (auto* target = parameter(dragPrimary))
         target->beginChangeGesture();
     if (dragSecondary >= 0)
@@ -2539,24 +2489,19 @@ void EffectGraph::endGestures()
     dragPrimary = dragSecondary = -1;
 }
 
-void EffectGraph::focusKeyboardControl(int control)
-{
-    if (!usesFullPanel() || moduleView == nullptr || control < 0)
-        return;
-    const auto controls = moduleView->keyboardControls();
-    if (std::find(controls.begin(), controls.end(), control)
-            == controls.end()
-        || focusedControl == control)
-        return;
-    focusedControl = control;
-    notifyFocusedControlChanged(true);
-}
-
 void EffectGraph::timerCallback()
 {
     if (!isShowing())
         return;
+    if (type == ModuleType::neuralAmpModeler
+        && compactNamLibraryGeneration
+               != processor.assetLibraryGeneration())
+    {
+        refreshCompactNamLibrary();
+        repaint();
+    }
     if (visualizationActive
+        && type != ModuleType::neuralAmpModeler
         && !processor.getVisualizationData().isSlotActive(slot))
         processor.getVisualizationData().setSlotActive(slot, true);
     refreshVisualization();
@@ -2564,6 +2509,11 @@ void EffectGraph::timerCallback()
 
 void EffectGraph::refreshVisualization()
 {
+    if (type == ModuleType::neuralAmpModeler)
+    {
+        repaint();
+        return;
+    }
     if (processor.isSlotBypassed(slot))
     {
         if (!bypassVisualsSuspended)
@@ -2580,7 +2530,6 @@ void EffectGraph::refreshVisualization()
             gainReductionLevels.fill(0.0f);
             inputSpectrum.fill(-100.0f);
             outputSpectrum.fill(-100.0f);
-            namSpectrumFreshness = 0.0f;
             bypassVisualsSuspended = true;
             repaint();
         }
@@ -2590,9 +2539,6 @@ void EffectGraph::refreshVisualization()
 
     if (!visualizationActive)
     {
-        if (!compact && moduleView != nullptr)
-            moduleView->timerCallback();
-        refreshFocusedControl(true);
         repaint();
         return;
     }
@@ -2606,10 +2552,6 @@ void EffectGraph::refreshVisualization()
         outputHistoryPosition != lastOutputHistoryPosition;
     lastInputHistoryPosition = inputHistoryPosition;
     lastOutputHistoryPosition = outputHistoryPosition;
-    if (type == ModuleType::neuralAmpModeler)
-        namSpectrumFreshness = outputAdvanced
-            ? 1.0f
-            : juce::jmax(0.0f, namSpectrumFreshness - 0.06f);
     data.input.copyLatest(inputSamples);
     data.output.copyLatest(outputSamples);
     data.outputLeft.copyLatest(stereoLeftSamples);
@@ -2618,9 +2560,6 @@ void EffectGraph::refreshVisualization()
     data.inputLevel.copyLatest(inputLevels, -60.0f);
     data.outputLevel.copyLatest(outputLevels, -60.0f);
     data.gainReductionLevel.copyLatest(gainReductionLevels);
-    if (!compact && moduleView != nullptr)
-        moduleView->timerCallback();
-    refreshFocusedControl(true);
     const auto compactVisualizationType =
         compactVisualization(type);
     const auto compactNeedsSpectrum =
@@ -2630,9 +2569,7 @@ void EffectGraph::refreshVisualization()
             == CompactVisualization::spectral
         || compactVisualizationType
             == CompactVisualization::cabinet;
-    if ((compact && compactNeedsSpectrum)
-        || (!compact && moduleView != nullptr
-            && moduleView->usesSpectrum()))
+    if (compactNeedsSpectrum)
     {
         const auto decayStaleSpectrum =
             [](auto& spectrum)
@@ -2658,11 +2595,17 @@ void EffectGraph::refreshVisualizationForTesting()
 {
     refreshVisualization();
 }
-#endif
 
-void EffectGraph::setInteractiveRefresh(bool)
+void EffectGraph::activateCompactNamModelForTesting(int index)
 {
+    activateCompactNamModel(index);
 }
+
+void EffectGraph::scrollCompactNamLibraryForTesting(int rows)
+{
+    scrollCompactNamLibrary(rows);
+}
+#endif
 
 juce::Rectangle<float> EffectGraph::compactCompressorLevelArea() const
 {
@@ -2927,142 +2870,8 @@ void EffectGraph::setCompactEqualizerOutputFromYForTesting(float y)
 std::unique_ptr<juce::AccessibilityHandler>
 EffectGraph::createAccessibilityHandler()
 {
-    if (!usesFullPanel())
-        return std::make_unique<juce::AccessibilityHandler>(
-            *this, juce::AccessibilityRole::image);
-    return std::make_unique<GraphAccessibilityHandler>(*this);
-}
-
-void EffectGraph::refreshFocusedControl(bool notifyAccessibility)
-{
-    if (!usesFullPanel() || moduleView == nullptr)
-    {
-        focusedControl = -1;
-        return;
-    }
-    const auto controls = moduleView->keyboardControls();
-    const auto previous = focusedControl;
-    if (controls.empty())
-        focusedControl = -1;
-    else if (std::find(
-                 controls.begin(), controls.end(), focusedControl)
-             == controls.end())
-        focusedControl = controls.front();
-    if (previous != focusedControl)
-    {
-        if (notifyAccessibility)
-            notifyFocusedControlChanged(true);
-        else
-            invalidateAccessibilityHandler();
-    }
-}
-
-bool EffectGraph::moveFocusedControl(int direction)
-{
-    if (moduleView == nullptr || direction == 0)
-        return false;
-    const auto controls = moduleView->keyboardControls();
-    if (controls.empty())
-        return false;
-    auto iterator =
-        std::find(controls.begin(), controls.end(), focusedControl);
-    auto index = iterator == controls.end()
-        ? 0
-        : static_cast<int>(std::distance(controls.begin(), iterator));
-    index = (index + (direction > 0 ? 1
-                                    : static_cast<int>(controls.size()) - 1))
-            % static_cast<int>(controls.size());
-    focusedControl = controls[static_cast<size_t>(index)];
-    notifyFocusedControlChanged(true);
-    repaint();
-    return true;
-}
-
-bool EffectGraph::adjustFocusedControl(
-    int direction, bool fine)
-{
-    if (moduleView == nullptr || focusedControl < 0
-        || !moduleView->adjustKeyboardControl(
-            focusedControl, direction, fine))
-        return false;
-    notifyFocusedControlChanged(false);
-    return true;
-}
-
-bool EffectGraph::activateFocusedControl()
-{
-    if (moduleView == nullptr || focusedControl < 0
-        || !moduleView->pressKeyboardControl(focusedControl))
-        return false;
-    notifyFocusedControlChanged(false);
-    return true;
-}
-
-bool EffectGraph::resetFocusedControl()
-{
-    if (moduleView == nullptr || focusedControl < 0
-        || !moduleView->resetKeyboardControl(focusedControl))
-        return false;
-    notifyFocusedControlChanged(false);
-    return true;
-}
-
-bool EffectGraph::setFocusedAccessibilityValue(double newValue)
-{
-    if (moduleView == nullptr || focusedControl < 0
-        || !moduleView->setKeyboardAccessibilityValue(
-            focusedControl, newValue))
-        return false;
-    notifyFocusedControlChanged(false);
-    return true;
-}
-
-bool EffectGraph::setFocusedAccessibilityValueAsString(
-    const juce::String& newValue)
-{
-    if (moduleView == nullptr || focusedControl < 0
-        || !moduleView->setKeyboardAccessibilityValueAsString(
-            focusedControl, newValue))
-        return false;
-    notifyFocusedControlChanged(false);
-    return true;
-}
-
-juce::String EffectGraph::focusedControlLabel() const
-{
-    return moduleView != nullptr && focusedControl >= 0
-        ? moduleView->keyboardLabel(focusedControl)
-        : juce::String {};
-}
-
-juce::String EffectGraph::focusedControlValueText() const
-{
-    return moduleView != nullptr && focusedControl >= 0
-        ? moduleView->keyboardValueText(focusedControl)
-        : juce::String {};
-}
-
-juce::String EffectGraph::focusedControlReadout() const
-{
-    const auto label = focusedControlLabel();
-    const auto valueText = focusedControlValueText();
-    return label.isEmpty() ? juce::String {}
-                           : label + ": " + valueText;
-}
-
-void EffectGraph::notifyFocusedControlChanged(bool focusedControlChanged)
-{
-    repaint();
-    if (focusedControlChanged)
-        invalidateAccessibilityHandler();
-    if (auto* handler = getAccessibilityHandler())
-    {
-        if (focusedControlChanged)
-            handler->notifyAccessibilityEvent(
-                juce::AccessibilityEvent::titleChanged);
-        handler->notifyAccessibilityEvent(
-            juce::AccessibilityEvent::valueChanged);
-    }
+    return std::make_unique<juce::AccessibilityHandler>(
+        *this, juce::AccessibilityRole::image);
 }
 
 void EffectGraph::calculateSpectrum(
@@ -3120,20 +2929,4 @@ size_t EffectGraph::spectrumBinForProportion(
         size_t { 1 }, size_t { graphFftSize / 2 - 1 }, bin);
 }
 
-void EffectGraph::drawGrid(
-    juce::Graphics& graphics, juce::Rectangle<float> area)
-{
-    graphics.setColour(juce::Colour(0xff27303b));
-    for (int line = 1; line < 6; ++line)
-    {
-        const auto x = area.getX() + area.getWidth()
-            * static_cast<float>(line) / 6.0f;
-        const auto y = area.getY() + area.getHeight()
-            * static_cast<float>(line) / 6.0f;
-        graphics.drawVerticalLine(
-            juce::roundToInt(x), area.getY(), area.getBottom());
-        graphics.drawHorizontalLine(
-            juce::roundToInt(y), area.getX(), area.getRight());
-    }
-}
 } // namespace megadsp::ui

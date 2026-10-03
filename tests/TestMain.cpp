@@ -1382,7 +1382,6 @@ public:
         beginTest("Host parameter contract remains fixed");
         expectEquals(megadsp::moduleTypeCount, 59);
         expectEquals(megadsp::stateSchemaVersion, 13);
-        expectEquals(static_cast<int>(megadsp::ModulePresentation::count), 59);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
         expectEquals(static_cast<int>(megadsp::ModuleType::compressor), 2);
@@ -1535,8 +1534,6 @@ public:
             if (definition == nullptr)
                continue;
             expectEquals(static_cast<int>(definition->type), stableType);
-            expectEquals(static_cast<int>(definition->presentation),
-                         stableType);
             const auto expectedCapabilities =
                 type == megadsp::ModuleType::convolutionReverb
                     || type == megadsp::ModuleType::portalPermuter

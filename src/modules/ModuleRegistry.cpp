@@ -4413,14 +4413,14 @@ std::unique_ptr<DspModule> makeModule()
 }
 
 ModuleDefinition makeDefinition(
-    ModuleType type, ModulePresentation presentation, const char* displayName,
+    ModuleType type, const char* displayName,
     ModuleCategory category, const char* description, const char* searchTags,
     const Names& names, const Metadata& controlMetadataValues,
     ModuleFactory factory,
     ModuleCapability capabilities = ModuleCapability::none)
 {
     ModuleDefinition definition {
-        type, displayName, category, description, searchTags, presentation, {},
+        type, displayName, category, description, searchTags, {},
         factory, capabilities
     };
     const auto defaults = defaultsFor(type);
@@ -4439,72 +4439,67 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
 {
     static const std::array<ModuleDefinition, moduleTypeCount> definitions {{
         makeDefinition(
-            ModuleType::empty, ModulePresentation::none, "Empty",
+            ModuleType::empty, "Empty",
             ModuleCategory::none,
             "No processing in this slot.", "", emptyNames, emptyMetadata,
             nullptr),
         makeDefinition(
-            ModuleType::equalizer, ModulePresentation::equalizer,
-            "Parametric EQ",
+            ModuleType::equalizer, "Parametric EQ",
             ModuleCategory::eqAndFilters,
             "Shape lows, mids, and highs with a flexible three-band EQ.",
             "eq filter tone high pass low pass", eqNames, eqMetadata,
             &makeModule<EqualizerModule>),
         makeDefinition(
-            ModuleType::compressor, ModulePresentation::compressor,
-            "Compressor", ModuleCategory::dynamics,
+            ModuleType::compressor, "Compressor", ModuleCategory::dynamics,
             "Control dynamics with smooth compression and parallel blend.",
             "compression dynamics sidechain punch", compressorNames,
             compressorMetadata, &makeModule<CompressorModule>),
         makeDefinition(
-            ModuleType::saturator, ModulePresentation::saturator, "Saturator",
+            ModuleType::saturator, "Saturator",
             ModuleCategory::saturationAndColor,
             "Add harmonic warmth, edge, and character.",
             "saturation distortion drive warmth color", saturatorNames,
             saturatorMetadata, &makeModule<SaturatorModule>),
         makeDefinition(
-            ModuleType::delay, ModulePresentation::delay, "Delay",
+            ModuleType::delay, "Delay",
             ModuleCategory::delayAndEcho,
             "Create tempo-synced or free echoes with stereo movement.",
             "delay echo repeats ping pong modulation", delayNames,
             delayMetadata, &makeModule<DelayModule>),
         makeDefinition(
-            ModuleType::limiter, ModulePresentation::limiter, "Limiter",
+            ModuleType::limiter, "Limiter",
             ModuleCategory::dynamics,
             "Catch peaks and raise level with lookahead limiting.",
             "limiter peak loudness ceiling dynamics", limiterNames,
             limiterMetadata, &makeModule<LimiterModule>),
         makeDefinition(
             ModuleType::algorithmicReverb,
-            ModulePresentation::algorithmicReverb, "Algorithmic Reverb",
+            "Algorithmic Reverb",
             ModuleCategory::reverbAndSpace,
             "Build animated halls, chambers, and plates.",
             "reverb hall chamber plate ambience space ducking high pass",
             reverbNames,
             reverbMetadata, &makeModule<AlgorithmicReverbModule>),
         makeDefinition(
-            ModuleType::stereoWidth, ModulePresentation::stereoWidth,
-            "Stereo Width",
+            ModuleType::stereoWidth, "Stereo Width",
             ModuleCategory::stereoAndUtility,
             "Widen, focus, and balance the stereo image.",
             "stereo width imaging mono utility", stereoWidthNames,
             stereoWidthMetadata, &makeModule<StereoWidthModule>),
         makeDefinition(
-            ModuleType::midSideDecoder, ModulePresentation::midSideDecoder,
-            "M/S Decoder",
+            ModuleType::midSideDecoder, "M/S Decoder",
             ModuleCategory::stereoAndUtility,
             "Decode mid/side recordings and adjust their width.",
             "mid side ms decode stereo utility", midSideDecoderNames,
             midSideDecoderMetadata, &makeModule<MidSideDecoderModule>),
         makeDefinition(
-            ModuleType::tremolo, ModulePresentation::tremolo, "Tremolo",
+            ModuleType::tremolo, "Tremolo",
             ModuleCategory::modulation,
             "Add rhythmic volume movement or true pitch vibrato.",
             "tremolo vibrato harmonic modulation pulse", tremoloNames,
             tremoloMetadata, &makeModule<TremoloModule>),
         makeDefinition(
-            ModuleType::rotarySpeaker, ModulePresentation::rotarySpeaker,
-            "Rotary Speaker",
+            ModuleType::rotarySpeaker, "Rotary Speaker",
             ModuleCategory::modulation,
             "Recreate the moving horn, drum, and cabinet of a rotary speaker.",
             "rotary leslie speaker doppler organ modulation",
@@ -4512,7 +4507,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             &makeModule<RotarySpeakerModule>),
         makeDefinition(
             ModuleType::convolutionReverb,
-            ModulePresentation::convolutionReverb, "Convolution Reverb",
+            "Convolution Reverb",
             ModuleCategory::reverbAndSpace,
             "Place sounds in captured spaces with an impulse response.",
             "convolution reverb impulse response ir room space ducking high pass",
@@ -4522,7 +4517,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
                 | ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::dynamicEqualizer,
-            ModulePresentation::dynamicEqualizer, "Dynamic EQ / De-Esser",
+            "Dynamic EQ / De-Esser",
             ModuleCategory::eqAndFilters,
             "Tame or lift a focused band only when needed.",
             "dynamic eq de esser resonance filter sidechain",
@@ -4530,7 +4525,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             &makeModule<DynamicEqualizerModule>),
         makeDefinition(
             ModuleType::randomGranulizer,
-            ModulePresentation::randomGranulizer, "Random Granulizer",
+            "Random Granulizer",
             ModuleCategory::glitchAndCreative,
             "Scatter incoming sound into evolving randomized grains.",
             "granular glitch grains random texture creative",
@@ -4538,45 +4533,39 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             &makeModule<RandomGranulizerModule>,
             ModuleCapability::grainVisualization),
         makeDefinition(
-            ModuleType::vintageChorus, ModulePresentation::vintageChorus,
-            "Vintage Chorus",
+            ModuleType::vintageChorus, "Vintage Chorus",
             ModuleCategory::modulation,
             "Blend classic chorus, dimension, and ensemble textures.",
             "chorus dimension ensemble bbd modulation vintage",
             vintageChorusNames, vintageChorusMetadata,
             &makeModule<VintageChorusModule>),
         makeDefinition(
-            ModuleType::beatPermuter, ModulePresentation::beatPermuter,
-            "Beat Permuter", ModuleCategory::glitchAndCreative,
+            ModuleType::beatPermuter, "Beat Permuter", ModuleCategory::glitchAndCreative,
             "Rearrange recent tempo-locked slices into precise musical glitches.",
             "beat repeat stutter reverse scatter glitch buffer rhythm",
             beatPermuterNames, beatPermuterMetadata,
             &makeModule<BeatPermuterModule>,
             ModuleCapability::beatPermutationVisualization),
         makeDefinition(
-            ModuleType::spectralPrism, ModulePresentation::spectralPrism,
-            "Spectral Prism", ModuleCategory::glitchAndCreative,
+            ModuleType::spectralPrism, "Spectral Prism", ModuleCategory::glitchAndCreative,
             "Bend, shift, smear, and freeze sound around a spectral pivot.",
             "spectral fft warp shift freeze smear phase creative",
             spectralPrismNames, spectralPrismMetadata,
             &makeModule<SpectralPrismModule>),
         makeDefinition(
-            ModuleType::resonantMatrix, ModulePresentation::resonantMatrix,
-            "Resonant Matrix", ModuleCategory::reverbAndSpace,
+            ModuleType::resonantMatrix, "Resonant Matrix", ModuleCategory::reverbAndSpace,
             "Route tuned resonators through evolving signed feedback patterns.",
             "resonator tuned comb matrix feedback pitched metallic space",
             resonantMatrixNames, resonantMatrixMetadata,
             &makeModule<ResonantMatrixModule>),
         makeDefinition(
-            ModuleType::wavefoldGarden, ModulePresentation::wavefoldGarden,
-            "Wavefold Garden", ModuleCategory::glitchAndCreative,
+            ModuleType::wavefoldGarden, "Wavefold Garden", ModuleCategory::glitchAndCreative,
             "Grow animated antialiased harmonics with dynamic wavefolding.",
             "wavefold distortion nonlinear harmonics envelope creative",
             wavefoldGardenNames, wavefoldGardenMetadata,
             &makeModule<WavefoldGardenModule>),
         makeDefinition(
-            ModuleType::gateExpander, ModulePresentation::gateExpander,
-            "Gate / Expander", ModuleCategory::dynamics,
+            ModuleType::gateExpander, "Gate / Expander", ModuleCategory::dynamics,
             "Control noise and ambience with smooth downward expansion.",
             "gate expander noise dynamics sidechain envelope",
             gateExpanderNames, gateExpanderMetadata,
@@ -4584,7 +4573,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::transientDesigner,
-            ModulePresentation::transientDesigner, "Transient Designer",
+            "Transient Designer",
             ModuleCategory::dynamics,
             "Shape attack and sustain without depending on input level.",
             "transient shaper attack sustain punch dynamics",
@@ -4593,7 +4582,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::multibandCompressor,
-            ModulePresentation::multibandCompressor, "Multiband Compressor",
+            "Multiband Compressor",
             ModuleCategory::dynamics,
             "Control low, mid, and high dynamics independently.",
             "multiband compressor crossover low mid high dynamics",
@@ -4601,56 +4590,49 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             &makeModule<MultibandCompressorModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::studioPhaser, ModulePresentation::studioPhaser,
-            "Studio Phaser", ModuleCategory::modulation,
+            ModuleType::studioPhaser, "Studio Phaser", ModuleCategory::modulation,
             "Sweep classic all-pass notches from subtle motion to deep resonance.",
             "phaser allpass phase sweep stages modulation",
             studioPhaserNames, studioPhaserMetadata,
             &makeModule<StudioPhaserModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::studioFlanger, ModulePresentation::studioFlanger,
-            "Studio Flanger", ModuleCategory::modulation,
+            ModuleType::studioFlanger, "Studio Flanger", ModuleCategory::modulation,
             "Create tape, through-zero, jet, and BBD comb movement.",
             "flanger tape through zero jet bbd comb modulation",
             studioFlangerNames, studioFlangerMetadata,
             &makeModule<StudioFlangerModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::diffusionDelay, ModulePresentation::diffusionDelay,
-            "Diffusion Delay", ModuleCategory::delayAndEcho,
+            ModuleType::diffusionDelay, "Diffusion Delay", ModuleCategory::delayAndEcho,
             "Let distinct echoes bloom into a moving diffuse cloud.",
             "diffusion delay echo cloud smear ambient feedback",
             diffusionDelayNames, diffusionDelayMetadata,
             &makeModule<DiffusionDelayModule>,
             ModuleCapability::eventTelemetry),
         makeDefinition(
-            ModuleType::pitchBloom, ModulePresentation::pitchBloom,
-            "Pitch Bloom", ModuleCategory::reverbAndSpace,
+            ModuleType::pitchBloom, "Pitch Bloom", ModuleCategory::reverbAndSpace,
             "Grow pitch-shifted repeats into rising harmonic spaces.",
             "pitch bloom shimmer octave fifth feedback space",
             pitchBloomNames, pitchBloomMetadata,
             &makeModule<PitchBloomModule>,
             ModuleCapability::eventTelemetry),
         makeDefinition(
-            ModuleType::frequencyLab, ModulePresentation::frequencyLab,
-            "Harmonic Resonator", ModuleCategory::reverbAndSpace,
+            ModuleType::frequencyLab, "Harmonic Resonator", ModuleCategory::reverbAndSpace,
             "Turn incoming sound into tuned, moving chord resonances.",
             "harmonic resonator chord tuned modal strings drone musical",
             frequencyLabNames, frequencyLabMetadata,
             &makeModule<FrequencyLabModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::spatialOrbit, ModulePresentation::spatialOrbit,
-            "Spatial Orbit", ModuleCategory::stereoAndUtility,
+            ModuleType::spatialOrbit, "Spatial Orbit", ModuleCategory::stereoAndUtility,
             "Move sound through paths with distance, air, and Doppler cues.",
             "spatial orbit autopan doppler trajectory stereo motion",
             spatialOrbitNames, spatialOrbitMetadata,
             &makeModule<SpatialOrbitModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::signalDecay, ModulePresentation::signalDecay,
-            "Signal Decay", ModuleCategory::saturationAndColor,
+            ModuleType::signalDecay, "Signal Decay", ModuleCategory::saturationAndColor,
             "Add controlled digital, transmission, and mechanical wear.",
             "lofi bitcrush sample rate jitter dropout wow flutter noise",
             signalDecayNames, signalDecayMetadata,
@@ -4658,48 +4640,42 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry
                 | ModuleCapability::eventTelemetry),
         makeDefinition(
-            ModuleType::analogTape, ModulePresentation::analogTape,
-            "Analog Tape", ModuleCategory::saturationAndColor,
+            ModuleType::analogTape, "Analog Tape", ModuleCategory::saturationAndColor,
             "Print through a worn cassette or a finely tuned studio reel deck.",
             "tape saturation reel cassette wow flutter analog warmth",
             analogTapeNames, analogTapeMetadata,
             &makeModule<AnalogTapeModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::resonanceTamer, ModulePresentation::resonanceTamer,
-            "Resonance Tamer", ModuleCategory::eqAndFilters,
+            ModuleType::resonanceTamer, "Resonance Tamer", ModuleCategory::eqAndFilters,
             "Detect and suppress narrow resonances while preserving broad tone and transients.",
             "adaptive resonance suppression spectral dynamic eq harshness",
             resonanceTamerNames, resonanceTamerMetadata,
             &makeModule<ResonanceTamerModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::spectralBalance, ModulePresentation::spectralBalance,
-            "Spectral Balance", ModuleCategory::eqAndFilters,
+            ModuleType::spectralBalance, "Spectral Balance", ModuleCategory::eqAndFilters,
             "Guide long-term tonal balance toward a musical target contour.",
             "adaptive spectral tonal balance contour automatic eq",
             spectralBalanceNames, spectralBalanceMetadata,
             &makeModule<SpectralBalanceModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::phaseCoherence, ModulePresentation::phaseCoherence,
-            "Phase Coherence", ModuleCategory::stereoAndUtility,
+            ModuleType::phaseCoherence, "Phase Coherence", ModuleCategory::stereoAndUtility,
             "Repair confident stereo timing and low-frequency phase mismatches.",
             "phase coherence correlation alignment mono stereo utility",
             phaseCoherenceNames, phaseCoherenceMetadata,
             &makeModule<PhaseCoherenceModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::loudnessRider, ModulePresentation::loudnessRider,
-            "Loudness Rider", ModuleCategory::dynamics,
+            ModuleType::loudnessRider, "Loudness Rider", ModuleCategory::dynamics,
             "Ride long-term loudness with a bounded transparent fader trajectory.",
             "loudness rider lufs gain automation dynamics level",
             loudnessRiderNames, loudnessRiderMetadata,
             &makeModule<LoudnessRiderModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::adaptiveClipper, ModulePresentation::adaptiveClipper,
-            "Adaptive Clipper", ModuleCategory::dynamics,
+            ModuleType::adaptiveClipper, "Adaptive Clipper", ModuleCategory::dynamics,
             "Clip transient and body energy with adaptive shape and true-peak awareness.",
             "adaptive clipper clipping peak loudness transient oversampling",
             adaptiveClipperNames, adaptiveClipperMetadata,
@@ -4707,7 +4683,6 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::spectralDelayCanvas,
-            ModulePresentation::spectralDelayCanvas,
             "Spectral Delay Canvas", ModuleCategory::delayAndEcho,
             "Send low, mid, and high frequencies through independently timed spectral echoes.",
             "spectral delay echo frequency canvas freeze diffusion",
@@ -4715,32 +4690,28 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             &makeModule<SpectralDelayCanvasModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::formantForge, ModulePresentation::formantForge,
-            "Formant Forge", ModuleCategory::glitchAndCreative,
+            ModuleType::formantForge, "Formant Forge", ModuleCategory::glitchAndCreative,
             "Sculpt animated vocal-tract resonances without shifting source pitch.",
             "formant vowel vocal tract filter creature metallic creative",
             formantForgeNames, formantForgeMetadata,
             &makeModule<FormantForgeModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::harmonicMirage, ModulePresentation::harmonicMirage,
-            "Harmonic Mirage", ModuleCategory::saturationAndColor,
+            ModuleType::harmonicMirage, "Harmonic Mirage", ModuleCategory::saturationAndColor,
             "Track and transform confident partials into phase-continuous harmonic layers.",
             "harmonic partial resynthesis subharmonic inharmonic color",
             harmonicMirageNames, harmonicMirageMetadata,
             &makeModule<HarmonicMirageModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::chaosField, ModulePresentation::chaosField,
-            "Chaos Field", ModuleCategory::modulation,
+            ModuleType::chaosField, "Chaos Field", ModuleCategory::modulation,
             "Drive filter, delay, and stereo motion from deterministic chaotic attractors.",
             "chaos attractor lorenz rossler modulation orbit delay filter",
             chaosFieldNames, chaosFieldMetadata,
             &makeModule<ChaosFieldModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::timeMosaic, ModulePresentation::timeMosaic,
-            "Time Mosaic", ModuleCategory::glitchAndCreative,
+            ModuleType::timeMosaic, "Time Mosaic", ModuleCategory::glitchAndCreative,
             "Reassemble spectral tiles from recent history into evolving time-frequency textures.",
             "spectral history mosaic tile freeze glitch time creative",
             timeMosaicNames, timeMosaicMetadata,
@@ -4748,8 +4719,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry
                 | ModuleCapability::eventTelemetry),
         makeDefinition(
-            ModuleType::guitarCabinet, ModulePresentation::guitarCabinet,
-            "Guitar Cabinet", ModuleCategory::guitar,
+            ModuleType::guitarCabinet, "Guitar Cabinet", ModuleCategory::guitar,
             "Shape guitar through bundled or user-loaded cabinet impulse responses.",
             "guitar cabinet speaker cab impulse response ir microphone",
             guitarCabinetNames, guitarCabinetMetadata,
@@ -4757,32 +4727,28 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::impulseResponse
                 | ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::chordLoom, ModulePresentation::chordLoom,
-            "Chord Loom", ModuleCategory::reverbAndSpace,
+            ModuleType::chordLoom, "Chord Loom", ModuleCategory::reverbAndSpace,
             "Hold each guitar chord as a continuously woven pad until the next strum.",
             "guitar chord sustain freeze pad infinite granular hold strum",
             chordLoomNames, chordLoomMetadata,
             &makeModule<ChordLoomModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::volumeSwell, ModulePresentation::volumeSwell,
-            "Volume Swell", ModuleCategory::dynamics,
+            ModuleType::volumeSwell, "Volume Swell", ModuleCategory::dynamics,
             "Automatically softens each chord attack and rises like a guitarist's volume pedal.",
             "guitar auto swell volume pedal knob attack fade chord texture",
             volumeSwellNames, volumeSwellMetadata,
             &makeModule<VolumeSwellModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::spectralNebula, ModulePresentation::spectralNebula,
-            "Spectral Nebula", ModuleCategory::reverbAndSpace,
+            ModuleType::spectralNebula, "Spectral Nebula", ModuleCategory::reverbAndSpace,
             "Dissolve guitar or vocals into a drifting, shimmering spectral cloud.",
             "spectral cloud smear freeze shimmer ambient vocal guitar texture",
             spectralNebulaNames, spectralNebulaMetadata,
             &makeModule<SpectralNebulaModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::midnightCurrent, ModulePresentation::midnightCurrent,
-            "Midnight Current", ModuleCategory::modulation,
+            ModuleType::midnightCurrent, "Midnight Current", ModuleCategory::modulation,
             "Submerge input in a warm resonant analog filter and deep slow phase current.",
             "submerged underwater electric piano analog vcs3 phaser filter "
             "psychedelic vintage slow swirl",
@@ -4790,8 +4756,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             &makeModule<MidnightCurrentModule>,
             ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::autoWah, ModulePresentation::autoWah,
-            "Auto Wah", ModuleCategory::eqAndFilters,
+            ModuleType::autoWah, "Auto Wah", ModuleCategory::eqAndFilters,
             "Drive a vocal resonant filter directly from pick attack and playing dynamics.",
             "auto wah envelope filter pick attack touch sensitive guitar funk "
             "vocal quack",
@@ -4800,7 +4765,6 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::resonantSculpture,
-            ModulePresentation::resonantSculpture,
             "Resonant Sculpture", ModuleCategory::glitchAndCreative,
             "Excite a morphing virtual object of strings, glass, metal, or membranes.",
             "physical modeling modal resonator sculpture bowed struck material "
@@ -4810,7 +4774,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::neuralAmpModeler,
-            ModulePresentation::neuralAmpModeler, "Neural Amp Modeler",
+            "Neural Amp Modeler",
             ModuleCategory::guitar,
             "Load .nam neural amp models including A2 Standard and A2 Nano for authentic amp tones.",
             "nam neural amp modeler guitar tone cabinet a2 machine learning",
@@ -4819,7 +4783,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::neuralAmpModel),
         makeDefinition(
             ModuleType::stageVocal,
-            ModulePresentation::stageVocal, "Stage Vocal",
+            "Stage Vocal",
             ModuleCategory::dynamics,
             "Catch peaks with fast feedback FET compression, then level phrases through a slow optical cell.",
             "stage live vocal microphone dual serial fet 1176 optical la2a deesser compressor presence air strip",
@@ -4828,7 +4792,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::vinylSimulator,
-            ModulePresentation::vinylSimulator, "Vinyl Simulator",
+            "Vinyl Simulator",
             ModuleCategory::saturationAndColor,
             "Recreate worn record playback with deterministic groove noise, crackle, dust, scratches, rumble, and pitch drift.",
             "vinyl record turntable phonograph crackle dust scratch surface noise "
@@ -4838,7 +4802,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::optoLeveler,
-            ModulePresentation::optoLeveler, "Opto Leveler",
+            "Opto Leveler",
             ModuleCategory::dynamics,
             "Program-dependent optical leveling with a dual-memory cell and analog makeup stage.",
             "classic studio optical leveler tube feedback compressor smooth vocal bass",
@@ -4847,7 +4811,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::fetLimiter,
-            ModulePresentation::fetLimiter, "FET Limiter",
+            "FET Limiter",
             ModuleCategory::dynamics,
             "Fast feedback FET limiting with stepped ratios and an aggressive ALL mode.",
             "classic studio fet limiter feedback compressor all ratio fast drums vocal",
@@ -4856,7 +4820,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::programEqualizer,
-            ModulePresentation::programEqualizer, "Program Equalizer",
+            "Program Equalizer",
             ModuleCategory::eqAndFilters,
             "Interacting passive low boost and attenuation with broad high-frequency shaping.",
             "classic studio passive program equalizer tube broad boost attenuation",
@@ -4865,7 +4829,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::studioPlate,
-            ModulePresentation::studioPlate, "Studio Plate",
+            "Studio Plate",
             ModuleCategory::reverbAndSpace,
             "Physically informed electromechanical plate reverb with stereo pickup geometry.",
             "classic studio plate reverb electromechanical modal dense metal pickup",
@@ -4874,7 +4838,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::velvetDrive,
-            ModulePresentation::velvetDrive, "Velvet Drive",
+            "Velvet Drive",
             ModuleCategory::guitar,
             "Purely modeled touch-sensitive boutique guitar amplifier with cascading overdrive and dynamic power-stage bloom.",
             "guitar amp boutique touch sensitive cascading overdrive tube sag speaker clean sustain",
@@ -4883,7 +4847,6 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::wormholeConvolution,
-            ModulePresentation::wormholeConvolution,
             "Wormhole Convolution", ModuleCategory::reverbAndSpace,
             "Crop, reverse, and combine two reverb impulse responses in parallel.",
             "dual parallel convolution reverb impulse reverse crop trim wormhole",
@@ -4891,15 +4854,13 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             &makeModule<WormholeConvolutionModule>,
             ModuleCapability::impulseResponse),
         makeDefinition(
-            ModuleType::bitcrusher, ModulePresentation::bitcrusher,
-            "Bitcrusher", ModuleCategory::saturationAndColor,
+            ModuleType::bitcrusher, "Bitcrusher", ModuleCategory::saturationAndColor,
             "Shape digital resolution and sample-clock reduction from polished texture to broken-machine grit.",
             "bit crusher bitcrush lo-fi sample rate reduction quantizer dither alias jitter digital",
             bitcrusherNames, bitcrusherMetadata,
             &makeModule<BitcrusherModule>),
         makeDefinition(
             ModuleType::portalPermuter,
-            ModulePresentation::portalPermuter,
             "Portal Permuter", ModuleCategory::glitchAndCreative,
             "Rearrange recent tempo-locked slices before sending them through a focused impulse-response portal.",
             "portal permutation beat slice convolution impulse response ir reverse shuffle texture guitar",
@@ -4908,8 +4869,7 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             ModuleCapability::impulseResponse
                 | ModuleCapability::continuousTelemetry),
         makeDefinition(
-            ModuleType::irMosaic, ModulePresentation::irMosaic,
-            "IR Mosaic", ModuleCategory::reverbAndSpace,
+            ModuleType::irMosaic, "IR Mosaic", ModuleCategory::reverbAndSpace,
             "Reassemble an impulse response into moving tile orders while preserving its continuous tail.",
             "impulse response ir mosaic tiles convolution moving reverb texture morph",
             irMosaicNames, irMosaicMetadata,
@@ -5121,7 +5081,6 @@ juce::StringArray validateModuleRegistry()
 {
     juce::StringArray errors;
     std::array<int, moduleTypeCount> typeCounts {};
-    std::array<int, moduleTypeCount> presentationCounts {};
     for (const auto& definition : registryStorage())
     {
         const auto stableType = static_cast<int>(definition.type);
@@ -5134,19 +5093,6 @@ juce::StringArray validateModuleRegistry()
         ++typeCounts[static_cast<size_t>(stableType)];
 
         const auto active = definition.type != ModuleType::empty;
-        const auto presentation =
-            static_cast<int>(definition.presentation);
-        const auto presentationIsValid =
-            presentation >= 0
-            && presentation < static_cast<int>(ModulePresentation::count);
-        if (presentationIsValid)
-            ++presentationCounts[static_cast<size_t>(presentation)];
-        if (!presentationIsValid
-            || (active
-                    ? definition.presentation == ModulePresentation::none
-                    : definition.presentation != ModulePresentation::none))
-            errors.add(juce::String(definition.displayName)
-                       + " has no valid UI presentation.");
         const auto unknownCapabilities =
             static_cast<std::uint32_t>(definition.capabilities)
             & ~static_cast<std::uint32_t>(allModuleCapabilities);
@@ -5211,9 +5157,6 @@ juce::StringArray validateModuleRegistry()
     {
         if (typeCounts[static_cast<size_t>(type)] != 1)
             errors.add("Stable module type " + juce::String(type)
-                       + " does not have exactly one definition.");
-        if (presentationCounts[static_cast<size_t>(type)] != 1)
-            errors.add("UI presentation " + juce::String(type)
                        + " does not have exactly one definition.");
     }
     return errors;

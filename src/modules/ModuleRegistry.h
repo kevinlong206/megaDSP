@@ -92,73 +92,8 @@ enum class ModuleCategory
     guitar
 };
 
-enum class ModulePresentation
-{
-    none = 0,
-    equalizer,
-    compressor,
-    saturator,
-    delay,
-    limiter,
-    algorithmicReverb,
-    stereoWidth,
-    midSideDecoder,
-    tremolo,
-    rotarySpeaker,
-    convolutionReverb,
-    dynamicEqualizer,
-    randomGranulizer,
-    vintageChorus,
-    beatPermuter,
-    spectralPrism,
-    resonantMatrix,
-    wavefoldGarden,
-    gateExpander,
-    transientDesigner,
-    multibandCompressor,
-    studioPhaser,
-    studioFlanger,
-    diffusionDelay,
-    pitchBloom,
-    frequencyLab,
-    spatialOrbit,
-    signalDecay,
-    analogTape,
-    resonanceTamer,
-    spectralBalance,
-    phaseCoherence,
-    loudnessRider,
-    adaptiveClipper,
-    spectralDelayCanvas,
-    formantForge,
-    harmonicMirage,
-    chaosField,
-    timeMosaic,
-    guitarCabinet,
-    chordLoom,
-    volumeSwell,
-    spectralNebula,
-    midnightCurrent,
-    autoWah,
-    resonantSculpture,
-    neuralAmpModeler,
-    stageVocal,
-    vinylSimulator,
-    optoLeveler,
-    fetLimiter,
-    programEqualizer,
-    studioPlate,
-    velvetDrive,
-    wormholeConvolution,
-    bitcrusher,
-    portalPermuter,
-    irMosaic,
-    count
-};
-
 static_assert(
     static_cast<int>(ModuleType::irMosaic) + 1 == moduleTypeCount);
-static_assert(static_cast<int>(ModulePresentation::count) == moduleTypeCount);
 
 enum class CompactVisualization
 {
@@ -231,7 +166,6 @@ struct ModuleDefinition
     ModuleCategory category;
     const char* description;
     const char* searchTags;
-    ModulePresentation presentation;
     std::array<ControlDefinition, controlsPerSlot> controls;
     ModuleFactory factory;
     ModuleCapability capabilities;

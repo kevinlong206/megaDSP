@@ -1579,7 +1579,7 @@ public:
         }
 
         graph = std::make_unique<megadsp::ui::EffectGraph>(
-            processor, slot, type, true);
+            processor, slot, type);
         addAndMakeVisible(*graph);
         addAndMakeVisible(controlsOverlay);
         setWantsKeyboardFocus(true);
@@ -1595,9 +1595,6 @@ public:
         juce::Desktop::getInstance().addFocusChangeListener(this);
         syncBypassState();
         syncAssetName();
-
-        if (graph->usesFullPanel())
-            return;
 
         const auto defaults = megadsp::moduleDefaults(type);
         for (int control = 0; control < megadsp::controlsPerSlot; ++control)
@@ -1793,13 +1790,6 @@ public:
         else
             assetName.setBounds({});
         bounds.removeFromTop(6);
-        if (graph->usesFullPanel())
-        {
-            graph->setBounds(bounds);
-            controlsOverlay.setVisible(false);
-            controlsOverlay.setFrames({});
-            return;
-        }
         controlsOverlay.setVisible(true);
         for (int control = 0; control < megadsp::controlsPerSlot; ++control)
         {
@@ -1987,9 +1977,7 @@ public:
 
     int preferredHeight() const
     {
-        return graph != nullptr
-            ? graph->preferredCardHeight()
-            : megadsp::ui::moduleCardHeight;
+        return megadsp::ui::moduleCardHeight;
     }
 
     int graphHeightForTesting() const
@@ -2006,8 +1994,7 @@ public:
     {
         const auto changed = selected != shouldBeSelected;
         selected = shouldBeSelected;
-        if (!graph->usesFullPanel())
-            startTimerHz(selected ? 10 : 2);
+        startTimerHz(selected ? 10 : 2);
         if (changed)
             repaint();
     }
@@ -2091,8 +2078,7 @@ public:
     }
     bool graphAndControlsAreSeparatedForTesting() const
     {
-        return graph->usesFullPanel()
-            || !graph->getBounds().intersects(controlsOverlay.getBounds());
+        return !graph->getBounds().intersects(controlsOverlay.getBounds());
     }
     bool presentsAllActiveControlsForTesting() const
     {

@@ -428,7 +428,7 @@ public:
             expect(editor->cardChildrenFitForTesting());
         }
 
-        beginTest("Every module presentation fits every widget size");
+        beginTest("Every module fits every widget size");
         std::array<
             bool,
             static_cast<size_t>(
@@ -716,7 +716,7 @@ public:
             dynamicsProcessor.flushPendingUpdatesForTesting();
             megadsp::ui::EffectGraph graph(
                 dynamicsProcessor, 0,
-                megadsp::ModuleType::compressor, true);
+                megadsp::ModuleType::compressor);
             graph.setBounds(0, 0, 384, 120);
             graph.setVisualizationActive(true);
             graph.refreshVisualizationForTesting();
@@ -753,7 +753,7 @@ public:
             equalizerProcessor.flushPendingUpdatesForTesting();
             megadsp::ui::EffectGraph graph(
                 equalizerProcessor, 0,
-                megadsp::ModuleType::equalizer, true);
+                megadsp::ModuleType::equalizer);
             graph.setBounds(0, 0, 384, 120);
             const auto compactPlot =
                 graph.compactEqualizerPlotAreaForTesting();
@@ -804,98 +804,21 @@ public:
                    > 0.1f);
         }
 
-        beginTest("NAM spectrum resumes after module bypass");
+        beginTest("NAM library list does not request DSP telemetry");
         {
-            MegaDSPAudioProcessor spectrumProcessor;
-            spectrumProcessor.prepareToPlay(48000.0, 512);
+            MegaDSPAudioProcessor namProcessor;
+            namProcessor.prepareToPlay(48000.0, 512);
             setType(
-                spectrumProcessor, 0,
+                namProcessor, 0,
                 megadsp::ModuleType::neuralAmpModeler);
-            spectrumProcessor.flushPendingUpdatesForTesting();
+            namProcessor.flushPendingUpdatesForTesting();
             megadsp::ui::EffectGraph graph(
-                spectrumProcessor, 0,
-                megadsp::ModuleType::neuralAmpModeler, true);
+                namProcessor, 0,
+                megadsp::ModuleType::neuralAmpModeler);
             graph.setVisualizationActive(true);
-
-            juce::AudioBuffer<float> dcOffset(
-                2, megadsp::ui::graphFftSize);
-            dcOffset.clear();
-            for (int channel = 0;
-                 channel < dcOffset.getNumChannels(); ++channel)
-                juce::FloatVectorOperations::fill(
-                    dcOffset.getWritePointer(channel),
-                    0.25f, dcOffset.getNumSamples());
-            spectrumProcessor.getVisualizationData().captureOutput(
-                0, dcOffset);
-            graph.refreshVisualizationForTesting();
             expect(
-                *std::max_element(
-                    graph.outputSpectrumData().begin(),
-                    graph.outputSpectrumData().end())
-                <= -99.0f,
-                "DC must not appear as pinned bass energy.");
-
-            juce::AudioBuffer<float> tone(2, megadsp::ui::graphFftSize);
-            for (int channel = 0; channel < tone.getNumChannels(); ++channel)
-                for (int sample = 0; sample < tone.getNumSamples(); ++sample)
-                    tone.setSample(
-                        channel, sample,
-                        0.25f * std::sin(
-                            juce::MathConstants<float>::twoPi
-                            * 1000.0f * static_cast<float>(sample)
-                            / 48000.0f));
-            spectrumProcessor.getVisualizationData().captureOutput(
-                0, tone);
-            graph.refreshVisualizationForTesting();
-            expect(
-                *std::max_element(
-                    graph.outputSpectrumData().begin(),
-                    graph.outputSpectrumData().end())
-                > -30.0f);
-            expectWithinAbsoluteError(
-                graph.namSpectrumFreshnessForTesting(),
-                1.0f, 0.000001f);
-
-            for (int refresh = 0; refresh < 20; ++refresh)
-                graph.refreshVisualizationForTesting();
-            expect(
-                *std::max_element(
-                    graph.outputSpectrumData().begin(),
-                    graph.outputSpectrumData().end())
-                <= -99.0f);
-            expectWithinAbsoluteError(
-                graph.namSpectrumFreshnessForTesting(),
-                0.0f, 0.000001f);
-
-            spectrumProcessor.getVisualizationData().captureOutput(
-                0, tone);
-            graph.refreshVisualizationForTesting();
-            expect(
-                *std::max_element(
-                    graph.outputSpectrumData().begin(),
-                    graph.outputSpectrumData().end())
-                > -30.0f);
-            expectWithinAbsoluteError(
-                graph.namSpectrumFreshnessForTesting(),
-                1.0f, 0.000001f);
-
-            setBypass(spectrumProcessor, 0, true);
-            graph.refreshVisualizationForTesting();
-            expectEquals(
-                *std::max_element(
-                    graph.outputSpectrumData().begin(),
-                    graph.outputSpectrumData().end()),
-                -100.0f);
-
-            setBypass(spectrumProcessor, 0, false);
-            spectrumProcessor.getVisualizationData().captureOutput(
-                0, tone);
-            graph.refreshVisualizationForTesting();
-            expect(
-                *std::max_element(
-                    graph.outputSpectrumData().begin(),
-                    graph.outputSpectrumData().end())
-                > -30.0f);
+                !namProcessor.getVisualizationData().isSlotActive(0),
+                "The compact NAM library must not capture unused DSP data.");
         }
 
         beginTest("Every active graph owns visualization capture");
@@ -1202,7 +1125,7 @@ public:
                 setType(telemetryProcessor, 0, type);
                 telemetryProcessor.flushPendingUpdatesForTesting();
                 megadsp::ui::EffectGraph graph(
-                    telemetryProcessor, 0, type, true);
+                    telemetryProcessor, 0, type);
                 graph.setBounds(0, 0, 384, 120);
                 graph.setVisualizationActive(true);
                 juce::MidiBuffer telemetryMidi;

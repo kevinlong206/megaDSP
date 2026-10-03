@@ -293,71 +293,8 @@ set(MEGADSP_UI_SOURCES
     src/ui/GraphStyle.h
     src/ui/GuiLayout.cpp
     src/ui/GuiLayout.h
-    src/ui/ModuleView.cpp
-    src/ui/ModuleView.h
-    src/ui/ModuleViewFactory.cpp
-    src/ui/ModuleViewFactory.h
     src/ui/ModuleBrowser.cpp
-    src/ui/ModuleBrowser.h
-    src/ui/modules/AlgorithmicReverbModuleView.cpp
-    src/ui/modules/AdaptiveClipperModuleView.cpp
-    src/ui/modules/AnalogTapeModuleView.cpp
-    src/ui/modules/BeatPermuterModuleView.cpp
-    src/ui/modules/CompressorModuleView.cpp
-    src/ui/modules/ConvolutionReverbModuleView.cpp
-    src/ui/modules/ChaosFieldModuleView.cpp
-    src/ui/modules/DelayModuleView.cpp
-    src/ui/modules/DiffusionDelayModuleView.cpp
-    src/ui/modules/DynamicEqualizerModuleView.cpp
-    src/ui/modules/EqualizerModuleView.cpp
-    src/ui/modules/FrequencyLabModuleView.cpp
-    src/ui/modules/FormantForgeModuleView.cpp
-    src/ui/modules/GateExpanderModuleView.cpp
-    src/ui/modules/GuitarCabinetModuleView.cpp
-    src/ui/modules/ChordLoomModuleView.cpp
-    src/ui/modules/VolumeSwellModuleView.cpp
-    src/ui/modules/SpectralNebulaModuleView.cpp
-    src/ui/modules/MidnightCurrentModuleView.cpp
-    src/ui/modules/AutoWahModuleView.cpp
-    src/ui/modules/ResonantSculptureModuleView.cpp
-    src/ui/modules/LimiterModuleView.cpp
-    src/ui/modules/LoudnessRiderModuleView.cpp
-    src/ui/modules/MidSideDecoderModuleView.cpp
-    src/ui/modules/ModuleViewCreators.h
-    src/ui/modules/MultibandCompressorModuleView.cpp
-    src/ui/modules/PitchBloomModuleView.cpp
-    src/ui/modules/PhaseCoherenceModuleView.cpp
-    src/ui/modules/RandomGranulizerModuleView.cpp
-    src/ui/modules/ResonanceTamerModuleView.cpp
-    src/ui/modules/ResonantMatrixModuleView.cpp
-    src/ui/modules/RotarySpeakerModuleView.cpp
-    src/ui/modules/SaturatorModuleView.cpp
-    src/ui/modules/StereoWidthModuleView.cpp
-    src/ui/modules/SpectralPrismModuleView.cpp
-    src/ui/modules/SpectralBalanceModuleView.cpp
-    src/ui/modules/SpectralDelayCanvasModuleView.cpp
-    src/ui/modules/SignalDecayModuleView.cpp
-    src/ui/modules/SpatialOrbitModuleView.cpp
-    src/ui/modules/StudioFlangerModuleView.cpp
-    src/ui/modules/StudioPhaserModuleView.cpp
-    src/ui/modules/TremoloModuleView.cpp
-    src/ui/modules/TransientDesignerModuleView.cpp
-    src/ui/modules/TimeMosaicModuleView.cpp
-    src/ui/modules/VintageChorusModuleView.cpp
-    src/ui/modules/WavefoldGardenModuleView.cpp
-    src/ui/modules/HarmonicMirageModuleView.cpp
-    src/ui/modules/NeuralAmpModelerModuleView.cpp
-    src/ui/modules/StageVocalModuleView.cpp
-    src/ui/modules/VinylSimulatorModuleView.cpp
-    src/ui/modules/OptoLevelerModuleView.cpp
-    src/ui/modules/FetLimiterModuleView.cpp
-    src/ui/modules/ProgramEqualizerModuleView.cpp
-    src/ui/modules/StudioPlateModuleView.cpp
-    src/ui/modules/VelvetDriveModuleView.cpp
-    src/ui/modules/WormholeConvolutionModuleView.cpp
-    src/ui/modules/BitcrusherModuleView.cpp
-    src/ui/modules/PortalPermuterModuleView.cpp
-    src/ui/modules/IRMosaicModuleView.cpp)
+    src/ui/ModuleBrowser.h)
 
 target_sources(megaDSP PRIVATE
     ${MEGADSP_MODULE_SOURCES}

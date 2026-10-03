@@ -6,24 +6,17 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include <array>
-#include <memory>
-
 namespace megadsp::ui
 {
-class ModuleView;
-
 constexpr int graphFftOrder = 10;
 constexpr int graphFftSize = 1 << graphFftOrder;
 constexpr int graphLevelHistorySize = 500;
 
 class EffectGraph final : public juce::Component,
-                          public juce::FileDragAndDropTarget,
                           private juce::Timer
 {
 public:
-    EffectGraph(
-        MegaDSPAudioProcessor&, int slot, ModuleType,
-        bool compactPresentation = false);
+    EffectGraph(MegaDSPAudioProcessor&, int slot, ModuleType);
     ~EffectGraph() override;
 
     void paint(juce::Graphics&) override;
@@ -38,11 +31,6 @@ public:
     void focusGained(FocusChangeType) override;
     void focusLost(FocusChangeType) override;
 
-    bool isInterestedInFileDrag(const juce::StringArray&) override;
-    void filesDropped(const juce::StringArray&, int x, int y) override;
-    bool usesFullPanel() const;
-    bool isCompactPresentation() const { return compact; }
-    int preferredCardHeight() const;
     void setVisualizationActive(bool);
     bool isVisualizationActive() const { return visualizationActive; }
     static size_t spectrumBinForProportion(
@@ -61,10 +49,16 @@ public:
     {
         return compactEqualizerResponseDb(frequency);
     }
-    float namSpectrumFreshnessForTesting() const
+    int compactNamLibraryModelCountForTesting() const
     {
-        return namSpectrumFreshness;
+        return static_cast<int>(compactNamModels.size());
     }
+    int compactNamFirstVisibleModelForTesting() const
+    {
+        return compactNamFirstVisible;
+    }
+    void activateCompactNamModelForTesting(int index);
+    void scrollCompactNamLibraryForTesting(int rows);
 #endif
 
     float value(int control) const;
@@ -72,22 +66,6 @@ public:
     void setValue(int control, float normalized);
     void beginGestures();
     void endGestures();
-    void focusKeyboardControl(int control);
-
-    MegaDSPAudioProcessor& moduleProcessor() { return processor; }
-    int moduleSlot() const { return slot; }
-    ModuleType moduleType() const { return type; }
-    std::array<float, graphFftSize>& inputSampleData() { return inputSamples; }
-    std::array<float, graphFftSize>& outputSampleData() { return outputSamples; }
-    std::array<float, graphFftSize>& stereoLeftSampleData()
-    {
-        return stereoLeftSamples;
-    }
-    std::array<float, graphFftSize>& stereoRightSampleData()
-    {
-        return stereoRightSamples;
-    }
-    std::array<float, 256>& gainHistoryData() { return gainHistory; }
     std::array<float, graphLevelHistorySize>& inputLevelData()
     {
         return inputLevels;
@@ -108,14 +86,15 @@ public:
     {
         return outputSpectrum;
     }
-    int& primaryDragControl() { return dragPrimary; }
-    int& secondaryDragControl() { return dragSecondary; }
-    juce::String& dragValueReadout() { return dragReadout; }
-
 private:
-    class GraphAccessibilityHandler;
-
     void paintCompact(juce::Graphics&, juce::Rectangle<float>);
+    void paintCompactNamLibrary(
+        juce::Graphics&, juce::Rectangle<float>);
+    void refreshCompactNamLibrary();
+    void activateCompactNamModel(int index);
+    int compactNamVisibleRowCount() const;
+    int compactNamModelAt(juce::Point<float>) const;
+    void scrollCompactNamLibrary(int rows);
     juce::Rectangle<float> compactCompressorLevelArea() const;
     void setCompactCompressorThresholdFromY(float);
     juce::Rectangle<float> compactEqualizerPlotArea() const;
@@ -136,21 +115,8 @@ private:
     void calculateSpectrum(
         const std::array<float, graphFftSize>&,
         std::array<float, graphFftSize / 2>&);
-    static void drawGrid(juce::Graphics&, juce::Rectangle<float>);
     std::unique_ptr<juce::AccessibilityHandler>
         createAccessibilityHandler() override;
-    void refreshFocusedControl(bool notifyAccessibility);
-    bool moveFocusedControl(int direction);
-    bool adjustFocusedControl(int direction, bool fine);
-    bool activateFocusedControl();
-    bool resetFocusedControl();
-    bool setFocusedAccessibilityValue(double);
-    bool setFocusedAccessibilityValueAsString(const juce::String&);
-    juce::String focusedControlLabel() const;
-    juce::String focusedControlValueText() const;
-    juce::String focusedControlReadout() const;
-    void notifyFocusedControlChanged(bool titleChanged);
-    void setInteractiveRefresh(bool);
 
     MegaDSPAudioProcessor& processor;
     int slot;
@@ -173,12 +139,13 @@ private:
     int compactEqualizerBand = -1;
     uint64_t lastInputHistoryPosition = 0;
     uint64_t lastOutputHistoryPosition = 0;
-    float namSpectrumFreshness = 0.0f;
-    int focusedControl = -1;
     juce::String dragReadout;
-    std::unique_ptr<ModuleView> moduleView;
+    std::vector<NamModelLibraryEntry> compactNamModels;
+    std::uint64_t compactNamLibraryGeneration = 0;
+    int compactNamFirstVisible = 0;
+    int compactNamSelected = -1;
+    bool compactNamLoadPending = false;
     bool bypassVisualsSuspended = false;
     bool visualizationActive = false;
-    bool compact = false;
 };
 } // namespace megadsp::ui

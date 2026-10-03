@@ -17,7 +17,6 @@ inline constexpr int editorStateMaximumWidth = 8192;
 inline constexpr int editorStateMaximumHeight = 4320;
 inline constexpr int instanceNameMaximumLength = 32;
 inline constexpr int moduleCardHeight = 320;
-inline constexpr int fullPanelModuleCardHeight = 480;
 inline constexpr int moduleCardMaximumHeight = 640;
 inline constexpr int moduleCardGap = 8;
 inline constexpr int addModuleCardHeight = 42;

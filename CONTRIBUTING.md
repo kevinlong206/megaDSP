@@ -103,20 +103,21 @@ The codebase is a standard JUCE plugin project. Key layers:
 | Source | Role |
 |---|---|
 | `src/Parameters.*` | Fixed host parameter layout, descriptors from the registry, and state migration (schemas 2–11) |
-| `src/modules/ModuleRegistry.*` | Stable module enum, presentation metadata, control labels, defaults, formatting/parsing, contextual predicates, factories, and capabilities |
+| `src/modules/ModuleRegistry.*` | Stable module enum, control metadata, defaults, formatting/parsing, contextual predicates, factories, and capabilities |
 | `src/modules/*` | Per-module DSP declarations, implementations, and shared DSP helpers |
 | `src/DspModules.h` | Compatibility umbrella for all DSP module declarations |
 | `src/EffectRack.*` | Slot ownership, serial routing, bypass interpolation, latency alignment, visualization capture, and tail aggregation |
 | `src/SnapshotState.*` | Independent prepared rack states for eight snapshots, including external asset references and schema serialization |
 | `src/Diagnostics.*` | Default-on rotating logs, lock-free realtime event capture, and chained fatal crash markers |
 | `src/PluginProcessor.*` | Host buses, state, presets, latency reporting, rack topology operations, and sample-accurate snapshot recall/spill |
-| `src/PluginEditor.*` | Header identity, snapshots, sticky chain navigator, vertically scrolling card rack, and semantic module controls |
-| `src/ui/*` | Reusable effect graph shell, module view interface, and view factory |
-| `src/ui/modules/*` | Module-specific graph rendering and interactions |
+| `src/PluginEditor.*` | Header identity, snapshots, horizontal widget rack, asset browsers, and semantic module controls |
+| `src/ui/*` | Compact effect visualization and module browser |
 | `tests/DspModuleTests.cpp` | Focused DSP module tests |
 | `tests/TestMain.cpp` | Rack, host-contract, state, and integration tests |
 
-Every new processor must be wired through Parameters, `src/modules/`, EffectRack, the registry (presentation metadata, defaults, formatting/parsing), the UI module-view factory, and tests.
+Every new processor must be wired through Parameters, `src/modules/`,
+EffectRack, the registry (control metadata, defaults, formatting/parsing), the
+compact widget visualization in `EffectGraph`, and tests.
 
 ---
 
@@ -126,9 +127,9 @@ Adding a new module requires changes in a specific order:
 
 1. **Append** a new `ModuleType` integer value at the end of the enum in `ModuleRegistry`. Never reuse or reorder existing values.
 2. Add DSP declarations in `src/modules/` and the umbrella `DspModules.h`.
-3. Register presentation metadata, control labels, defaults, formatting/parsing, predicates, and the factory in `ModuleRegistry`.
+3. Register control labels, defaults, formatting/parsing, predicates, and the factory in `ModuleRegistry`.
 4. Wire the new module through `EffectRack` (slot routing, tail, latency).
-5. Add a module view in `src/ui/modules/` and register it in the view factory.
+5. Add its compact widget visualization and interactions in `EffectGraph`.
 6. Add DSP tests in `DspModuleTests.cpp` and host-contract assertions in `TestMain.cpp`.
 
 The current registered module values are listed in [AGENTS.md](AGENTS.md).

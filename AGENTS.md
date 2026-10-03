@@ -52,8 +52,7 @@ serial slots and twelve fixed generic controls per slot.
 - `src/PluginEditor.*`: header identity, snapshots, sticky chain navigator,
   compact-card rack, semantic module controls, and the active NAM/IR search
   popovers.
-- `src/ui/*`: reusable effect graph shell, module view interface, and factory.
-- `src/ui/modules/*`: module-specific graph rendering and interactions.
+- `src/ui/*`: reusable compact effect visualization and module browser.
 - `src/ReaperEmbeddedUI.*`: REAPER TCP/MCP embedded-chain rendering, scaling,
   interaction forwarding, and supported VST3 host extensions.
 - `tests/DspModuleTests.cpp`: focused DSP module tests.
@@ -64,14 +63,13 @@ serial slots and twelve fixed generic controls per slot.
 - `tests/TestMain.cpp`: rack, state, registry, and integration tests.
 
 Every new processor must be wired through Parameters, `src/modules`, EffectRack,
-registry presentation metadata, the UI module-view factory, defaults,
+registry control metadata, the compact `EffectGraph` visualization, defaults,
 parsing/formatting, and tests.
 
-The compact `MegaDSPAudioProcessorEditor::ModuleCard` workflow is the
-user-facing source of truth. Do not add a primary workflow only to a legacy
-full-panel module view. NAM and every user-IR-capable module must expose asset
-search from its compact card; Wormhole Convolution must preserve independent
-lane A and B search/load targets.
+The compact `MegaDSPAudioProcessorEditor::ModuleCard` workflow is the only
+module editor. NAM and every user-IR-capable module must expose asset search
+from its compact card; Wormhole Convolution must preserve independent lane A
+and B search/load targets.
 
 ## External asset libraries
 

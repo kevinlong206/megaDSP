@@ -420,8 +420,8 @@ public:
             moduleCardHeight);
         expectEquals(
             calculateRackContentHeight(
-                { moduleCardHeight, fullPanelModuleCardHeight }, false),
-            moduleCardHeight + fullPanelModuleCardHeight
+                { moduleCardHeight, moduleCardHeight }, false),
+            moduleCardHeight * 2
                 + moduleCardGap);
         expectEquals(
             calculateRackContentHeight(
