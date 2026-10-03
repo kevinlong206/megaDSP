@@ -128,9 +128,12 @@ The TCP presents the chain horizontally; the MCP stacks it vertically. Every
 active module appears as a responsive category-coloured tile with selection,
 bypass, primary control/value, and activity feedback. Click a tile to select
 it, drag up/down to adjust its primary control, use the mouse wheel for small
-changes, double-click to reset that control, or click its **O/B** status dot to
-toggle bypass. Right-clicks pass through to REAPER. When the panel is too small
-for full labels, tiles progressively collapse rather than hiding chain slots.
+changes, or click its **O/B** status dot to toggle bypass. Click a module title,
+or double-click anywhere in a tile, to foreground the full plug-in editor.
+Right-clicks pass through to REAPER. Dynamics tiles show gain reduction as an
+amber meter that grows from right to left; other activity meters grow from left
+to right. When the panel is too small for full labels, tiles progressively
+collapse rather than hiding chain slots.
 Typography, controls, padding, and meters follow REAPER's advertised HiDPI
 scale, including doubled Retina bitmap and mouse coordinates on macOS.
 

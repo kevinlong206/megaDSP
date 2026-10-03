@@ -213,6 +213,19 @@ juce::Rectangle<int> ReaperEmbeddedUI::bypassBounds(
             tile.getRight() - size - inset, tile.getY() + inset);
 }
 
+juce::Rectangle<int> ReaperEmbeddedUI::editorOpenBounds(
+    juce::Rectangle<int> tile, float scale) const
+{
+    const auto inset = juce::roundToInt(3.0f * scale);
+    auto header = tile.reduced(inset);
+    header.setHeight(juce::jmin(
+        header.getHeight(), juce::roundToInt(20.0f * scale)));
+    header.removeFromRight(
+        bypassBounds(tile, scale).getWidth()
+        + juce::roundToInt(4.0f * scale));
+    return header;
+}
+
 int ReaperEmbeddedUI::tileAt(
     juce::Point<int> point, const Layout& layout) const
 {
@@ -356,12 +369,23 @@ void ReaperEmbeddedUI::paintTile(
     const auto activity = juce::jlimit(
         0.0f, 1.0f,
         rawActivity <= 1.0f ? rawActivity : rawActivity / 24.0f);
-    if (activity > 0.001f)
+    const auto showsGainReduction =
+        compactVisualizationShowsGainReduction(type);
+    if (showsGainReduction || activity > 0.001f)
     {
-        auto meter = area.removeFromBottom(2.0f * scale);
-        graphics.setColour(juce::Colour(0xff63df9a).withAlpha(0.72f));
+        auto meter = area.removeFromBottom(
+            (showsGainReduction ? 4.0f : 2.0f) * scale);
+        graphics.setColour(juce::Colours::black.withAlpha(0.40f));
+        graphics.fillRect(meter);
+        graphics.setColour(
+            (showsGainReduction ? ui::reductionColour
+                                : ui::outputColour)
+                .withAlpha(0.82f));
+        const auto meterWidth = meter.getWidth() * activity;
         graphics.fillRect(
-            meter.withWidth(meter.getWidth() * activity));
+            showsGainReduction
+                ? meter.removeFromRight(meterWidth)
+                : meter.withWidth(meterWidth));
     }
 }
 
@@ -519,26 +543,6 @@ Steinberg::TPtrInt ReaperEmbeddedUI::mouseMessage(
             return invalidate;
 
         case REAPER_FXEMBED_WM_LBUTTONDBLCLK:
-            if (slot >= 0)
-            {
-                const auto control = primaryControl(slot);
-                if (control >= 0)
-                {
-                    if (auto* parameter =
-                            processor.parameters.getParameter(
-                                controlParameterId(slot, control)))
-                    {
-                        parameter->beginChangeGesture();
-                        parameter->setValueNotifyingHost(
-                            moduleDefaults(
-                                processor.getRack()
-                                    .activeModuleType(slot))
-                                [static_cast<size_t>(control)]);
-                        parameter->endChangeGesture();
-                    }
-                }
-                return invalidate;
-            }
             return 0;
 
         case REAPER_FXEMBED_WM_MOUSEWHEEL:
@@ -591,10 +595,29 @@ Steinberg::TPtrInt ReaperEmbeddedUI::embed_message(
             const auto layout = createLayout(
                 { 0, 0, info->width, info->height },
                 info->context, scaleFor(info));
-            return tileAt(
-                       { info->mouse_x, info->mouse_y }, layout)
-                    >= 0
-                ? 0 : 1;
+            const auto point =
+                juce::Point<int>(info->mouse_x, info->mouse_y);
+            const auto slot = tileAt(point, layout);
+            if (slot < 0)
+                return 1;
+            if (originalMessage == REAPER_FXEMBED_WM_LBUTTONDBLCLK)
+            {
+                processor.setSelectedTab(slot);
+                return 1;
+            }
+            if (originalMessage == REAPER_FXEMBED_WM_LBUTTONDOWN
+                || originalMessage == REAPER_FXEMBED_WM_LBUTTONUP)
+            {
+                const auto opensEditor = editorOpenBounds(
+                    layout.tiles[static_cast<size_t>(slot)],
+                    scaleFor(info)).contains(point);
+                if (opensEditor
+                    && originalMessage
+                        == REAPER_FXEMBED_WM_LBUTTONDOWN)
+                    processor.setSelectedTab(slot);
+                return opensEditor ? 1 : 0;
+            }
+            return 0;
         }
         case REAPER_FXEMBED_WM_MOUSEMOVE:
         case REAPER_FXEMBED_WM_LBUTTONDOWN:

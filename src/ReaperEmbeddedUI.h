@@ -72,6 +72,8 @@ private:
     int primaryControl(int slot) const;
     juce::Rectangle<int> bypassBounds(
         juce::Rectangle<int> tile, float scale) const;
+    juce::Rectangle<int> editorOpenBounds(
+        juce::Rectangle<int> tile, float scale) const;
     int tileAt(juce::Point<int>, const Layout&) const;
     void paint(
         juce::Graphics&, juce::Rectangle<int>, int context,

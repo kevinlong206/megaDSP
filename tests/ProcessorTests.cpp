@@ -1072,6 +1072,20 @@ public:
             expect(
                 gainReduction->getGainReductionValueInDb() < -0.1,
                 "REAPER should receive measured compressor reduction.");
+            const auto reductionImage =
+                embedded->renderForTesting(110, 300, 2);
+            const auto compressorTile = mcpTiles[1];
+            const auto meterY = compressorTile.getBottom() - 3;
+            expect(
+                reductionImage.getPixelAt(
+                    compressorTile.getX()
+                        + compressorTile.getWidth() / 8,
+                    meterY)
+                    != reductionImage.getPixelAt(
+                        compressorTile.getX()
+                            + compressorTile.getWidth() * 7 / 8,
+                        meterY),
+                "Gain reduction should fill from the right edge.");
             setBypass(embeddedProcessor, 1, true);
             expectWithinAbsoluteError(
                 gainReduction->getGainReductionValueInDb(),
@@ -1107,6 +1121,12 @@ public:
                 reinterpret_cast<Steinberg::TPtrInt>(&mouse));
             mouse.mouse_x = mcpTiles[1].getCentreX();
             mouse.mouse_y = mcpTiles[1].getCentreY();
+            expectEquals(
+                static_cast<int>(embedded->embed_message(
+                    REAPER_FXEMBED_WM_HITTEST,
+                    REAPER_FXEMBED_WM_LBUTTONDOWN,
+                    reinterpret_cast<Steinberg::TPtrInt>(&mouse))),
+                0);
             embedded->embed_message(
                 REAPER_FXEMBED_WM_LBUTTONDOWN, 0,
                 reinterpret_cast<Steinberg::TPtrInt>(&mouse));
@@ -1114,6 +1134,22 @@ public:
                 REAPER_FXEMBED_WM_LBUTTONUP, 0,
                 reinterpret_cast<Steinberg::TPtrInt>(&mouse));
             expectEquals(embeddedProcessor.getSelectedTab(), 1);
+            mouse.mouse_x = mcpTiles[2].getCentreX();
+            mouse.mouse_y = mcpTiles[2].getY() + 8;
+            expectEquals(
+                static_cast<int>(embedded->embed_message(
+                    REAPER_FXEMBED_WM_HITTEST,
+                    REAPER_FXEMBED_WM_LBUTTONDOWN,
+                    reinterpret_cast<Steinberg::TPtrInt>(&mouse))),
+                1);
+            expectEquals(embeddedProcessor.getSelectedTab(), 2);
+            mouse.mouse_y = mcpTiles[2].getCentreY();
+            expectEquals(
+                static_cast<int>(embedded->embed_message(
+                    REAPER_FXEMBED_WM_HITTEST,
+                    REAPER_FXEMBED_WM_LBUTTONDBLCLK,
+                    reinterpret_cast<Steinberg::TPtrInt>(&mouse))),
+                1);
             expectEquals(
                 static_cast<int>(embedded->embed_message(
                     REAPER_FXEMBED_WM_HITTEST,
