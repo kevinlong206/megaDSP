@@ -1356,7 +1356,8 @@ public:
             for (int channel = 0; channel < unsafe.getNumChannels();
                  ++channel)
                 expectWithinAbsoluteError(
-                    unsafe.getMagnitude(channel, unsafe.getNumSamples()),
+                    unsafe.getMagnitude(
+                        channel, 0, unsafe.getNumSamples()),
                     0.0f, 0.000001f);
         }
 

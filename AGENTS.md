@@ -400,13 +400,6 @@ Before installing a release or user-requested development build:
 9. Verify the installed bundle is byte-identical to the validated bundle, its
    deep signature is valid, and its binary contains the expected commit hash.
 
-`Unsafe rack output is rejected before host handoff` is a known randomized
-test flake: it can occasionally report arbitrary finite output and then pass
-unchanged on rerun. Treat every occurrence as a failure first, inspect the
-reported value and neighboring tests, and rerun to distinguish the known flake
-from a regression. Do not hide it, weaken the assertion, or disregard repeated
-failures.
-
 Test stereo DSP with duplicated mono, asymmetric stereo, hard-panned input,
 mono fold-down, one-channel fallback, automation steps, and supported sample
 rates. Test host compatibility with absolute parameter counts and fixed enum
