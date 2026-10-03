@@ -81,8 +81,11 @@ public:
 class EmbeddedBitmap final : public reaper::REAPER_FXEMBED_IBitmap
 {
 public:
-    EmbeddedBitmap(int widthToUse, int heightToUse)
+    EmbeddedBitmap(
+        int widthToUse, int heightToUse,
+        int advisoryScaleToUse = 0)
         : width(widthToUse), height(heightToUse),
+          advisoryScale(advisoryScaleToUse),
           pixels(static_cast<size_t>(width * height))
     {
     }
@@ -99,9 +102,16 @@ public:
             static_cast<size_t>(width * height), 0u);
         return true;
     }
+    reaper::INT_PTR Extended(int id, void*) override
+    {
+        return id == REAPER_FXEMBED_EXT_GET_ADVISORY_SCALING
+            ? static_cast<reaper::INT_PTR>(advisoryScale)
+            : reaper::INT_PTR {};
+    }
 
     int width;
     int height;
+    int advisoryScale;
     std::vector<unsigned int> pixels;
 };
 
@@ -942,6 +952,20 @@ public:
                 static_cast<reaper::IReaperUIEmbedInterface*>(
                     queried)->release();
 
+            void* gainReductionQuery = nullptr;
+            expectEquals(
+                embedded->queryIEditController(
+                    Presonus::IGainReductionInfo::iid,
+                    &gainReductionQuery),
+                static_cast<int32_t>(Steinberg::kResultOk));
+            expect(gainReductionQuery == static_cast<
+                Presonus::IGainReductionInfo*>(embedded));
+            auto* gainReduction = static_cast<
+                Presonus::IGainReductionInfo*>(gainReductionQuery);
+            expectWithinAbsoluteError(
+                gainReduction->getGainReductionValueInDb(),
+                0.0, 0.000001);
+
             const auto tcpTiles =
                 embedded->tileBoundsForTesting(480, 90, 1);
             expect(tcpTiles[0].getX() < tcpTiles[1].getX());
@@ -972,6 +996,30 @@ public:
                         tcpTiles[1].getCentreY()),
                 "Module-category tiles should remain visually distinct.");
 
+            const auto retinaMcpTiles =
+                embedded->tileBoundsForTesting(220, 600, 2, 2.0f);
+            for (int slot = 0; slot < 3; ++slot)
+            {
+                const auto normal =
+                    mcpTiles[static_cast<size_t>(slot)];
+                const auto retina =
+                    retinaMcpTiles[static_cast<size_t>(slot)];
+                expectWithinAbsoluteError(
+                    retina.getCentreX(),
+                    normal.getCentreX() * 2, 2);
+                expectWithinAbsoluteError(
+                    retina.getCentreY(),
+                    normal.getCentreY() * 2, 2);
+                expectWithinAbsoluteError(
+                    retina.getWidth(), normal.getWidth() * 2, 2);
+                expectWithinAbsoluteError(
+                    retina.getHeight(), normal.getHeight() * 2, 2);
+            }
+            expect(
+                embedded->renderForTesting(
+                    220, 600, 2, 2.0f).isValid(),
+                "Retina MCP rendering should use scaled geometry.");
+
             EmbeddedBitmap bitmap(480, 90);
             reaper::REAPER_FXEMBED_DrawInfo paintInfo {};
             paintInfo.context = 1;
@@ -986,6 +1034,49 @@ public:
             expect(std::any_of(
                 bitmap.pixels.begin(), bitmap.pixels.end(),
                 [](unsigned int pixel) { return pixel != 0u; }));
+
+            EmbeddedBitmap retinaBitmap(220, 600, 512);
+            reaper::REAPER_FXEMBED_DrawInfo retinaPaintInfo {};
+            retinaPaintInfo.context = 2;
+            retinaPaintInfo.dpi = 512;
+            retinaPaintInfo.width = retinaBitmap.getWidth();
+            retinaPaintInfo.height = retinaBitmap.getHeight();
+            retinaPaintInfo.flags =
+                REAPER_FXEMBED_DRAWINFO_FLAG_IS_RETINA;
+            expectEquals(
+                static_cast<int>(embedded->embed_message(
+                    REAPER_FXEMBED_WM_PAINT,
+                    reinterpret_cast<Steinberg::TPtrInt>(
+                        &retinaBitmap),
+                    reinterpret_cast<Steinberg::TPtrInt>(
+                        &retinaPaintInfo))),
+                1);
+            expect(std::any_of(
+                retinaBitmap.pixels.begin(),
+                retinaBitmap.pixels.end(),
+                [](unsigned int pixel) { return pixel != 0u; }));
+
+            juce::AudioBuffer<float> compressedSignal(2, 512);
+            juce::MidiBuffer embeddedMidi;
+            for (int block = 0; block < 8; ++block)
+            {
+                for (int channel = 0;
+                     channel < compressedSignal.getNumChannels();
+                     ++channel)
+                    juce::FloatVectorOperations::fill(
+                        compressedSignal.getWritePointer(channel),
+                        1.0f, compressedSignal.getNumSamples());
+                embeddedProcessor.processBlock(
+                    compressedSignal, embeddedMidi);
+            }
+            expect(
+                gainReduction->getGainReductionValueInDb() < -0.1,
+                "REAPER should receive measured compressor reduction.");
+            setBypass(embeddedProcessor, 1, true);
+            expectWithinAbsoluteError(
+                gainReduction->getGainReductionValueInDb(),
+                0.0, 0.000001);
+            setBypass(embeddedProcessor, 1, false);
 
             expect(embedded->dragPrimaryForTesting(0, -60));
             expect(embedded->dragPrimaryForTesting(0, 60));
@@ -1050,6 +1141,8 @@ public:
             expect(
                 embedded->renderForTesting(90, 144, 2).isValid(),
                 "All eight modules must remain renderable in a small MCP.");
+            if (gainReduction != nullptr)
+                gainReduction->release();
         }
 
         beginTest("Telemetry-rich compact views render measured state");

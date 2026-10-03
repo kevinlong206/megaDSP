@@ -9,6 +9,7 @@ JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE(
     "-Wshadow-field-in-constructor")
 #include <pluginterfaces/base/ftypes.h>
 #include <pluginterfaces/base/funknown.h>
+#include "presonus_sdk/ipslgainreduction.h"
 JUCE_END_IGNORE_WARNINGS_GCC_LIKE
 
 #include <array>
@@ -28,7 +29,8 @@ class MegaDSPAudioProcessor;
 namespace megadsp
 {
 class ReaperEmbeddedUI final : public juce::VST3ClientExtensions,
-                               public reaper::IReaperUIEmbedInterface
+                               public reaper::IReaperUIEmbedInterface,
+                               public Presonus::IGainReductionInfo
 {
 public:
     explicit ReaperEmbeddedUI(MegaDSPAudioProcessor&);
@@ -44,11 +46,15 @@ public:
     Steinberg::uint32 PLUGIN_API release() override;
     Steinberg::tresult PLUGIN_API queryInterface(
         const Steinberg::TUID, void**) override;
+    double PLUGIN_API getGainReductionValueInDb() override;
 
 #if defined(MEGADSP_TESTS)
-    juce::Image renderForTesting(int width, int height, int context);
+    juce::Image renderForTesting(
+        int width, int height, int context, float scale = 1.0f);
     std::array<juce::Rectangle<int>, slotCount>
-        tileBoundsForTesting(int width, int height, int context) const;
+        tileBoundsForTesting(
+            int width, int height, int context,
+            float scale = 1.0f) const;
     int primaryControlForTesting(int slot) const;
     bool dragPrimaryForTesting(int slot, int verticalDistance);
 #endif
@@ -62,16 +68,17 @@ private:
     };
 
     Layout createLayout(
-        juce::Rectangle<int> bounds, int context) const;
+        juce::Rectangle<int> bounds, int context, float scale) const;
     int primaryControl(int slot) const;
     juce::Rectangle<int> bypassBounds(
-        juce::Rectangle<int> tile) const;
+        juce::Rectangle<int> tile, float scale) const;
     int tileAt(juce::Point<int>, const Layout&) const;
     void paint(
-        juce::Graphics&, juce::Rectangle<int>, int context);
+        juce::Graphics&, juce::Rectangle<int>, int context,
+        float scale);
     void paintTile(
         juce::Graphics&, juce::Rectangle<int>, int slot,
-        bool verticalLayout);
+        bool verticalLayout, float scale);
     Steinberg::TPtrInt paintToBitmap(
         reaper::REAPER_FXEMBED_IBitmap*,
         const reaper::REAPER_FXEMBED_DrawInfo*);
@@ -83,12 +90,16 @@ private:
     void updatePrimaryDrag(int mouseY);
     void endPrimaryDrag();
     bool adjustPrimary(int slot, float normalizedDelta);
+    static float scaleFor(
+        const reaper::REAPER_FXEMBED_DrawInfo*,
+        reaper::REAPER_FXEMBED_IBitmap* = nullptr);
 
     MegaDSPAudioProcessor& processor;
     std::atomic<Steinberg::uint32> referenceCount { 1 };
     int lastContext = 0;
     int lastWidth = 0;
     int lastHeight = 0;
+    float lastScale = 1.0f;
     int dragSlot = -1;
     int dragControl = -1;
     int dragStartY = 0;

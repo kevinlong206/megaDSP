@@ -10,6 +10,11 @@ namespace reaper
 DEF_CLASS_IID(IReaperUIEmbedInterface)
 } // namespace reaper
 
+namespace Presonus
+{
+DEF_CLASS_IID(IGainReductionInfo)
+} // namespace Presonus
+
 namespace megadsp
 {
 namespace
@@ -60,8 +65,10 @@ Steinberg::uint32 PLUGIN_API ReaperEmbeddedUI::release()
 Steinberg::tresult PLUGIN_API ReaperEmbeddedUI::queryInterface(
     const Steinberg::TUID interfaceId, void** object)
 {
-    if (object != nullptr
-        && std::memcmp(
+    if (object == nullptr)
+        return Steinberg::kInvalidArgument;
+
+    if (std::memcmp(
             interfaceId, reaper::IReaperUIEmbedInterface::iid,
             sizeof(Steinberg::TUID)) == 0)
     {
@@ -69,13 +76,58 @@ Steinberg::tresult PLUGIN_API ReaperEmbeddedUI::queryInterface(
         *object = static_cast<reaper::IReaperUIEmbedInterface*>(this);
         return Steinberg::kResultOk;
     }
-    if (object != nullptr)
-        *object = nullptr;
+    if (std::memcmp(
+            interfaceId, Presonus::IGainReductionInfo::iid,
+            sizeof(Steinberg::TUID)) == 0)
+    {
+        addRef();
+        *object = static_cast<Presonus::IGainReductionInfo*>(this);
+        return Steinberg::kResultOk;
+    }
+    *object = nullptr;
     return Steinberg::kNoInterface;
 }
 
+double PLUGIN_API ReaperEmbeddedUI::getGainReductionValueInDb()
+{
+    auto reductionDb = 0.0;
+    const auto& rack = processor.getRack();
+    for (int slot = 0; slot < rack.activeSlotCount(); ++slot)
+    {
+        const auto type = rack.activeModuleType(slot);
+        if (!compactVisualizationShowsGainReduction(type))
+            continue;
+        const auto measured = rack.slotMeter(slot);
+        if (std::isfinite(measured) && measured > 0.0f)
+            reductionDb -= measured;
+    }
+    return reductionDb;
+}
+
+float ReaperEmbeddedUI::scaleFor(
+    const reaper::REAPER_FXEMBED_DrawInfo* info,
+    reaper::REAPER_FXEMBED_IBitmap* bitmap)
+{
+    if (bitmap != nullptr)
+    {
+        const auto advisory = bitmap->Extended(
+            REAPER_FXEMBED_EXT_GET_ADVISORY_SCALING, nullptr);
+        if (advisory > 0)
+            return juce::jlimit(
+                1.0f, 4.0f,
+                static_cast<float>(advisory) / 256.0f);
+    }
+    if (info == nullptr)
+        return 1.0f;
+    if (info->dpi > 0)
+        return juce::jlimit(
+            1.0f, 4.0f, static_cast<float>(info->dpi) / 256.0f);
+    return (info->flags & REAPER_FXEMBED_DRAWINFO_FLAG_IS_RETINA) != 0
+        ? 2.0f : 1.0f;
+}
+
 ReaperEmbeddedUI::Layout ReaperEmbeddedUI::createLayout(
-    juce::Rectangle<int> bounds, int context) const
+    juce::Rectangle<int> bounds, int context, float scale) const
 {
     Layout layout;
     layout.count = juce::jlimit(
@@ -85,7 +137,7 @@ ReaperEmbeddedUI::Layout ReaperEmbeddedUI::createLayout(
     if (layout.count == 0)
         return layout;
 
-    bounds = bounds.reduced(2);
+    bounds = bounds.reduced(juce::roundToInt(2.0f * scale));
     for (int slot = 0; slot < layout.count; ++slot)
     {
         if (layout.vertical)
@@ -108,7 +160,9 @@ ReaperEmbeddedUI::Layout ReaperEmbeddedUI::createLayout(
                 left, bounds.getY(), right - left, bounds.getHeight()
             };
         }
-        layout.tiles[static_cast<size_t>(slot)].reduce(1, 1);
+        layout.tiles[static_cast<size_t>(slot)].reduce(
+            juce::jmax(1, juce::roundToInt(scale)),
+            juce::jmax(1, juce::roundToInt(scale)));
     }
     return layout;
 }
@@ -146,13 +200,17 @@ int ReaperEmbeddedUI::primaryControl(int slot) const
 }
 
 juce::Rectangle<int> ReaperEmbeddedUI::bypassBounds(
-    juce::Rectangle<int> tile) const
+    juce::Rectangle<int> tile, float scale) const
 {
-    const auto size = juce::jlimit(
-        10, 18, juce::jmin(tile.getWidth(), tile.getHeight()) / 3);
+    const auto logicalShortSide =
+        static_cast<float>(juce::jmin(tile.getWidth(), tile.getHeight()))
+        / scale;
+    const auto size = juce::roundToInt(
+        juce::jlimit(10.0f, 18.0f, logicalShortSide / 3.0f) * scale);
+    const auto inset = juce::roundToInt(3.0f * scale);
     return juce::Rectangle<int>(size, size)
         .withPosition(
-            tile.getRight() - size - 3, tile.getY() + 3);
+            tile.getRight() - size - inset, tile.getY() + inset);
 }
 
 int ReaperEmbeddedUI::tileAt(
@@ -166,30 +224,32 @@ int ReaperEmbeddedUI::tileAt(
 
 void ReaperEmbeddedUI::paint(
     juce::Graphics& graphics, juce::Rectangle<int> bounds,
-    int context)
+    int context, float scale)
 {
     const auto background = ui::backgroundColour(
         processor.getBackgroundThemeIndex()).darker(0.28f);
     graphics.fillAll(background);
-    const auto layout = createLayout(bounds, context);
+    const auto layout = createLayout(bounds, context, scale);
     if (layout.count == 0)
     {
         graphics.setColour(juce::Colours::white.withAlpha(0.55f));
-        graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        graphics.setFont(juce::FontOptions(
+            10.0f * scale, juce::Font::bold));
         graphics.drawFittedText(
-            "megaDSP - empty chain", bounds.reduced(5),
+            "megaDSP - empty chain",
+            bounds.reduced(juce::roundToInt(5.0f * scale)),
             juce::Justification::centred, 1);
         return;
     }
     for (int slot = 0; slot < layout.count; ++slot)
         paintTile(
             graphics, layout.tiles[static_cast<size_t>(slot)],
-            slot, layout.vertical);
+            slot, layout.vertical, scale);
 }
 
 void ReaperEmbeddedUI::paintTile(
     juce::Graphics& graphics, juce::Rectangle<int> tile,
-    int slot, bool verticalLayout)
+    int slot, bool verticalLayout, float scale)
 {
     if (tile.isEmpty())
         return;
@@ -201,7 +261,8 @@ void ReaperEmbeddedUI::paintTile(
         ui::backgroundColour(processor.getBackgroundThemeIndex()),
         type, bypassed ? 0.09f : 0.34f);
     auto area = tile.toFloat();
-    const auto radius = juce::jmin(5.0f, area.getHeight() * 0.18f);
+    const auto radius =
+        juce::jmin(5.0f * scale, area.getHeight() * 0.18f);
     graphics.setColour(surface.withMultipliedAlpha(
         bypassed ? 0.62f : 1.0f));
     graphics.fillRoundedRectangle(area, radius);
@@ -209,45 +270,54 @@ void ReaperEmbeddedUI::paintTile(
         selected ? juce::Colours::white.withAlpha(0.88f)
                  : accent.withAlpha(0.72f));
     graphics.drawRoundedRectangle(
-        area.reduced(0.75f), radius, selected ? 1.6f : 0.8f);
+        area.reduced(0.75f * scale), radius,
+        (selected ? 1.6f : 0.8f) * scale);
 
     graphics.setColour(accent.withMultipliedAlpha(
         bypassed ? 0.42f : 1.0f));
     if (verticalLayout)
         graphics.fillRect(
-            area.getX(), area.getY(), 3.0f, area.getHeight());
+            area.getX(), area.getY(), 3.0f * scale, area.getHeight());
     else
         graphics.fillRect(
-            area.getX(), area.getY(), area.getWidth(), 3.0f);
+            area.getX(), area.getY(), area.getWidth(), 3.0f * scale);
 
-    const auto bypass = bypassBounds(tile);
+    const auto bypass = bypassBounds(tile, scale);
     graphics.setColour(
         bypassed ? juce::Colour(0xffff8d83)
                  : juce::Colour(0xff63df9a));
-    graphics.fillEllipse(bypass.toFloat().reduced(2.0f));
+    graphics.fillEllipse(bypass.toFloat().reduced(2.0f * scale));
     graphics.setColour(juce::Colour(0xff111820));
     graphics.setFont(juce::FontOptions(
         juce::jmax(
-            6.0f, static_cast<float>(bypass.getHeight()) * 0.42f),
+            6.0f * scale,
+            static_cast<float>(bypass.getHeight()) * 0.42f),
         juce::Font::bold));
     graphics.drawText(
         bypassed ? "B" : "O", bypass,
         juce::Justification::centred);
 
-    auto content = tile.reduced(5, 3);
-    content.removeFromRight(bypass.getWidth() + 2);
-    const auto compact = tile.getHeight() < 24 || tile.getWidth() < 40;
+    const auto horizontalInset = juce::roundToInt(5.0f * scale);
+    const auto verticalInset = juce::roundToInt(3.0f * scale);
+    auto content = tile.reduced(horizontalInset, verticalInset);
+    const auto logicalWidth = static_cast<float>(tile.getWidth()) / scale;
+    const auto logicalHeight = static_cast<float>(tile.getHeight()) / scale;
+    const auto compact = logicalHeight < 24.0f || logicalWidth < 40.0f;
     const auto name = juce::String(slot + 1) + " "
         + moduleDefinition(type).displayName;
+    auto header = compact ? content : content.removeFromTop(
+        juce::jmin(
+            juce::roundToInt(17.0f * scale), content.getHeight()));
+    header.removeFromRight(
+        bypass.getWidth() + juce::roundToInt(2.0f * scale));
     graphics.setColour(juce::Colours::white.withAlpha(
         bypassed ? 0.48f : 0.90f));
     graphics.setFont(juce::FontOptions(
-        compact ? 7.0f : 9.0f, juce::Font::bold));
+        (compact ? 7.5f : 10.5f) * scale, juce::Font::bold));
     graphics.drawFittedText(
-        name, compact ? content : content.removeFromTop(
-            juce::jmin(15, content.getHeight())),
+        name, header,
         juce::Justification::centredLeft, 1, 0.65f);
-    if (compact || content.getHeight() < 9)
+    if (compact || content.getHeight() < juce::roundToInt(9.0f * scale))
         return;
 
     const auto control = primaryControl(slot);
@@ -255,10 +325,11 @@ void ReaperEmbeddedUI::paintTile(
         return;
     const auto value = rawValue(processor, slot, control);
     auto valueRow = content.removeFromBottom(
-        juce::jmin(15, content.getHeight()));
+        juce::jmin(
+            juce::roundToInt(17.0f * scale), content.getHeight()));
     graphics.setColour(juce::Colours::white.withAlpha(
         bypassed ? 0.40f : 0.70f));
-    graphics.setFont(juce::FontOptions(7.5f));
+    graphics.setFont(juce::FontOptions(9.0f * scale));
     const auto valueText =
         juce::String(controlMetadata(type, control).label)
         + " " + formatControlValue(type, control, value);
@@ -267,15 +338,17 @@ void ReaperEmbeddedUI::paintTile(
         juce::Justification::centredLeft, 1, 0.55f);
 
     auto bar = content.removeFromBottom(
-        juce::jmin(5, content.getHeight())).toFloat();
+        juce::jmin(
+            juce::roundToInt(6.0f * scale),
+            content.getHeight())).toFloat();
     if (!bar.isEmpty())
     {
         graphics.setColour(juce::Colours::black.withAlpha(0.42f));
-        graphics.fillRoundedRectangle(bar, 1.5f);
+        graphics.fillRoundedRectangle(bar, 1.5f * scale);
         graphics.setColour(accent.withMultipliedAlpha(
             bypassed ? 0.30f : 0.92f));
         graphics.fillRoundedRectangle(
-            bar.withWidth(bar.getWidth() * value), 1.5f);
+            bar.withWidth(bar.getWidth() * value), 1.5f * scale);
     }
 
     const auto rawActivity =
@@ -285,7 +358,7 @@ void ReaperEmbeddedUI::paintTile(
         rawActivity <= 1.0f ? rawActivity : rawActivity / 24.0f);
     if (activity > 0.001f)
     {
-        auto meter = area.removeFromBottom(2.0f);
+        auto meter = area.removeFromBottom(2.0f * scale);
         graphics.setColour(juce::Colour(0xff63df9a).withAlpha(0.72f));
         graphics.fillRect(
             meter.withWidth(meter.getWidth() * activity));
@@ -302,13 +375,15 @@ Steinberg::TPtrInt ReaperEmbeddedUI::paintToBitmap(
     lastContext = info->context;
     lastWidth = bitmap->getWidth();
     lastHeight = bitmap->getHeight();
+    lastScale = scaleFor(info, bitmap);
     if (!paintImage.isValid()
         || paintImage.getWidth() != lastWidth
         || paintImage.getHeight() != lastHeight)
         paintImage = juce::Image(
             juce::Image::ARGB, lastWidth, lastHeight, true);
     juce::Graphics graphics(paintImage);
-    paint(graphics, paintImage.getBounds(), lastContext);
+    paint(
+        graphics, paintImage.getBounds(), lastContext, lastScale);
 
     juce::Image::BitmapData pixels(
         paintImage, juce::Image::BitmapData::readOnly);
@@ -410,8 +485,10 @@ Steinberg::TPtrInt ReaperEmbeddedUI::mouseMessage(
     lastContext = info->context;
     lastWidth = info->width;
     lastHeight = info->height;
+    lastScale = scaleFor(info);
     const auto layout = createLayout(
-        { 0, 0, info->width, info->height }, info->context);
+        { 0, 0, info->width, info->height },
+        info->context, lastScale);
     const auto point = juce::Point<int>(info->mouse_x, info->mouse_y);
     const auto slot = tileAt(point, layout);
 
@@ -422,7 +499,7 @@ Steinberg::TPtrInt ReaperEmbeddedUI::mouseMessage(
                 return 0;
             processor.setSelectedTab(slot);
             if (bypassBounds(
-                    layout.tiles[static_cast<size_t>(slot)])
+                    layout.tiles[static_cast<size_t>(slot)], lastScale)
                     .contains(point))
                 processor.toggleSlotBypass(slot);
             else
@@ -513,7 +590,7 @@ Steinberg::TPtrInt ReaperEmbeddedUI::embed_message(
                 return 1;
             const auto layout = createLayout(
                 { 0, 0, info->width, info->height },
-                info->context);
+                info->context, scaleFor(info));
             return tileAt(
                        { info->mouse_x, info->mouse_y }, layout)
                     >= 0
@@ -539,20 +616,21 @@ Steinberg::TPtrInt ReaperEmbeddedUI::embed_message(
 
 #if defined(MEGADSP_TESTS)
 juce::Image ReaperEmbeddedUI::renderForTesting(
-    int width, int height, int context)
+    int width, int height, int context, float scale)
 {
     juce::Image image(
         juce::Image::ARGB, width, height, true);
     juce::Graphics graphics(image);
-    paint(graphics, image.getBounds(), context);
+    paint(graphics, image.getBounds(), context, scale);
     return image;
 }
 
 std::array<juce::Rectangle<int>, slotCount>
 ReaperEmbeddedUI::tileBoundsForTesting(
-    int width, int height, int context) const
+    int width, int height, int context, float scale) const
 {
-    return createLayout({ 0, 0, width, height }, context).tiles;
+    return createLayout(
+        { 0, 0, width, height }, context, scale).tiles;
 }
 
 int ReaperEmbeddedUI::primaryControlForTesting(int slot) const

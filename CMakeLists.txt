@@ -378,6 +378,7 @@ target_sources(megaDSP PRIVATE
     src/PluginProcessor.h
     src/ReaperEmbeddedUI.cpp
     src/ReaperEmbeddedUI.h
+    src/presonus_sdk/ipslgainreduction.h
     src/reaper_sdk/LICENSE
     src/reaper_sdk/reaper_plugin_fx_embed.h
     src/reaper_sdk/reaper_vst3_interfaces.h
@@ -480,6 +481,7 @@ target_sources(megaDSPTests PRIVATE
     src/PluginProcessor.h
     src/ReaperEmbeddedUI.cpp
     src/ReaperEmbeddedUI.h
+    src/presonus_sdk/ipslgainreduction.h
     src/reaper_sdk/LICENSE
     src/reaper_sdk/reaper_plugin_fx_embed.h
     src/reaper_sdk/reaper_vst3_interfaces.h

@@ -131,6 +131,13 @@ it, drag up/down to adjust its primary control, use the mouse wheel for small
 changes, double-click to reset that control, or click its **O/B** status dot to
 toggle bypass. Right-clicks pass through to REAPER. When the panel is too small
 for full labels, tiles progressively collapse rather than hiding chain slots.
+Typography, controls, padding, and meters follow REAPER's advertised HiDPI
+scale, including doubled Retina bitmap and mouse coordinates on macOS.
+
+megaDSP also exposes the PreSonus gain-reduction reporting interface supported
+by REAPER. Its native TCP/MCP gain-reduction meter receives the summed measured
+reduction from active compressor, limiter, gate, and dynamics stages; bypassed
+stages report no reduction.
 
 This host-specific view is available in REAPER 6.24 or newer through VST3.
 The normal editor remains the complete interface for topology, snapshots,
