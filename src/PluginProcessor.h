@@ -33,6 +33,11 @@ struct NamModelLibraryEntry
     bool isA2 = false;
 };
 
+namespace megadsp
+{
+class ReaperEmbeddedUI;
+}
+
 class MegaDSPAudioProcessor final : public juce::AudioProcessor,
                                     private juce::Timer,
                                     private juce::AsyncUpdater,
@@ -63,6 +68,7 @@ public:
     void changeProgramName(int, const juce::String&) override {}
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
+    juce::VST3ClientExtensions* getVST3ClientExtensions() override;
     void beginUndoTransaction(const juce::String& name);
     void endUndoTransaction();
     bool canUndo() const;
@@ -441,5 +447,6 @@ private:
     juce::String pendingUndoName;
     int undoTransactionDepth = 0;
     bool restoringUndoState = false;
+    std::unique_ptr<megadsp::ReaperEmbeddedUI> reaperEmbeddedUI;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MegaDSPAudioProcessor)
 };

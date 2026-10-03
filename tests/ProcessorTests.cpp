@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "ReaperEmbeddedUI.h"
 #include "ui/EffectGraph.h"
 #include "ui/GuiLayout.h"
 
@@ -75,6 +76,33 @@ public:
     }
 
     int nonParameterChanges = 0;
+};
+
+class EmbeddedBitmap final : public reaper::REAPER_FXEMBED_IBitmap
+{
+public:
+    EmbeddedBitmap(int widthToUse, int heightToUse)
+        : width(widthToUse), height(heightToUse),
+          pixels(static_cast<size_t>(width * height))
+    {
+    }
+
+    unsigned int* getBits() override { return pixels.data(); }
+    int getWidth() override { return width; }
+    int getHeight() override { return height; }
+    int getRowSpan() override { return width; }
+    bool resize(int newWidth, int newHeight) override
+    {
+        width = newWidth;
+        height = newHeight;
+        pixels.assign(
+            static_cast<size_t>(width * height), 0u);
+        return true;
+    }
+
+    int width;
+    int height;
+    std::vector<unsigned int> pixels;
 };
 
 class ProcessorTopologyTests final : public juce::UnitTest
@@ -885,6 +913,143 @@ public:
             second.setVisualizationActive(false);
             expect(graphProcessor.getVisualizationData().isSlotActive(0));
             expect(!graphProcessor.getVisualizationData().isSlotActive(1));
+        }
+
+        beginTest(
+            "REAPER embedded UI adapts to TCP and MCP and edits safely");
+        {
+            MegaDSPAudioProcessor embeddedProcessor;
+            embeddedProcessor.prepareToPlay(48000.0, 512);
+            embeddedProcessor.addModule(megadsp::ModuleType::delay);
+            embeddedProcessor.addModule(megadsp::ModuleType::compressor);
+            embeddedProcessor.addModule(megadsp::ModuleType::equalizer);
+            auto* embedded = dynamic_cast<megadsp::ReaperEmbeddedUI*>(
+                embeddedProcessor.getVST3ClientExtensions());
+            expect(embedded != nullptr);
+            expectEquals(
+                static_cast<int>(embedded->embed_message(
+                    REAPER_FXEMBED_WM_IS_SUPPORTED, 0, 0)),
+                1);
+
+            void* queried = nullptr;
+            expectEquals(
+                embedded->queryIEditController(
+                    reaper::IReaperUIEmbedInterface::iid, &queried),
+                static_cast<int32_t>(Steinberg::kResultOk));
+            expect(queried == static_cast<
+                reaper::IReaperUIEmbedInterface*>(embedded));
+            if (queried != nullptr)
+                static_cast<reaper::IReaperUIEmbedInterface*>(
+                    queried)->release();
+
+            const auto tcpTiles =
+                embedded->tileBoundsForTesting(480, 90, 1);
+            expect(tcpTiles[0].getX() < tcpTiles[1].getX());
+            expectEquals(tcpTiles[0].getY(), tcpTiles[1].getY());
+            const auto mcpTiles =
+                embedded->tileBoundsForTesting(110, 300, 2);
+            expect(mcpTiles[0].getY() < mcpTiles[1].getY());
+            expectEquals(mcpTiles[0].getX(), mcpTiles[1].getX());
+            for (int slot = 0; slot < 3; ++slot)
+            {
+                expect(!tcpTiles[static_cast<size_t>(slot)].isEmpty());
+                expect(!mcpTiles[static_cast<size_t>(slot)].isEmpty());
+                expect(
+                    embedded->primaryControlForTesting(slot) >= 0);
+            }
+
+            const auto tcpImage =
+                embedded->renderForTesting(480, 90, 1);
+            const auto mcpImage =
+                embedded->renderForTesting(110, 300, 2);
+            expect(tcpImage.isValid() && mcpImage.isValid());
+            expect(
+                tcpImage.getPixelAt(
+                    tcpTiles[0].getCentreX(),
+                    tcpTiles[0].getCentreY())
+                    != tcpImage.getPixelAt(
+                        tcpTiles[1].getCentreX(),
+                        tcpTiles[1].getCentreY()),
+                "Module-category tiles should remain visually distinct.");
+
+            EmbeddedBitmap bitmap(480, 90);
+            reaper::REAPER_FXEMBED_DrawInfo paintInfo {};
+            paintInfo.context = 1;
+            paintInfo.width = bitmap.getWidth();
+            paintInfo.height = bitmap.getHeight();
+            expectEquals(
+                static_cast<int>(embedded->embed_message(
+                    REAPER_FXEMBED_WM_PAINT,
+                    reinterpret_cast<Steinberg::TPtrInt>(&bitmap),
+                    reinterpret_cast<Steinberg::TPtrInt>(&paintInfo))),
+                1);
+            expect(std::any_of(
+                bitmap.pixels.begin(), bitmap.pixels.end(),
+                [](unsigned int pixel) { return pixel != 0u; }));
+
+            expect(embedded->dragPrimaryForTesting(0, -60));
+            expect(embedded->dragPrimaryForTesting(0, 60));
+
+            reaper::REAPER_FXEMBED_SizeHints hints {};
+            hints.flags = 2;
+            expectEquals(
+                static_cast<int>(embedded->embed_message(
+                    REAPER_FXEMBED_WM_GETMINMAXINFO, 0,
+                    reinterpret_cast<Steinberg::TPtrInt>(&hints))),
+                1);
+            expect(hints.min_height >= 80);
+            expect(hints.preferred_aspect < 65536);
+
+            reaper::REAPER_FXEMBED_DrawInfo mouse {};
+            mouse.context = 2;
+            mouse.width = 110;
+            mouse.height = 300;
+            mouse.mouse_x = mcpTiles[0].getRight() - 8;
+            mouse.mouse_y = mcpTiles[0].getY() + 8;
+            expect(!embeddedProcessor.isSlotBypassed(0));
+            embedded->embed_message(
+                REAPER_FXEMBED_WM_LBUTTONDOWN, 0,
+                reinterpret_cast<Steinberg::TPtrInt>(&mouse));
+            expect(embeddedProcessor.isSlotBypassed(0));
+            embedded->embed_message(
+                REAPER_FXEMBED_WM_LBUTTONUP, 0,
+                reinterpret_cast<Steinberg::TPtrInt>(&mouse));
+            mouse.mouse_x = mcpTiles[1].getCentreX();
+            mouse.mouse_y = mcpTiles[1].getCentreY();
+            embedded->embed_message(
+                REAPER_FXEMBED_WM_LBUTTONDOWN, 0,
+                reinterpret_cast<Steinberg::TPtrInt>(&mouse));
+            embedded->embed_message(
+                REAPER_FXEMBED_WM_LBUTTONUP, 0,
+                reinterpret_cast<Steinberg::TPtrInt>(&mouse));
+            expectEquals(embeddedProcessor.getSelectedTab(), 1);
+            expectEquals(
+                static_cast<int>(embedded->embed_message(
+                    REAPER_FXEMBED_WM_HITTEST,
+                    REAPER_FXEMBED_WM_RBUTTONDOWN,
+                    reinterpret_cast<Steinberg::TPtrInt>(&mouse))),
+                1);
+
+            while (embeddedProcessor.getRack().activeSlotCount()
+                   < megadsp::slotCount)
+                embeddedProcessor.addModule(
+                    megadsp::ModuleType::delay);
+            const auto fullChainTiles =
+                embedded->tileBoundsForTesting(90, 144, 2);
+            for (int slot = 0; slot < megadsp::slotCount; ++slot)
+            {
+                const auto tile =
+                    fullChainTiles[static_cast<size_t>(slot)];
+                expect(!tile.isEmpty());
+                if (slot > 0)
+                    expect(
+                        !tile.intersects(
+                            fullChainTiles[
+                                static_cast<size_t>(slot - 1)]));
+            }
+            expect(
+                embedded->renderForTesting(90, 144, 2).isValid(),
+                "All eight modules must remain renderable in a small MCP.");
         }
 
         beginTest("Telemetry-rich compact views render measured state");

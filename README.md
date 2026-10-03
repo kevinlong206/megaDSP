@@ -120,6 +120,22 @@ megaDSP.clap → ~/.clap
 7. Use the header **Output Trim** and peak meter to manage the final output level. The meter shows peak hold, near-clip colour zones, and a resettable **CLIP** indicator.
 8. Use **Snapshots 1-8** above the module rack to keep alternate complete racks. Click recalls without copying the current rack; an unused slot opens as a fresh blank rack. Shift-click saves to an empty slot or overwrites a populated one. Drag one populated snapshot onto another slot to copy it. Program Change 0-7 recalls populated snapshots over MIDI.
 
+### REAPER track and mixer panels
+
+The VST3 exposes REAPER's embedded-FX interface. Right-click the megaDSP FX
+slot and choose **Show embedded UI in TCP** or **Show embedded UI in MCP**.
+The TCP presents the chain horizontally; the MCP stacks it vertically. Every
+active module appears as a responsive category-coloured tile with selection,
+bypass, primary control/value, and activity feedback. Click a tile to select
+it, drag up/down to adjust its primary control, use the mouse wheel for small
+changes, double-click to reset that control, or click its **O/B** status dot to
+toggle bypass. Right-clicks pass through to REAPER. When the panel is too small
+for full labels, tiles progressively collapse rather than hiding chain slots.
+
+This host-specific view is available in REAPER 6.24 or newer through VST3.
+The normal editor remains the complete interface for topology, snapshots,
+assets, and detailed module editing.
+
 The seven-character Git commit shown beneath the **megaDSP** title identifies
 the exact source used for the build. Click the hash to copy it when reporting a
 problem.

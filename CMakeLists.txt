@@ -376,6 +376,11 @@ target_sources(megaDSP PRIVATE
     src/PluginEditor.h
     src/PluginProcessor.cpp
     src/PluginProcessor.h
+    src/ReaperEmbeddedUI.cpp
+    src/ReaperEmbeddedUI.h
+    src/reaper_sdk/LICENSE
+    src/reaper_sdk/reaper_plugin_fx_embed.h
+    src/reaper_sdk/reaper_vst3_interfaces.h
     src/VisualizationData.h)
 
 target_compile_definitions(megaDSP
@@ -473,6 +478,11 @@ target_sources(megaDSPTests PRIVATE
     src/PluginEditor.h
     src/PluginProcessor.cpp
     src/PluginProcessor.h
+    src/ReaperEmbeddedUI.cpp
+    src/ReaperEmbeddedUI.h
+    src/reaper_sdk/LICENSE
+    src/reaper_sdk/reaper_plugin_fx_embed.h
+    src/reaper_sdk/reaper_vst3_interfaces.h
     src/VisualizationData.h)
 target_include_directories(megaDSPTests PRIVATE src)
 target_compile_definitions(megaDSPTests PRIVATE

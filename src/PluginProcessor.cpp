@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Diagnostics.h"
+#include "ReaperEmbeddedUI.h"
 #include "ui/GraphStyle.h"
 #include "ui/GuiLayout.h"
 
@@ -538,6 +539,8 @@ MegaDSPAudioProcessor::MegaDSPAudioProcessor()
             parameters.addParameterListener(ranged->paramID, this);
     }
     undoManager.setMaxNumberOfStoredUnits(64, 8);
+    reaperEmbeddedUI =
+        std::make_unique<megadsp::ReaperEmbeddedUI>(*this);
     startTimerHz(30);
 }
 
@@ -553,6 +556,12 @@ MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
     cancelPendingUpdate();
     megadsp::Diagnostics::instance().unregisterInstance(
         diagnosticInstanceId);
+}
+
+juce::VST3ClientExtensions*
+MegaDSPAudioProcessor::getVST3ClientExtensions()
+{
+    return reaperEmbeddedUI.get();
 }
 
 void MegaDSPAudioProcessor::beginUndoTransaction(
