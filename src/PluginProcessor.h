@@ -472,6 +472,8 @@ private:
     juce::ThreadPool libraryIndexPool { 1 };
     std::atomic<bool> impulseResponseIndexInProgress { false };
     std::atomic<bool> namModelIndexInProgress { false };
+    std::atomic<bool> impulseResponseLibraryValidated { false };
+    std::atomic<bool> namModelLibraryValidated { false };
     std::atomic<std::uint64_t> libraryGeneration { 0 };
     juce::CriticalSection namModelLibraryLock;
     std::vector<NamModelLibraryEntry> namModelLibrary;

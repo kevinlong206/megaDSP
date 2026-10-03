@@ -2146,7 +2146,8 @@ public:
             MegaDSPAudioProcessor coldIrSearch;
             const auto coldIrSearchStart =
                 juce::Time::getHighResolutionTicks();
-            coldIrSearch.searchImpulseResponses("hall");
+            const auto immediateIrMatches =
+                coldIrSearch.searchImpulseResponses("bright-hall");
             const auto coldIrSearchMicros =
                 juce::Time::highResolutionTicksToSeconds(
                     juce::Time::getHighResolutionTicks()
@@ -2155,6 +2156,8 @@ public:
             expect(
                 coldIrSearchMicros < 500000.0,
                 "A cold IR search must schedule indexing off the UI thread.");
+            expectEquals(
+                static_cast<int>(immediateIrMatches.size()), 1);
             coldIrSearch.finishLibraryIndexForTesting();
             expectEquals(
                 static_cast<int>(

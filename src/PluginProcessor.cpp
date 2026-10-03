@@ -132,6 +132,67 @@ juce::String namModelSearchableText(
         .toLowerCase();
 }
 
+std::vector<ImpulseResponseLibraryEntry>
+discoverImpulseResponsePaths(const juce::File& root)
+{
+    juce::Array<juce::File> files;
+    root.findChildFiles(files, juce::File::findFiles, true);
+    std::vector<ImpulseResponseLibraryEntry> discovered;
+    discovered.reserve(static_cast<size_t>(files.size()));
+    for (const auto& file : files)
+    {
+        const auto extension = file.getFileExtension().toLowerCase();
+        if (extension != ".wav" && extension != ".aif"
+            && extension != ".aiff" && extension != ".flac")
+            continue;
+        ImpulseResponseLibraryEntry entry;
+        entry.file = file;
+        entry.relativePath =
+            file.getRelativePathFrom(root).replaceCharacter('\\', '/');
+        entry.searchableText = impulseResponseSearchableText(entry);
+        discovered.push_back(std::move(entry));
+    }
+    std::sort(
+        discovered.begin(), discovered.end(),
+        [](const auto& left, const auto& right)
+        {
+            return left.relativePath.compareIgnoreCase(
+                       right.relativePath)
+                < 0;
+        });
+    return discovered;
+}
+
+std::vector<NamModelLibraryEntry>
+discoverNamModelPaths(const juce::File& root)
+{
+    juce::Array<juce::File> files;
+    root.findChildFiles(files, juce::File::findFiles, true);
+    std::vector<NamModelLibraryEntry> discovered;
+    discovered.reserve(static_cast<size_t>(files.size()));
+    for (const auto& file : files)
+    {
+        if (!file.hasFileExtension("nam"))
+            continue;
+        NamModelLibraryEntry entry;
+        entry.file = file;
+        entry.relativePath =
+            file.getRelativePathFrom(root).replaceCharacter('\\', '/');
+        entry.displayName = file.getFileNameWithoutExtension();
+        entry.searchableText = namModelSearchableText(entry);
+        discovered.push_back(std::move(entry));
+    }
+    std::sort(
+        discovered.begin(), discovered.end(),
+        [](const auto& left, const auto& right)
+        {
+            return left.relativePath.compareIgnoreCase(
+                       right.relativePath)
+                < 0;
+        });
+    return discovered;
+}
+
 juce::PropertiesFile::Options globalSettingsOptions()
 {
     juce::PropertiesFile::Options options;
@@ -3264,6 +3325,8 @@ juce::Result MegaDSPAudioProcessor::setImpulseResponseRootDirectory(
         const juce::ScopedLock lock(impulseResponseLibraryLock);
         indexedImpulseResponseRoot.clear();
         impulseResponseLibrary.clear();
+        impulseResponseLibraryValidated.store(
+            false, std::memory_order_release);
     }
     const auto result = rebuildImpulseResponseLibrary();
     if (result.wasOk())
@@ -3329,6 +3392,8 @@ juce::Result MegaDSPAudioProcessor::rebuildImpulseResponseLibrary()
         const juce::ScopedLock lock(impulseResponseLibraryLock);
         impulseResponseLibrary = std::move(rebuilt);
         indexedImpulseResponseRoot = root.getFullPathName();
+        impulseResponseLibraryValidated.store(
+            true, std::memory_order_release);
     }
     std::vector<ImpulseResponseLibraryEntry> cached;
     {
@@ -3350,6 +3415,8 @@ void MegaDSPAudioProcessor::ensureImpulseResponseLibrary()
         const juce::ScopedLock lock(impulseResponseLibraryLock);
         indexedImpulseResponseRoot.clear();
         impulseResponseLibrary.clear();
+        impulseResponseLibraryValidated.store(
+            false, std::memory_order_release);
         return;
     }
     {
@@ -3364,9 +3431,20 @@ void MegaDSPAudioProcessor::ensureImpulseResponseLibrary()
         const juce::ScopedLock lock(impulseResponseLibraryLock);
         impulseResponseLibrary = std::move(cached);
         indexedImpulseResponseRoot = root;
+        impulseResponseLibraryValidated.store(
+            true, std::memory_order_release);
         libraryGeneration.fetch_add(1, std::memory_order_release);
         return;
     }
+    auto discovered = discoverImpulseResponsePaths(rootDirectory);
+    {
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        impulseResponseLibrary = std::move(discovered);
+        indexedImpulseResponseRoot = root;
+        impulseResponseLibraryValidated.store(
+            false, std::memory_order_release);
+    }
+    libraryGeneration.fetch_add(1, std::memory_order_release);
     scheduleImpulseResponseLibraryRebuild();
 }
 
@@ -3399,6 +3477,8 @@ MegaDSPAudioProcessor::searchImpulseResponses(
     const auto tokens = juce::StringArray::fromTokens(
         query.toLowerCase(), " \t\r\n", "\"");
     std::vector<ImpulseResponseLibraryEntry> matches;
+    const auto metadataAvailable =
+        impulseResponseLibraryValidated.load(std::memory_order_acquire);
     const juce::ScopedLock lock(impulseResponseLibraryLock);
     matches.reserve(juce::jmin(
         static_cast<size_t>(maximumResults),
@@ -3410,7 +3490,9 @@ MegaDSPAudioProcessor::searchImpulseResponses(
         {
             if (token.isEmpty())
                 continue;
-            if (token == "mono")
+            if (!metadataAvailable)
+                matched = entry.searchableText.contains(token);
+            else if (token == "mono")
                 matched = entry.channelCount == 1;
             else if (token == "stereo")
                 matched = entry.channelCount >= 2;
@@ -3541,6 +3623,8 @@ juce::Result MegaDSPAudioProcessor::setNamModelRootDirectory(
         const juce::ScopedLock lock(namModelLibraryLock);
         indexedNamModelRoot.clear();
         namModelLibrary.clear();
+        namModelLibraryValidated.store(
+            false, std::memory_order_release);
     }
     const auto result = rebuildNamModelLibrary();
     if (result.failed())
@@ -3586,6 +3670,8 @@ juce::Result MegaDSPAudioProcessor::rebuildNamModelLibrary()
         const juce::ScopedLock lock(namModelLibraryLock);
         namModelLibrary = std::move(rebuilt);
         indexedNamModelRoot = root.getFullPathName();
+        namModelLibraryValidated.store(
+            true, std::memory_order_release);
     }
     std::vector<NamModelLibraryEntry> cached;
     {
@@ -3605,6 +3691,8 @@ void MegaDSPAudioProcessor::ensureNamModelLibrary()
         const juce::ScopedLock lock(namModelLibraryLock);
         indexedNamModelRoot.clear();
         namModelLibrary.clear();
+        namModelLibraryValidated.store(
+            false, std::memory_order_release);
         return;
     }
     {
@@ -3619,9 +3707,20 @@ void MegaDSPAudioProcessor::ensureNamModelLibrary()
         const juce::ScopedLock lock(namModelLibraryLock);
         namModelLibrary = std::move(cached);
         indexedNamModelRoot = root;
+        namModelLibraryValidated.store(
+            true, std::memory_order_release);
         libraryGeneration.fetch_add(1, std::memory_order_release);
         return;
     }
+    auto discovered = discoverNamModelPaths(rootDirectory);
+    {
+        const juce::ScopedLock lock(namModelLibraryLock);
+        namModelLibrary = std::move(discovered);
+        indexedNamModelRoot = root;
+        namModelLibraryValidated.store(
+            false, std::memory_order_release);
+    }
+    libraryGeneration.fetch_add(1, std::memory_order_release);
     scheduleNamModelLibraryRebuild();
 }
 
@@ -3654,6 +3753,8 @@ MegaDSPAudioProcessor::searchNamModels(
     const auto tokens = juce::StringArray::fromTokens(
         query.toLowerCase(), " \t\r\n", "\"");
     std::vector<NamModelLibraryEntry> matches;
+    const auto metadataAvailable =
+        namModelLibraryValidated.load(std::memory_order_acquire);
     const juce::ScopedLock lock(namModelLibraryLock);
     matches.reserve(juce::jmin(
         static_cast<size_t>(maximumResults),
@@ -3665,7 +3766,9 @@ MegaDSPAudioProcessor::searchNamModels(
         {
             if (token.isEmpty())
                 continue;
-            if (token == "a1")
+            if (!metadataAvailable)
+                matched = entry.searchableText.contains(token);
+            else if (token == "a1")
                 matched = !entry.isA2;
             else if (token == "a2")
                 matched = entry.isA2;
@@ -3757,7 +3860,9 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentNamModelAsync(
     {
         const juce::ScopedLock lock(namModelLibraryLock);
         const auto root = namModelRootDirectory().getFullPathName();
-        if (root == indexedNamModelRoot && !namModelLibrary.empty())
+        if (root == indexedNamModelRoot && !namModelLibrary.empty()
+            && namModelLibraryValidated.load(
+                std::memory_order_acquire))
         {
             const auto currentFile = juce::File(namModelPath(slot));
             const auto current = std::find_if(

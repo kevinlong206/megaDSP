@@ -889,7 +889,8 @@ public:
             MegaDSPAudioProcessor coldSearchBrowser;
             const auto coldSearchStart =
                 juce::Time::getHighResolutionTicks();
-            coldSearchBrowser.searchNamModels("clean");
+            const auto immediateNamMatches =
+                coldSearchBrowser.searchNamModels("clean");
             const auto coldSearchMicros =
                 juce::Time::highResolutionTicksToSeconds(
                     juce::Time::getHighResolutionTicks()
@@ -898,6 +899,8 @@ public:
             expect(
                 coldSearchMicros < 500000.0,
                 "A cold NAM search must schedule indexing off the UI thread.");
+            expectEquals(
+                static_cast<int>(immediateNamMatches.size()), 1);
             coldSearchBrowser.finishLibraryIndexForTesting();
             expectEquals(
                 static_cast<int>(
