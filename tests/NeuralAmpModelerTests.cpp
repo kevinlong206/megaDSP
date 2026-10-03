@@ -868,11 +868,16 @@ public:
                 graph.scrollCompactNamLibraryForTesting(1);
                 expectEquals(
                     graph.compactNamFirstVisibleModelForTesting(), 1);
+                graph.setCompactAssetFilterForTesting("COPPER");
+                expectEquals(
+                    graph.compactNamLibraryModelCountForTesting(), 1);
                 graph.activateCompactNamModelForTesting(0);
                 compactBrowser.finishNamModelLoadForTesting();
-                expect(
-                    compactBrowser.namModelPath(0).isNotEmpty(),
-                    "Clicking a compact NAM library row must load it.");
+                expectEquals(
+                    compactBrowser.namModelPath(0),
+                    pedalModel.getFullPathName(),
+                    "The inline NAM filter must be case-insensitive and "
+                    "load the clicked match.");
             }
 
             const auto testCache =

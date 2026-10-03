@@ -179,6 +179,10 @@ and drop a WAV, AIFF, or FLAC IR. User files are stored by path with rack and
 snapshot state; selecting a bundled cabinet returns to a self-contained
 embedded IR.
 
+The widget also keeps the indexed user-IR library visible as a scrollable list.
+Type in the field above it to filter names and relative paths without regard to
+case, then click a result to prepare and load it asynchronously.
+
 | # | Control | Range | Default | Purpose |
 |---|---|---|---|---|
 | 1 | Cabinet IR | 23 bundled captures | EV12L 57+121 | Selects the embedded cabinet and microphone capture |
@@ -314,7 +318,10 @@ the complete IR. This raises typically quiet captures by up to 18 dB while
 preserving stereo balance and limiting coefficient peaks; silent or invalid
 IRs are rejected instead of producing a misleading loaded state.
 
-The widget's **LIB** action manages the IR library root and validated index.
+The widget shows the indexed IR library as a scrollable list with a
+case-insensitive filter directly above it. Clicking a match schedules
+asynchronous preparation while the current IR keeps processing. The **LIB**
+action manages the IR library root and validated index.
 The library sets a root
 directory that is saved both with plugin state and in megaDSP's user-level
 settings. Project instances retain their own root, while new instances inherit
@@ -334,9 +341,8 @@ Clicking a result prepares it into the selected bank; clicking A, B, or C then
 switches among those already prepared convolution engines without decoding a
 file on the audio thread.
 
-The widget graph is a real-time spectrum measured from only the completed wet
-convolution signal. Its display normalizes each frame visually so quiet tails
-retain a readable spectral shape without changing their audio level.
+The widget graph is dedicated to the filtered IR list, so browsing does not
+request otherwise unused audio telemetry.
 **Low Cut** and **High Cut** shape only the wet convolution signal. **Dry**,
 **Wet**, **Ducking**, and **Output Trim** remain directly available. Ducking
 applies up to 18 dB of smooth
@@ -876,8 +882,9 @@ and A2 Nano (3-channel) fast-path models.
 The widget keeps model loading and clearing beside the current model name. The
 adjacent **<** and **>** buttons step through the validated recursive library
 and wrap at either end. Its compact visualization is a continuously scrollable
-list of the indexed library; clicking a row once schedules that model for
-immediate background preparation and swaps it in when ready. The recursive
+list of the indexed library with a case-insensitive filter directly above it;
+clicking a row once schedules that model for immediate background preparation
+and swaps it in when ready. The recursive
 model library uses one root directory, and megaDSP persists it in both project
 state and user settings so new instances inherit it across DAW restarts. The
 catalog accepts structurally valid supported `.nam` files and ignores malformed

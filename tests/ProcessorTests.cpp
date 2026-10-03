@@ -275,7 +275,10 @@ public:
             editor->setCardsEditorVisibleForTesting(true);
             expectEquals(
                 editor->activeVisualizationCardCountForTesting(), 2);
-            expect(editorProcessor->getVisualizationData().isSlotActive(0));
+            expect(
+                !editorProcessor->getVisualizationData().isSlotActive(0),
+                "The Guitar Cabinet IR list must not capture unused DSP "
+                "telemetry.");
             expect(editorProcessor->getVisualizationData().isSlotActive(1));
             editor->simulateDescendantFocusForTesting(1);
             expectEquals(editorProcessor->getSelectedTab(), 1);
@@ -2115,6 +2118,65 @@ public:
                     hallMatches.front().file.getFullPathName(),
                     nestedIr.getFullPathName());
             expect(irBrowser.searchImpulseResponses("mono").empty());
+
+            beginTest(
+                "Convolution and Guitar Cabinet widgets filter IR libraries");
+            {
+                MegaDSPAudioProcessor convolutionBrowser;
+                convolutionBrowser.prepareToPlay(48000.0, 512);
+                setType(
+                    convolutionBrowser, 0,
+                    megadsp::ModuleType::convolutionReverb);
+                convolutionBrowser.flushPendingUpdatesForTesting();
+                expect(convolutionBrowser.setImpulseResponseRootDirectory(
+                    irDirectory).wasOk());
+                megadsp::ui::EffectGraph convolutionGraph(
+                    convolutionBrowser, 0,
+                    megadsp::ModuleType::convolutionReverb);
+                convolutionGraph.setBounds(0, 0, 384, 100);
+                expectEquals(
+                    convolutionGraph
+                        .compactImpulseResponseCountForTesting(),
+                    3);
+                convolutionGraph.setCompactAssetFilterForTesting(
+                    "BRIGHT-HALL");
+                expectEquals(
+                    convolutionGraph
+                        .compactImpulseResponseCountForTesting(),
+                    1);
+                convolutionGraph
+                    .activateCompactImpulseResponseForTesting(0);
+                convolutionBrowser
+                    .finishImpulseResponseLoadForTesting();
+                expectEquals(
+                    convolutionBrowser.impulseResponsePath(0),
+                    nestedIr.getFullPathName());
+
+                MegaDSPAudioProcessor cabinetBrowser;
+                cabinetBrowser.prepareToPlay(48000.0, 512);
+                setType(
+                    cabinetBrowser, 0,
+                    megadsp::ModuleType::guitarCabinet);
+                cabinetBrowser.flushPendingUpdatesForTesting();
+                expect(cabinetBrowser.setImpulseResponseRootDirectory(
+                    irDirectory).wasOk());
+                megadsp::ui::EffectGraph cabinetGraph(
+                    cabinetBrowser, 0,
+                    megadsp::ModuleType::guitarCabinet);
+                cabinetGraph.setBounds(0, 0, 384, 100);
+                cabinetGraph.setCompactAssetFilterForTesting("B-ROOM");
+                expectEquals(
+                    cabinetGraph
+                        .compactImpulseResponseCountForTesting(),
+                    1);
+                cabinetGraph
+                    .activateCompactImpulseResponseForTesting(0);
+                cabinetBrowser.finishImpulseResponseLoadForTesting();
+                expectEquals(
+                    cabinetBrowser.impulseResponsePath(0),
+                    secondIr.getFullPathName());
+            }
+
             bool asyncIrCompleted = false;
             juce::Result asyncIrResult = juce::Result::fail(
                 "Async IR callback was not called.");

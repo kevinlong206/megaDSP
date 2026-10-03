@@ -17,6 +17,14 @@
 
 namespace megadsp::ui
 {
+namespace
+{
+constexpr auto compactAssetHeaderHeight = 14.0f;
+constexpr auto compactAssetSearchHeight = 21.0f;
+constexpr auto compactAssetSearchGap = 3.0f;
+constexpr auto compactAssetRowHeight = 26.0f;
+}
+
 EffectGraph::EffectGraph(
     MegaDSPAudioProcessor& processorToUse, int slotToUse,
     ModuleType typeToUse)
@@ -27,9 +35,9 @@ EffectGraph::EffectGraph(
     setOpaque(true);
     const auto compactCompressor = type == ModuleType::compressor;
     const auto compactEqualizer = type == ModuleType::equalizer;
-    const auto compactNam = type == ModuleType::neuralAmpModeler;
+    const auto compactAssets = isCompactAssetLibrary();
     setWantsKeyboardFocus(
-        compactCompressor || compactEqualizer || compactNam);
+        compactCompressor || compactEqualizer || compactAssets);
     if (compactCompressor)
     {
         setTitle("Compressor threshold");
@@ -50,14 +58,46 @@ EffectGraph::EffectGraph(
             "Drag a node horizontally for frequency and vertically for "
             "gain. The mouse wheel adjusts Q. Double-click resets a band.");
     }
-    if (compactNam)
+    if (compactAssets)
     {
-        setTitle("NAM model library");
+        setTitle(
+            isCompactNamLibrary()
+                ? "NAM model library" : "Impulse response library");
         setDescription(
-            "Scrollable model library. Click a model to load it.");
+            "Searchable, scrollable library. Click an item to load it.");
         setHelpText(
-            "Scroll to browse the indexed NAM library and click a model "
-            "to prepare and load it.");
+            "Type to filter the indexed library, scroll to browse it, "
+            "and click an item to prepare and load it.");
+        compactAssetSearch.setMultiLine(false);
+        compactAssetSearch.setReturnKeyStartsNewLine(false);
+        compactAssetSearch.setTextToShowWhenEmpty(
+            isCompactNamLibrary()
+                ? "Filter NAM models..."
+                : "Filter impulse responses...",
+            juce::Colours::white.withAlpha(0.38f));
+        compactAssetSearch.setColour(
+            juce::TextEditor::backgroundColourId,
+            juce::Colours::black.withAlpha(0.24f));
+        compactAssetSearch.setColour(
+            juce::TextEditor::outlineColourId,
+            juce::Colours::white.withAlpha(0.12f));
+        compactAssetSearch.setColour(
+            juce::TextEditor::focusedOutlineColourId,
+            modulePaletteColour(type).withAlpha(0.8f));
+        compactAssetSearch.setColour(
+            juce::TextEditor::textColourId,
+            juce::Colours::white.withAlpha(0.92f));
+        compactAssetSearch.setFont(juce::FontOptions(10.0f));
+        compactAssetSearch.onTextChange =
+            [this] { refreshCompactAssetLibrary(true); };
+        compactAssetSearch.onReturnKey =
+            [this]
+            {
+                if (compactAssetSelected < 0 && compactAssetCount() > 0)
+                    compactAssetSelected = 0;
+                activateCompactAsset(compactAssetSelected);
+            };
+        addAndMakeVisible(compactAssetSearch);
     }
     inputSpectrum.fill(-100.0f);
     outputSpectrum.fill(-100.0f);
@@ -65,173 +105,265 @@ EffectGraph::EffectGraph(
     outputLevels.fill(-60.0f);
     visualizationActive =
         processor.getVisualizationData().isSlotActive(slot);
-    if (type == ModuleType::neuralAmpModeler)
-        refreshCompactNamLibrary();
+    if (compactAssets)
+        refreshCompactAssetLibrary();
     startTimerHz(30);
 }
 
 EffectGraph::~EffectGraph()
 {
+    compactAssetSearch.onTextChange = nullptr;
+    compactAssetSearch.onReturnKey = nullptr;
     endGestures();
 }
 
 void EffectGraph::resized()
 {
+    if (isCompactAssetLibrary())
+    {
+        auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
+        area.removeFromTop(compactAssetHeaderHeight);
+        compactAssetSearch.setBounds(
+            area.removeFromTop(compactAssetSearchHeight)
+                .toNearestInt());
+    }
     repaint();
 }
 
-int EffectGraph::compactNamVisibleRowCount() const
+bool EffectGraph::isCompactNamLibrary() const
 {
-    constexpr auto headerHeight = 16.0f;
-    constexpr auto rowHeight = 30.0f;
+    return type == ModuleType::neuralAmpModeler;
+}
+
+bool EffectGraph::isCompactAssetLibrary() const
+{
+    return isCompactNamLibrary()
+        || type == ModuleType::convolutionReverb
+        || type == ModuleType::guitarCabinet;
+}
+
+int EffectGraph::compactAssetCount() const
+{
+    return isCompactNamLibrary()
+        ? static_cast<int>(compactNamModels.size())
+        : static_cast<int>(compactImpulseResponses.size());
+}
+
+int EffectGraph::compactAssetVisibleRowCount() const
+{
     const auto height =
         getLocalBounds().toFloat().reduced(8.0f, 3.0f).getHeight()
-        - headerHeight;
-    return juce::jmax(1, static_cast<int>(height / rowHeight));
+        - compactAssetHeaderHeight - compactAssetSearchHeight
+        - compactAssetSearchGap;
+    return juce::jmax(
+        1, static_cast<int>(height / compactAssetRowHeight));
 }
 
-void EffectGraph::refreshCompactNamLibrary()
+juce::String EffectGraph::compactAssetLoadedPath() const
 {
-    compactNamLibraryGeneration =
-        processor.assetLibraryGeneration();
-    compactNamModels = processor.searchNamModels(
-        {}, std::numeric_limits<int>::max());
-    const auto loadedPath = processor.namModelPath(slot);
-    const auto loaded = std::find_if(
-        compactNamModels.begin(), compactNamModels.end(),
-        [&loadedPath](const auto& entry)
-        {
-            return entry.file.getFullPathName() == loadedPath;
-        });
-    if (loaded != compactNamModels.end())
+    return isCompactNamLibrary()
+        ? processor.namModelPath(slot)
+        : processor.impulseResponsePath(slot);
+}
+
+void EffectGraph::refreshCompactAssetLibrary(bool resetScroll)
+{
+    compactAssetLibraryGeneration = processor.assetLibraryGeneration();
+    const auto query = compactAssetSearch.getText();
+    if (isCompactNamLibrary())
     {
-        compactNamSelected = static_cast<int>(
-            std::distance(compactNamModels.begin(), loaded));
-        const auto visibleRows = compactNamVisibleRowCount();
-        if (compactNamSelected < compactNamFirstVisible)
-            compactNamFirstVisible = compactNamSelected;
-        else if (compactNamSelected
-                 >= compactNamFirstVisible + visibleRows)
-            compactNamFirstVisible =
-                compactNamSelected - visibleRows + 1;
+        compactNamModels = processor.searchNamModels(
+            query, std::numeric_limits<int>::max());
+        compactImpulseResponses.clear();
     }
-    else if (compactNamModels.empty())
-        compactNamSelected = -1;
+    else
+    {
+        compactImpulseResponses = processor.searchImpulseResponses(
+            query, std::numeric_limits<int>::max());
+        compactNamModels.clear();
+    }
+
+    if (resetScroll)
+    {
+        compactAssetFirstVisible = 0;
+        compactAssetSelected = compactAssetCount() > 0 ? 0 : -1;
+        repaint();
+        return;
+    }
+
+    const auto loadedPath = compactAssetLoadedPath();
+    const auto entryPath =
+        [this](int index)
+        {
+            return isCompactNamLibrary()
+                ? compactNamModels[static_cast<size_t>(index)]
+                      .file.getFullPathName()
+                : compactImpulseResponses[static_cast<size_t>(index)]
+                      .file.getFullPathName();
+        };
+    auto loadedIndex = -1;
+    for (int index = 0; index < compactAssetCount(); ++index)
+        if (entryPath(index) == loadedPath)
+        {
+            loadedIndex = index;
+            break;
+        }
+    if (loadedIndex >= 0)
+    {
+        compactAssetSelected = loadedIndex;
+        const auto visibleRows = compactAssetVisibleRowCount();
+        if (compactAssetSelected < compactAssetFirstVisible)
+            compactAssetFirstVisible = compactAssetSelected;
+        else if (compactAssetSelected
+                 >= compactAssetFirstVisible + visibleRows)
+            compactAssetFirstVisible =
+                compactAssetSelected - visibleRows + 1;
+    }
+    else if (compactAssetCount() == 0)
+        compactAssetSelected = -1;
 
     const auto maximumFirst = juce::jmax(
-        0, static_cast<int>(compactNamModels.size())
-               - compactNamVisibleRowCount());
-    compactNamFirstVisible = juce::jlimit(
-        0, maximumFirst, compactNamFirstVisible);
+        0, compactAssetCount() - compactAssetVisibleRowCount());
+    compactAssetFirstVisible = juce::jlimit(
+        0, maximumFirst, compactAssetFirstVisible);
 }
 
-void EffectGraph::activateCompactNamModel(int index)
+void EffectGraph::activateCompactAsset(int index)
 {
-    if (compactNamLoadPending
-        || !juce::isPositiveAndBelow(
-            index, static_cast<int>(compactNamModels.size())))
+    if (compactAssetLoadPending
+        || !juce::isPositiveAndBelow(index, compactAssetCount()))
         return;
 
-    compactNamSelected = index;
-    compactNamLoadPending = true;
+    compactAssetSelected = index;
+    compactAssetLoadPending = true;
     const juce::Component::SafePointer<EffectGraph> safeThis(this);
-    const auto result = processor.loadNamModelAsync(
-        slot, compactNamModels[static_cast<size_t>(index)].file,
-        [safeThis](const juce::Result& completed)
+    const auto loadFinished =
+        [safeThis](const juce::Result& result)
         {
             if (safeThis == nullptr)
                 return;
-            safeThis->compactNamLoadPending = false;
-            if (completed.failed())
+            safeThis->compactAssetLoadPending = false;
+            if (result.failed())
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::MessageBoxIconType::WarningIcon,
-                    "Could not load NAM model",
-                    completed.getErrorMessage());
+                    safeThis->isCompactNamLibrary()
+                        ? "Could not load NAM model"
+                        : "Could not load impulse response",
+                    result.getErrorMessage());
             safeThis->repaint();
-        });
+        };
+    const auto result = isCompactNamLibrary()
+        ? processor.loadNamModelAsync(
+              slot,
+              compactNamModels[static_cast<size_t>(index)].file,
+              loadFinished)
+        : processor.loadImpulseResponseAsync(
+              slot, 0,
+              compactImpulseResponses[static_cast<size_t>(index)].file,
+              loadFinished);
     if (result.failed())
     {
-        compactNamLoadPending = false;
+        compactAssetLoadPending = false;
         juce::AlertWindow::showMessageBoxAsync(
             juce::MessageBoxIconType::WarningIcon,
-            "Could not load NAM model", result.getErrorMessage());
+            isCompactNamLibrary()
+                ? "Could not load NAM model"
+                : "Could not load impulse response",
+            result.getErrorMessage());
     }
     repaint();
 }
 
-void EffectGraph::scrollCompactNamLibrary(int rows)
+void EffectGraph::scrollCompactAssetLibrary(int rows)
 {
     const auto maximumFirst = juce::jmax(
-        0, static_cast<int>(compactNamModels.size())
-               - compactNamVisibleRowCount());
-    compactNamFirstVisible = juce::jlimit(
-        0, maximumFirst, compactNamFirstVisible + rows);
+        0, compactAssetCount() - compactAssetVisibleRowCount());
+    compactAssetFirstVisible = juce::jlimit(
+        0, maximumFirst, compactAssetFirstVisible + rows);
     repaint();
 }
 
-int EffectGraph::compactNamModelAt(juce::Point<float> position) const
+int EffectGraph::compactAssetAt(juce::Point<float> position) const
 {
-    constexpr auto headerHeight = 16.0f;
-    constexpr auto rowHeight = 30.0f;
     auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
-    area.removeFromTop(headerHeight);
+    area.removeFromTop(
+        compactAssetHeaderHeight + compactAssetSearchHeight
+        + compactAssetSearchGap);
     if (!area.contains(position))
         return -1;
     const auto row = static_cast<int>(
-        (position.y - area.getY()) / rowHeight);
-    if (row < 0 || row >= compactNamVisibleRowCount())
+        (position.y - area.getY()) / compactAssetRowHeight);
+    if (row < 0 || row >= compactAssetVisibleRowCount())
         return -1;
-    const auto index = compactNamFirstVisible + row;
-    return juce::isPositiveAndBelow(
-               index, static_cast<int>(compactNamModels.size()))
+    const auto index = compactAssetFirstVisible + row;
+    return juce::isPositiveAndBelow(index, compactAssetCount())
         ? index : -1;
 }
 
-void EffectGraph::paintCompactNamLibrary(
+void EffectGraph::paintCompactAssetLibrary(
     juce::Graphics& graphics, juce::Rectangle<float> area)
 {
-    constexpr auto headerHeight = 16.0f;
-    constexpr auto rowHeight = 30.0f;
-    const auto header = area.removeFromTop(headerHeight);
+    const auto header = area.removeFromTop(compactAssetHeaderHeight);
+    area.removeFromTop(
+        compactAssetSearchHeight + compactAssetSearchGap);
     graphics.setColour(juce::Colours::white.withAlpha(0.56f));
     graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
-    const auto status = processor.isNamModelLibraryIndexing()
+    const auto indexing = isCompactNamLibrary()
+        ? processor.isNamModelLibraryIndexing()
+        : processor.isImpulseResponseLibraryIndexing();
+    const auto status = indexing
         ? "INDEXING..."
-        : juce::String(compactNamModels.size()) + " MODELS";
+        : juce::String(compactAssetCount())
+            + (isCompactNamLibrary() ? " MODELS" : " IRS");
     graphics.drawText(
-        "NAM LIBRARY", header.toNearestInt(),
+        isCompactNamLibrary() ? "NAM LIBRARY" : "IR LIBRARY",
+        header.toNearestInt(),
         juce::Justification::centredLeft);
     graphics.drawText(
         status, header.toNearestInt(),
         juce::Justification::centredRight);
 
-    if (compactNamModels.empty())
+    if (compactAssetCount() == 0)
     {
         graphics.setColour(juce::Colours::white.withAlpha(0.52f));
         graphics.setFont(juce::FontOptions(10.0f));
+        const auto hasRoot = isCompactNamLibrary()
+            ? processor.namModelRootDirectory().isDirectory()
+            : processor.impulseResponseRootDirectory().isDirectory();
         graphics.drawFittedText(
-            processor.namModelRootDirectory().isDirectory()
-                ? "Indexing the NAM library..."
-                : "Choose FIND, then ROOT, to select a NAM library.",
+            compactAssetSearch.getText().isNotEmpty()
+                ? "No library items match this filter."
+                : hasRoot
+                    ? "Indexing the asset library..."
+                    : "Choose FIND, then ROOT, to select a library.",
             area.reduced(8.0f).toNearestInt(),
             juce::Justification::centred, 2, 0.8f);
         return;
     }
 
-    const auto loadedPath = processor.namModelPath(slot);
-    const auto visibleRows = compactNamVisibleRowCount();
+    const auto loadedPath = compactAssetLoadedPath();
+    const auto visibleRows = compactAssetVisibleRowCount();
     for (int row = 0; row < visibleRows; ++row)
     {
-        const auto index = compactNamFirstVisible + row;
-        if (!juce::isPositiveAndBelow(
-                index, static_cast<int>(compactNamModels.size())))
+        const auto index = compactAssetFirstVisible + row;
+        if (!juce::isPositiveAndBelow(index, compactAssetCount()))
             break;
-        const auto& entry =
-            compactNamModels[static_cast<size_t>(index)];
-        auto rowBounds = area.removeFromTop(rowHeight).reduced(1.0f);
-        const auto loaded =
-            entry.file.getFullPathName() == loadedPath;
-        const auto selected = index == compactNamSelected;
+        const auto& file = isCompactNamLibrary()
+            ? compactNamModels[static_cast<size_t>(index)].file
+            : compactImpulseResponses[static_cast<size_t>(index)].file;
+        const auto relativePath = isCompactNamLibrary()
+            ? compactNamModels[static_cast<size_t>(index)].relativePath
+            : compactImpulseResponses[static_cast<size_t>(index)]
+                  .relativePath;
+        const auto displayName = isCompactNamLibrary()
+            && compactNamModels[static_cast<size_t>(index)]
+                   .displayName.isNotEmpty()
+            ? compactNamModels[static_cast<size_t>(index)].displayName
+            : file.getFileNameWithoutExtension();
+        auto rowBounds =
+            area.removeFromTop(compactAssetRowHeight).reduced(1.0f);
+        const auto loaded = file.getFullPathName() == loadedPath;
+        const auto selected = index == compactAssetSelected;
         graphics.setColour(
             loaded ? accent.withAlpha(0.23f)
                    : selected ? accent.withAlpha(0.12f)
@@ -249,18 +381,16 @@ void EffectGraph::paintCompactNamLibrary(
             loaded ? accent : juce::Colours::white.withAlpha(0.9f));
         graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
         graphics.drawFittedText(
-            entry.displayName.isNotEmpty()
-                ? entry.displayName
-                : entry.file.getFileNameWithoutExtension(),
+            displayName,
             text.removeFromTop(14.0f).toNearestInt(),
             juce::Justification::centredLeft, 1, 0.75f);
         graphics.setColour(juce::Colours::white.withAlpha(0.48f));
         graphics.setFont(juce::FontOptions(8.0f));
         graphics.drawFittedText(
-            entry.relativePath,
+            relativePath,
             text.toNearestInt(),
             juce::Justification::centredLeft, 1, 0.72f);
-        if (loaded || (selected && compactNamLoadPending))
+        if (loaded || (selected && compactAssetLoadPending))
         {
             graphics.setColour(accent.withAlpha(0.9f));
             graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
@@ -271,21 +401,24 @@ void EffectGraph::paintCompactNamLibrary(
         }
     }
 
-    if (static_cast<int>(compactNamModels.size()) > visibleRows)
+    if (compactAssetCount() > visibleRows)
     {
-        auto track = getLocalBounds().toFloat()
-            .reduced(3.0f, 20.0f)
-            .removeFromRight(3.0f);
+        auto track =
+            getLocalBounds().toFloat().reduced(8.0f, 3.0f);
+        track.removeFromTop(
+            compactAssetHeaderHeight + compactAssetSearchHeight
+            + compactAssetSearchGap);
+        track = track.removeFromRight(3.0f).reduced(0.0f, 2.0f);
         const auto thumbHeight = juce::jmax(
             10.0f,
             track.getHeight()
                 * static_cast<float>(visibleRows)
-                / static_cast<float>(compactNamModels.size()));
+                / static_cast<float>(compactAssetCount()));
         const auto maximumFirst = juce::jmax(
-            1, static_cast<int>(compactNamModels.size()) - visibleRows);
+            1, compactAssetCount() - visibleRows);
         const auto thumbY = track.getY()
             + (track.getHeight() - thumbHeight)
-                * static_cast<float>(compactNamFirstVisible)
+                * static_cast<float>(compactAssetFirstVisible)
                 / static_cast<float>(maximumFirst);
         graphics.setColour(juce::Colours::white.withAlpha(0.1f));
         graphics.fillRoundedRectangle(track, 1.5f);
@@ -298,9 +431,9 @@ void EffectGraph::paintCompactNamLibrary(
 void EffectGraph::paintCompact(
     juce::Graphics& graphics, juce::Rectangle<float> area)
 {
-    if (type == ModuleType::neuralAmpModeler)
+    if (isCompactAssetLibrary())
     {
-        paintCompactNamLibrary(graphics, area);
+        paintCompactAssetLibrary(graphics, area);
         return;
     }
     auto visualizationLabel = "";
@@ -2143,12 +2276,12 @@ void EffectGraph::paint(juce::Graphics& graphics)
 
 void EffectGraph::mouseDown(const juce::MouseEvent& event)
 {
-    if (type == ModuleType::neuralAmpModeler)
+    if (isCompactAssetLibrary())
     {
         grabKeyboardFocus();
-        const auto index = compactNamModelAt(event.position);
+        const auto index = compactAssetAt(event.position);
         if (index >= 0)
-            activateCompactNamModel(index);
+            activateCompactAsset(index);
     }
     else if (type == ModuleType::compressor
              && compactCompressorLevelArea().contains(event.position))
@@ -2266,7 +2399,7 @@ void EffectGraph::mouseDoubleClick(const juce::MouseEvent& event)
 void EffectGraph::mouseWheelMove(
     const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
 {
-    if (type == ModuleType::neuralAmpModeler)
+    if (isCompactAssetLibrary())
     {
         const auto movement =
             wheel.deltaY != 0.0f ? wheel.deltaY : wheel.deltaX;
@@ -2274,7 +2407,7 @@ void EffectGraph::mouseWheelMove(
         {
             const auto rows = juce::jmax(
                 1, juce::roundToInt(std::abs(movement) * 4.0f));
-            scrollCompactNamLibrary(movement > 0.0f ? -rows : rows);
+            scrollCompactAssetLibrary(movement > 0.0f ? -rows : rows);
             return;
         }
     }
@@ -2302,33 +2435,33 @@ void EffectGraph::mouseWheelMove(
 
 bool EffectGraph::keyPressed(const juce::KeyPress& key)
 {
-    if (type == ModuleType::neuralAmpModeler)
+    if (isCompactAssetLibrary())
     {
         if (key.getKeyCode() == juce::KeyPress::upKey
             || key.getKeyCode() == juce::KeyPress::downKey)
         {
-            if (!compactNamModels.empty())
+            if (compactAssetCount() > 0)
             {
                 const auto direction =
                     key.getKeyCode() == juce::KeyPress::upKey ? -1 : 1;
-                compactNamSelected = juce::jlimit(
-                    0, static_cast<int>(compactNamModels.size()) - 1,
-                    compactNamSelected < 0
-                        ? 0 : compactNamSelected + direction);
-                const auto visibleRows = compactNamVisibleRowCount();
-                if (compactNamSelected < compactNamFirstVisible)
-                    compactNamFirstVisible = compactNamSelected;
-                else if (compactNamSelected
-                         >= compactNamFirstVisible + visibleRows)
-                    compactNamFirstVisible =
-                        compactNamSelected - visibleRows + 1;
+                compactAssetSelected = juce::jlimit(
+                    0, compactAssetCount() - 1,
+                    compactAssetSelected < 0
+                        ? 0 : compactAssetSelected + direction);
+                const auto visibleRows = compactAssetVisibleRowCount();
+                if (compactAssetSelected < compactAssetFirstVisible)
+                    compactAssetFirstVisible = compactAssetSelected;
+                else if (compactAssetSelected
+                         >= compactAssetFirstVisible + visibleRows)
+                    compactAssetFirstVisible =
+                        compactAssetSelected - visibleRows + 1;
                 repaint();
             }
             return true;
         }
         if (key.getKeyCode() == juce::KeyPress::returnKey)
         {
-            activateCompactNamModel(compactNamSelected);
+            activateCompactAsset(compactAssetSelected);
             return true;
         }
     }
@@ -2441,8 +2574,7 @@ void EffectGraph::setVisualizationActive(bool active)
     const auto changed = visualizationActive != active;
     visualizationActive = active;
     const auto needsCapture =
-        active
-        && type != ModuleType::neuralAmpModeler;
+        active && !isCompactAssetLibrary();
     processor.getVisualizationData().setSlotActive(slot, needsCapture);
     if (changed)
         repaint();
@@ -2493,15 +2625,15 @@ void EffectGraph::timerCallback()
 {
     if (!isShowing())
         return;
-    if (type == ModuleType::neuralAmpModeler
-        && compactNamLibraryGeneration
+    if (isCompactAssetLibrary()
+        && compactAssetLibraryGeneration
                != processor.assetLibraryGeneration())
     {
-        refreshCompactNamLibrary();
+        refreshCompactAssetLibrary();
         repaint();
     }
     if (visualizationActive
-        && type != ModuleType::neuralAmpModeler
+        && !isCompactAssetLibrary()
         && !processor.getVisualizationData().isSlotActive(slot))
         processor.getVisualizationData().setSlotActive(slot, true);
     refreshVisualization();
@@ -2509,7 +2641,7 @@ void EffectGraph::timerCallback()
 
 void EffectGraph::refreshVisualization()
 {
-    if (type == ModuleType::neuralAmpModeler)
+    if (isCompactAssetLibrary())
     {
         repaint();
         return;
@@ -2598,12 +2730,24 @@ void EffectGraph::refreshVisualizationForTesting()
 
 void EffectGraph::activateCompactNamModelForTesting(int index)
 {
-    activateCompactNamModel(index);
+    activateCompactAsset(index);
 }
 
 void EffectGraph::scrollCompactNamLibraryForTesting(int rows)
 {
-    scrollCompactNamLibrary(rows);
+    scrollCompactAssetLibrary(rows);
+}
+
+void EffectGraph::setCompactAssetFilterForTesting(
+    const juce::String& filter)
+{
+    compactAssetSearch.setText(filter, false);
+    refreshCompactAssetLibrary(true);
+}
+
+void EffectGraph::activateCompactImpulseResponseForTesting(int index)
+{
+    activateCompactAsset(index);
 }
 #endif
 

@@ -53,12 +53,18 @@ public:
     {
         return static_cast<int>(compactNamModels.size());
     }
+    int compactImpulseResponseCountForTesting() const
+    {
+        return static_cast<int>(compactImpulseResponses.size());
+    }
     int compactNamFirstVisibleModelForTesting() const
     {
-        return compactNamFirstVisible;
+        return compactAssetFirstVisible;
     }
     void activateCompactNamModelForTesting(int index);
     void scrollCompactNamLibraryForTesting(int rows);
+    void setCompactAssetFilterForTesting(const juce::String&);
+    void activateCompactImpulseResponseForTesting(int index);
 #endif
 
     float value(int control) const;
@@ -88,13 +94,17 @@ public:
     }
 private:
     void paintCompact(juce::Graphics&, juce::Rectangle<float>);
-    void paintCompactNamLibrary(
+    void paintCompactAssetLibrary(
         juce::Graphics&, juce::Rectangle<float>);
-    void refreshCompactNamLibrary();
-    void activateCompactNamModel(int index);
-    int compactNamVisibleRowCount() const;
-    int compactNamModelAt(juce::Point<float>) const;
-    void scrollCompactNamLibrary(int rows);
+    void refreshCompactAssetLibrary(bool resetScroll = false);
+    void activateCompactAsset(int index);
+    int compactAssetCount() const;
+    int compactAssetVisibleRowCount() const;
+    int compactAssetAt(juce::Point<float>) const;
+    void scrollCompactAssetLibrary(int rows);
+    bool isCompactAssetLibrary() const;
+    bool isCompactNamLibrary() const;
+    juce::String compactAssetLoadedPath() const;
     juce::Rectangle<float> compactCompressorLevelArea() const;
     void setCompactCompressorThresholdFromY(float);
     juce::Rectangle<float> compactEqualizerPlotArea() const;
@@ -140,11 +150,13 @@ private:
     uint64_t lastInputHistoryPosition = 0;
     uint64_t lastOutputHistoryPosition = 0;
     juce::String dragReadout;
+    juce::TextEditor compactAssetSearch;
     std::vector<NamModelLibraryEntry> compactNamModels;
-    std::uint64_t compactNamLibraryGeneration = 0;
-    int compactNamFirstVisible = 0;
-    int compactNamSelected = -1;
-    bool compactNamLoadPending = false;
+    std::vector<ImpulseResponseLibraryEntry> compactImpulseResponses;
+    std::uint64_t compactAssetLibraryGeneration = 0;
+    int compactAssetFirstVisible = 0;
+    int compactAssetSelected = -1;
+    bool compactAssetLoadPending = false;
     bool bypassVisualsSuspended = false;
     bool visualizationActive = false;
 };
