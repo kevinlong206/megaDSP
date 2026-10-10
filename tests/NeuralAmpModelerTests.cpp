@@ -1042,35 +1042,34 @@ public:
             MegaDSPAudioProcessor browser;
             expect(browser.setNamModelRootDirectory(root).wasOk());
             expectEquals(browser.namModelLibrarySize(), 3);
-            expectEquals(
-                static_cast<int>(
-                    browser.searchNamModels("linear").size()),
-                3);
-            expectEquals(
-                static_cast<int>(
-                    browser.searchNamModels("cab").size()),
-                1);
-            expectEquals(
-                static_cast<int>(
-                    browser.searchNamModels("amp").size()),
-                1);
-            expectEquals(
-                static_cast<int>(
-                    browser.searchNamModels("rig").size()),
-                1);
-            expectEquals(
-                static_cast<int>(
-                    browser.searchNamModels("pedal").size()),
-                1);
-            expectEquals(
-                static_cast<int>(
-                    browser.searchNamModels("nocab").size()),
-                2);
-            expectEquals(
-                static_cast<int>(
-                    browser.searchNamModels(
-                        "studio a1 cab sr:48000").size()),
-                1);
+            const auto expectSearchCount =
+                [this, &browser](
+                    const juce::String& query, int expected)
+                {
+                    const auto results =
+                        browser.searchNamModels(query);
+                    juce::StringArray paths;
+                    for (const auto& result : results)
+                        paths.add(result.relativePath);
+                    expectEquals(
+                        static_cast<int>(results.size()), expected,
+                        "Query '" + query + "' returned: "
+                            + paths.joinIntoString(", "));
+                };
+            expectSearchCount("linear", 3);
+            expectSearchCount("cab", 1);
+            expectSearchCount("amp", 1);
+            expectSearchCount("rig", 1);
+            expectSearchCount("pedal", 1);
+            expectSearchCount("nocab", 2);
+            expectSearchCount("studio a1 cab sr:48000", 1);
+            expectSearchCount("lead studio", 1);
+            expectSearchCount("\"studio lead\"", 1);
+            expectSearchCount("coper", 1);
+            expectSearchCount("clean -pedal", 1);
+            expectSearchCount("type:pedal", 1);
+            expectSearchCount("cab:no", 2);
+            expectSearchCount("direct", 2);
             expect(browser.searchNamModels("a2").empty());
             expect(browser.setNamModelFavorite(
                        pedalModel, true).wasOk());

@@ -132,6 +132,258 @@ juce::String namModelSearchableText(
         .toLowerCase();
 }
 
+struct NamSearchTerm
+{
+    juce::String text;
+    bool excluded = false;
+    bool phrase = false;
+};
+
+std::vector<NamSearchTerm> parseNamSearchQuery(
+    const juce::String& query)
+{
+    std::vector<NamSearchTerm> terms;
+    juce::String current;
+    auto quoted = false;
+    auto phrase = false;
+    const auto flush =
+        [&]
+        {
+            auto text = current.trim().toLowerCase();
+            current.clear();
+            if (text.isEmpty())
+            {
+                phrase = false;
+                return;
+            }
+            auto excluded = text.startsWithChar('-')
+                && text.length() > 1;
+            if (excluded)
+                text = text.substring(1);
+            terms.push_back({ text, excluded, phrase });
+            phrase = false;
+        };
+    for (int index = 0; index < query.length(); ++index)
+    {
+        const auto character = query[index];
+        if (character == '"')
+        {
+            quoted = !quoted;
+            phrase = true;
+        }
+        else if (juce::CharacterFunctions::isWhitespace(character)
+                 && !quoted)
+        {
+            flush();
+        }
+        else
+        {
+            current += character;
+        }
+    }
+    flush();
+    return terms;
+}
+
+bool isSearchWordCharacter(juce::juce_wchar character)
+{
+    return juce::CharacterFunctions::isLetterOrDigit(character);
+}
+
+bool containsSearchWord(
+    const juce::String& text, const juce::String& word)
+{
+    auto position = text.indexOf(word);
+    while (position >= 0)
+    {
+        const auto before = position == 0
+            || !isSearchWordCharacter(text[position - 1]);
+        const auto afterIndex = position + word.length();
+        const auto after = afterIndex >= text.length()
+            || !isSearchWordCharacter(text[afterIndex]);
+        if (before && after)
+            return true;
+        position = text.indexOf(position + 1, word);
+    }
+    return false;
+}
+
+int boundedWordEditDistance(
+    const juce::String& text, int wordStart, int wordEnd,
+    const juce::String& query, int maximumDistance)
+{
+    constexpr auto maximumFuzzyLength = 48;
+    const auto wordLength = wordEnd - wordStart;
+    const auto queryLength = query.length();
+    if (wordLength > maximumFuzzyLength
+        || queryLength > maximumFuzzyLength
+        || std::abs(wordLength - queryLength) > maximumDistance)
+        return maximumDistance + 1;
+
+    std::array<int, maximumFuzzyLength + 1> previous {};
+    std::array<int, maximumFuzzyLength + 1> current {};
+    for (int column = 0; column <= queryLength; ++column)
+        previous[static_cast<size_t>(column)] = column;
+    for (int row = 1; row <= wordLength; ++row)
+    {
+        current[0] = row;
+        auto rowMinimum = current[0];
+        for (int column = 1; column <= queryLength; ++column)
+        {
+            const auto substitution =
+                text[wordStart + row - 1] == query[column - 1]
+                ? 0 : 1;
+            current[static_cast<size_t>(column)] = std::min({
+                previous[static_cast<size_t>(column)] + 1,
+                current[static_cast<size_t>(column - 1)] + 1,
+                previous[static_cast<size_t>(column - 1)]
+                    + substitution
+            });
+            rowMinimum = std::min(
+                rowMinimum,
+                current[static_cast<size_t>(column)]);
+        }
+        if (rowMinimum > maximumDistance)
+            return maximumDistance + 1;
+        previous = current;
+    }
+    return previous[static_cast<size_t>(queryLength)];
+}
+
+int fuzzyWordMatchScore(
+    const juce::String& text, const juce::String& query)
+{
+    if (query.length() < 4)
+        return 0;
+    const auto maximumDistance = query.length() >= 8 ? 2 : 1;
+    auto bestDistance = maximumDistance + 1;
+    for (int start = 0; start < text.length();)
+    {
+        while (start < text.length()
+               && !isSearchWordCharacter(text[start]))
+            ++start;
+        auto end = start;
+        while (end < text.length()
+               && isSearchWordCharacter(text[end]))
+            ++end;
+        if (end > start)
+            bestDistance = std::min(
+                bestDistance,
+                boundedWordEditDistance(
+                    text, start, end, query,
+                    maximumDistance));
+        start = end + 1;
+    }
+    if (bestDistance == 1)
+        return 45;
+    if (maximumDistance >= 2 && bestDistance == 2)
+        return 25;
+    return 0;
+}
+
+int textMatchScore(
+    const juce::String& searchable, const juce::String& query,
+    bool allowFuzzy)
+{
+    const auto position = searchable.indexOf(query);
+    if (position == 0)
+        return 120;
+    if (position > 0)
+        return containsSearchWord(searchable, query) ? 95 : 75;
+    return allowFuzzy ? fuzzyWordMatchScore(searchable, query) : 0;
+}
+
+int namSearchTermScore(
+    const NamModelLibraryEntry& entry, bool favorite,
+    const NamSearchTerm& term, bool metadataAvailable)
+{
+    const auto& token = term.text;
+    if (token == "favorite" || token == "fav")
+        return favorite ? 140 : 0;
+    if (token == "a1")
+        return !entry.isA2 ? 130 : 0;
+    if (token == "a2")
+        return entry.isA2 ? 130 : 0;
+    if (token == "cab")
+        return entry.cabIncluded == 1 ? 130 : 0;
+    if (token == "nocab")
+        return entry.cabIncluded == 0 ? 130 : 0;
+    if (token == "amp")
+        return entry.gearType == "amp"
+                || (entry.gearType.isEmpty()
+                    && entry.cabIncluded == 0)
+            ? 130 : 0;
+    if (token == "rig" || token == "full-rig")
+        return entry.gearType == "full-rig" ? 130 : 0;
+    if (token == "pedal")
+        return entry.gearType.contains("pedal") ? 130 : 0;
+    if (token == "di" || token == "direct")
+        return entry.cabIncluded == 0
+                || containsSearchWord(entry.searchableText, "di")
+                || containsSearchWord(entry.searchableText, "direct")
+            ? 130 : 0;
+    if (token.startsWith("sr:") || token.startsWith("rate:"))
+    {
+        const auto requested = token.fromFirstOccurrenceOf(
+            ":", false, false).getDoubleValue();
+        return requested > 0.0
+                && std::abs(entry.sampleRate - requested) < 1.0
+            ? 130 : 0;
+    }
+    if (token.startsWith("cab:"))
+    {
+        const auto value = token.fromFirstOccurrenceOf(
+            ":", false, false);
+        const auto wantsCab = value == "yes" || value == "true"
+            || value == "included" || value == "with";
+        const auto wantsDirect = value == "no" || value == "false"
+            || value == "none" || value == "di"
+            || value == "direct";
+        return (wantsCab && entry.cabIncluded == 1)
+                || (wantsDirect && entry.cabIncluded == 0)
+            ? 130 : 0;
+    }
+    if (token.startsWith("type:"))
+    {
+        const auto value = token.fromFirstOccurrenceOf(
+            ":", false, false);
+        return entry.gearType.contains(value) ? 130 : 0;
+    }
+
+    if (!metadataAvailable)
+        return textMatchScore(
+            entry.searchableText, token,
+            !term.phrase && !term.excluded);
+
+    if (token == "low-gain" || token == "lowgain")
+        return std::max(
+            textMatchScore(entry.searchableText, "low gain", false),
+            textMatchScore(entry.searchableText, "clean", false));
+    if (token == "mid-gain" || token == "midgain")
+        return std::max(
+            textMatchScore(entry.searchableText, "mid gain", false),
+            textMatchScore(entry.searchableText, "crunch", false));
+    if (token == "high-gain" || token == "highgain")
+        return std::max(
+            textMatchScore(entry.searchableText, "high gain", false),
+            textMatchScore(entry.searchableText, "lead", false));
+
+    const auto fieldSeparator = token.indexOfChar(':');
+    if (fieldSeparator > 0)
+    {
+        const auto field = token.substring(0, fieldSeparator);
+        const auto value = token.substring(fieldSeparator + 1);
+        if (field == "name" || field == "author"
+            || field == "amp" || field == "model")
+            return textMatchScore(
+                entry.searchableText, value,
+                !term.phrase && !term.excluded);
+    }
+    return textMatchScore(
+        entry.searchableText, token,
+        !term.phrase && !term.excluded);
+}
+
 std::vector<ImpulseResponseLibraryEntry>
 discoverImpulseResponsePaths(const juce::File& root)
 {
@@ -4010,71 +4262,61 @@ MegaDSPAudioProcessor::searchNamModels(
     maximumResults = juce::jmax(0, maximumResults);
     if (maximumResults == 0)
         return {};
-    const auto tokens = juce::StringArray::fromTokens(
-        query.toLowerCase(), " \t\r\n", "\"");
-    std::vector<NamModelLibraryEntry> matches;
+    const auto terms = parseNamSearchQuery(query);
+    struct ScoredEntry
+    {
+        NamModelLibraryEntry entry;
+        int score = 0;
+    };
+    std::vector<ScoredEntry> scoredMatches;
     const auto favoritePaths = globalNamFavorites();
     const auto metadataAvailable =
         namModelLibraryValidated.load(std::memory_order_acquire);
     {
         const juce::ScopedLock lock(namModelLibraryLock);
-        matches.reserve(namModelLibrary.size());
+        scoredMatches.reserve(namModelLibrary.size());
         for (const auto& entry : namModelLibrary)
         {
             const auto favorite = favoritePaths.contains(
                 entry.file.getFullPathName());
             auto matched = true;
-            for (const auto& token : tokens)
+            auto score = favorite ? 10 : 0;
+            for (const auto& term : terms)
             {
-                if (token.isEmpty())
+                if (term.text.isEmpty())
                     continue;
-                if (token == "favorite" || token == "fav")
-                    matched = favorite;
-                else if (!metadataAvailable)
-                    matched = entry.searchableText.contains(token);
-                else if (token == "a1")
-                    matched = !entry.isA2;
-                else if (token == "a2")
-                    matched = entry.isA2;
-                else if (token == "cab")
-                    matched = entry.cabIncluded == 1;
-                else if (token == "nocab")
-                    matched = entry.cabIncluded == 0;
-                else if (token == "amp")
-                    matched = entry.gearType == "amp"
-                        || (entry.gearType.isEmpty()
-                            && entry.cabIncluded == 0);
-                else if (token == "rig" || token == "full-rig")
-                    matched = entry.gearType == "full-rig";
-                else if (token == "pedal")
-                    matched = entry.gearType.contains("pedal");
-                else if (token.startsWith("sr:")
-                         || token.startsWith("rate:"))
-                {
-                    const auto requested = token.fromFirstOccurrenceOf(
-                        ":", false, false).getDoubleValue();
-                    matched = requested > 0.0
-                        && std::abs(entry.sampleRate - requested) < 1.0;
-                }
-                else
-                    matched = entry.searchableText.contains(token);
+                const auto termScore = namSearchTermScore(
+                    entry, favorite, term, metadataAvailable);
+                matched = term.excluded
+                    ? termScore == 0 : termScore > 0;
                 if (!matched)
                     break;
+                if (!term.excluded)
+                    score += termScore;
             }
             if (!matched)
                 continue;
-            matches.push_back(entry);
-            matches.back().favorite = favorite;
+            scoredMatches.push_back({ entry, score });
+            scoredMatches.back().entry.favorite = favorite;
         }
     }
     std::stable_sort(
-        matches.begin(), matches.end(),
+        scoredMatches.begin(), scoredMatches.end(),
         [](const auto& left, const auto& right)
         {
-            return left.favorite && !right.favorite;
+            if (left.score != right.score)
+                return left.score > right.score;
+            if (left.entry.favorite != right.entry.favorite)
+                return left.entry.favorite;
+            return left.entry.relativePath.compareIgnoreCase(
+                       right.entry.relativePath) < 0;
         });
-    if (static_cast<int>(matches.size()) > maximumResults)
-        matches.resize(static_cast<size_t>(maximumResults));
+    if (static_cast<int>(scoredMatches.size()) > maximumResults)
+        scoredMatches.resize(static_cast<size_t>(maximumResults));
+    std::vector<NamModelLibraryEntry> matches;
+    matches.reserve(scoredMatches.size());
+    for (auto& match : scoredMatches)
+        matches.push_back(std::move(match.entry));
     return matches;
 }
 

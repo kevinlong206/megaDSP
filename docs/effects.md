@@ -902,7 +902,10 @@ state and user settings so new instances inherit it across DAW restarts. The
 catalog accepts structurally valid supported `.nam` files and ignores malformed
 or unsupported entries. The compact list filters model names, relative paths,
 amp/capture metadata, authors, and architectures; queries also accept
-`sr:48000` and `favorite`. Each row has a clickable star, and the
+`sr:48000`, `type:pedal`, `cab:no`, and `favorite`. Terms can appear in any
+order, quoted phrases stay together, `-term` excludes matches, common gain and
+DI aliases are recognized, and small typos are ranked below exact matches.
+Each row has a clickable star, and the
 **FAVORITES** toggle filters the list to starred models. **ROOT** changes the
 recursive directory and **REBUILD** rescans and validates it. Favorites persist
 globally and sort above other matches. The card's **FAVORITE** button also
