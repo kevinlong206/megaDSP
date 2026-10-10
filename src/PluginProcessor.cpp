@@ -1007,6 +1007,7 @@ double namJsonNumber(
 std::optional<NamModelLibraryEntry> inspectNamModel(
     const juce::File& file, const juce::File& root)
 {
+    constexpr double legacyModelSampleRate = 48000.0;
     if (!file.existsAsFile()
         || !file.hasFileExtension("nam"))
         return std::nullopt;
@@ -1023,10 +1024,16 @@ std::optional<NamModelLibraryEntry> inspectNamModel(
     if (architecture == json.end() || !architecture->is_string()
         || config == json.end() || !config->is_object()
         || weights == json.end() || !weights->is_array()
-        || version == json.end() || !version->is_string()
-        || sampleRate == json.end() || !sampleRate->is_number()
-        || sampleRate->get<double>() <= 0.0)
+        || version == json.end() || !version->is_string())
         return std::nullopt;
+    auto effectiveSampleRate = legacyModelSampleRate;
+    if (sampleRate != json.end())
+    {
+        if (!sampleRate->is_number()
+            || sampleRate->get<double>() <= 0.0)
+            return std::nullopt;
+        effectiveSampleRate = sampleRate->get<double>();
+    }
 
     static const std::array<const char*, 7> supported {
         "Linear", "LSTM", "ConvNet", "WaveNet", "SlimmableWaveNet",
@@ -1116,7 +1123,7 @@ std::optional<NamModelLibraryEntry> inspectNamModel(
     entry.architecture = architectureName;
     if (effectiveArchitecture != architectureName)
         entry.architecture += " / " + effectiveArchitecture;
-    entry.sampleRate = sampleRate->get<double>();
+    entry.sampleRate = effectiveSampleRate;
     entry.submodelCount = submodelCount;
     entry.isA2 = isA2;
 
@@ -1176,7 +1183,7 @@ bool restoreNamModelLibraryCache(
     const auto xml = juce::XmlDocument::parse(cache);
     if (xml == nullptr
         || !xml->hasTagName("NAM_LIBRARY")
-        || xml->getIntAttribute("schema") != 1
+        || xml->getIntAttribute("schema") != 2
         || xml->getStringAttribute("root") != root.getFullPathName())
         return false;
 
@@ -1214,7 +1221,7 @@ juce::Result persistNamModelLibraryCache(
     const std::vector<NamModelLibraryEntry>& entries)
 {
     juce::XmlElement xml("NAM_LIBRARY");
-    xml.setAttribute("schema", 1);
+    xml.setAttribute("schema", 2);
     xml.setAttribute("root", root.getFullPathName());
     for (const auto& entry : entries)
     {

@@ -1108,6 +1108,41 @@ public:
             root.deleteRecursively();
         }
 
+        beginTest("Legacy NAM models without sample rate remain available");
+        {
+            const auto root =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getNonexistentChildFile(
+                        "megaDSP-legacy-nam-browser", {}, true);
+            expect(root.createDirectory().wasOk());
+            const auto legacy = root.getChildFile("legacy.nam");
+            const auto invalid = root.getChildFile("invalid-rate.nam");
+            auto legacyJson = nlohmann::json::parse(
+                linearNamJson().toStdString());
+            legacyJson.erase("sample_rate");
+            expect(legacy.replaceWithText(
+                juce::String(legacyJson.dump())));
+            auto invalidJson = legacyJson;
+            invalidJson["sample_rate"] = 0.0;
+            expect(invalid.replaceWithText(
+                juce::String(invalidJson.dump())));
+
+            MegaDSPAudioProcessor browser;
+            browser.prepareToPlay(48000.0, 64);
+            browser.addModule(ModuleType::neuralAmpModeler);
+            expect(browser.setNamModelRootDirectory(root).wasOk());
+            expectEquals(browser.namModelLibrarySize(), 1);
+            const auto results = browser.searchNamModels("legacy sr:48000");
+            expectEquals(static_cast<int>(results.size()), 1);
+            if (!results.empty())
+                expectWithinAbsoluteError(
+                    results.front().sampleRate, 48000.0, 0.001);
+            expect(browser.loadNamModel(0, legacy).wasOk());
+
+            root.deleteRecursively();
+        }
+
         beginTest("Recursive NAM library validates, searches, and persists");
         {
             const auto root =
@@ -1338,6 +1373,12 @@ public:
                 1);
 
             expect(browser.rebuildNamModelLibrary().wasOk());
+            const auto persistedCache =
+                juce::XmlDocument::parse(testCache);
+            expect(persistedCache != nullptr);
+            if (persistedCache != nullptr)
+                expectEquals(
+                    persistedCache->getIntAttribute("schema"), 2);
             expect(pedalModel.replaceWithText("{ cache probe }"));
             MegaDSPAudioProcessor cachedBrowser;
             expectEquals(cachedBrowser.namModelLibrarySize(), 3);
