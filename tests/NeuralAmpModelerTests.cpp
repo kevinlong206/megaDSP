@@ -864,21 +864,27 @@ public:
             const auto directDirectory = root.getChildFile("Direct");
             const auto cabDirectory = root.getChildFile("Cab Models");
             const auto diDirectory = root.getChildFile("DI Models");
+            const auto metadataDirectory =
+                root.getChildFile("Metadata Models");
             expect(directDirectory.createDirectory().wasOk());
             expect(cabDirectory.createDirectory().wasOk());
             expect(diDirectory.createDirectory().wasOk());
+            expect(metadataDirectory.createDirectory().wasOk());
             const auto unique = juce::String::toHexString(
                 juce::Time::getHighResolutionTicks());
             const auto direct = directDirectory.getChildFile(
                 "speaker-" + unique + ".nam");
             const auto cabDi = cabDirectory.getChildFile(
                 "speaker-" + unique + "-DI.nam");
-            const auto metadataNoCab = cabDirectory.getChildFile(
+            const auto di = diDirectory.getChildFile(
+                "speaker-" + unique + ".nam");
+            const auto metadataNoCab = metadataDirectory.getChildFile(
                 "metadata-" + unique + ".nam");
-            const auto metadataCab = diDirectory.getChildFile(
-                "metadata-" + unique + ".nam");
+            const auto metadataCab = metadataDirectory.getChildFile(
+                "metadata-cab-" + unique + ".nam");
             expect(direct.replaceWithText(linearNamJson()));
             expect(cabDi.replaceWithText(linearNamJson()));
+            expect(di.replaceWithText(linearNamJson()));
             auto noCabJson = nlohmann::json::parse(
                 linearNamJson().toStdString());
             noCabJson["metadata"]["with_cab"] = false;
@@ -899,12 +905,15 @@ public:
             expect(processor.loadNamModel(0, cabDi).wasOk());
             expect(!processor.isNamCabinetEnabled(0),
                    "Cab in a parent path must override DI.");
+            expect(processor.loadNamModel(0, di).wasOk());
+            expect(processor.isNamCabinetEnabled(0),
+                   "Exact-case DI in a parent path must enable the cabinet.");
             expect(processor.loadNamModel(0, metadataNoCab).wasOk());
             expect(processor.isNamCabinetEnabled(0),
-                   "with_cab false must override a Cab path.");
+                   "with_cab false must enable the cabinet.");
             expect(processor.loadNamModel(0, metadataCab).wasOk());
             expect(!processor.isNamCabinetEnabled(0),
-                   "with_cab true must override a DI path.");
+                   "with_cab true must disable the cabinet.");
             root.deleteRecursively();
         }
 
@@ -937,6 +946,37 @@ public:
             expectEquals(
                 source.namCabinetPath(0), first.getFullPathName());
             expect(source.isNamCabinetEnabled(0));
+
+            const auto modelRoot =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getNonexistentChildFile(
+                        "megaDSP-direct-fallback", {}, true);
+            const auto mixedCaseDirect =
+                modelRoot.getChildFile("Captures")
+                    .getChildFile("dIrEcT")
+                .getChildFile("metadata-included.nam");
+            expect(mixedCaseDirect.getParentDirectory()
+                       .createDirectory().wasOk());
+            auto directWithCabMetadata = nlohmann::json::parse(
+                linearNamJson().toStdString());
+            directWithCabMetadata["metadata"]["with_cab"] = true;
+            expect(mixedCaseDirect.replaceWithText(
+                juce::String(directWithCabMetadata.dump())));
+            MegaDSPAudioProcessor relativeDirect;
+            relativeDirect.prepareToPlay(48000.0, 64);
+            relativeDirect.addModule(ModuleType::neuralAmpModeler);
+            expect(relativeDirect.setNamModelRootDirectory(
+                modelRoot).wasOk());
+            expect(relativeDirect.loadNamModelAsync(
+                0, mixedCaseDirect).wasOk());
+            relativeDirect.finishNamModelLoadForTesting();
+            expectEquals(
+                relativeDirect.namCabinetPath(0),
+                first.getFullPathName(),
+                "Nested mixed-case Direct paths must load the last IR.");
+            expect(relativeDirect.isNamCabinetEnabled(0),
+                   "Direct paths must override cabinet-included metadata.");
 
             auto inheritedModel = writeNam(
                 linearNamJson(), "fallback-Direct-" + unique);
@@ -995,6 +1035,7 @@ public:
             model.deleteFile();
             inheritedModel.deleteFile();
             latestModel.deleteFile();
+            modelRoot.deleteRecursively();
             root.deleteRecursively();
         }
 

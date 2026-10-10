@@ -546,20 +546,21 @@ std::optional<NamModelLibraryEntry> inspectNamModel(
 bool defaultNamCabinetEnabled(
     const juce::File& model, const juce::File& modelRoot)
 {
-    const auto inspectionRoot = modelRoot.isDirectory()
-        ? modelRoot : model.getParentDirectory();
-    if (const auto metadata = inspectNamModel(model, inspectionRoot);
-        metadata && metadata->cabIncluded >= 0)
-        return metadata->cabIncluded == 0;
-
     const auto matchPath =
         modelRoot.isDirectory() && model.isAChildOf(modelRoot)
         ? model.getRelativePathFrom(modelRoot).replaceCharacter('\\', '/')
         : model.getFileNameWithoutExtension();
     if (matchPath.containsIgnoreCase("Cab"))
         return false;
-    return matchPath.contains("DI")
-        || matchPath.containsIgnoreCase("Direct");
+    if (matchPath.containsIgnoreCase("Direct"))
+        return true;
+
+    const auto inspectionRoot = modelRoot.isDirectory()
+        ? modelRoot : model.getParentDirectory();
+    if (const auto metadata = inspectNamModel(model, inspectionRoot);
+        metadata && metadata->cabIncluded >= 0)
+        return metadata->cabIncluded == 0;
+    return matchPath.contains("DI");
 }
 
 NamCabinetPreference namCabinetPreference(
