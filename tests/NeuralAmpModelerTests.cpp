@@ -938,6 +938,36 @@ public:
                 source.namCabinetPath(0), first.getFullPathName());
             expect(source.isNamCabinetEnabled(0));
 
+            auto inheritedModel = writeNam(
+                linearNamJson(), "fallback-Direct-" + unique);
+            MegaDSPAudioProcessor inherited;
+            inherited.prepareToPlay(48000.0, 64);
+            inherited.addModule(ModuleType::neuralAmpModeler);
+            expect(inherited.loadNamModel(0, inheritedModel).wasOk());
+            expectEquals(
+                inherited.namCabinetPath(0), first.getFullPathName());
+            expect(inherited.isNamCabinetEnabled(0),
+                   "A new Direct model must use the last cabinet IR.");
+            expect(inherited.loadNamCabinetAsync(0, second).wasOk());
+            inherited.finishNamModelLoadForTesting();
+
+            auto latestModel = writeNam(
+                linearNamJson(), "latest-Direct-" + unique);
+            MegaDSPAudioProcessor latest;
+            latest.prepareToPlay(48000.0, 64);
+            latest.addModule(ModuleType::neuralAmpModeler);
+            expect(latest.loadNamModel(0, latestModel).wasOk());
+            expectEquals(
+                latest.namCabinetPath(0), second.getFullPathName());
+
+            MegaDSPAudioProcessor modelSpecific;
+            modelSpecific.prepareToPlay(48000.0, 64);
+            modelSpecific.addModule(ModuleType::neuralAmpModeler);
+            expect(modelSpecific.loadNamModel(0, model).wasOk());
+            expectEquals(
+                modelSpecific.namCabinetPath(0), first.getFullPathName(),
+                "A model-specific cabinet must override the last used IR.");
+
             expect(source.loadAdjacentNamCabinetAsync(0, 1).wasOk());
             source.finishNamModelLoadForTesting();
             expectEquals(
@@ -963,6 +993,8 @@ public:
                    "A missing persisted cabinet IR must fail explicitly.");
 
             model.deleteFile();
+            inheritedModel.deleteFile();
+            latestModel.deleteFile();
             root.deleteRecursively();
         }
 

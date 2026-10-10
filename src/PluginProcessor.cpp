@@ -278,18 +278,24 @@ NamCabinetPreference namCabinetPreference(
         globalSettingsFile(), globalSettingsOptions());
     const auto xml = juce::XmlDocument::parse(
         settings.getValue("namCabinetPreferences"));
-    if (xml == nullptr || !xml->hasTagName("NAM_CABINETS"))
-        return preference;
-    for (auto* child : xml->getChildWithTagNameIterator("MODEL"))
-        if (child->getStringAttribute("path") == modelPath)
-        {
-            preference.impulsePath =
-                child->getStringAttribute("impulse");
-            preference.enabled =
-                child->getBoolAttribute("enabled");
-            preference.exists = true;
-            break;
-        }
+    if (xml != nullptr && xml->hasTagName("NAM_CABINETS"))
+        for (auto* child : xml->getChildWithTagNameIterator("MODEL"))
+            if (child->getStringAttribute("path") == modelPath)
+            {
+                preference.impulsePath =
+                    child->getStringAttribute("impulse");
+                preference.enabled =
+                    child->getBoolAttribute("enabled");
+                preference.exists = true;
+                break;
+            }
+    if (preference.impulsePath.isEmpty())
+    {
+        const auto lastImpulse =
+            settings.getValue("lastNamCabinetImpulse");
+        if (juce::File(lastImpulse).existsAsFile())
+            preference.impulsePath = lastImpulse;
+    }
     return preference;
 }
 
@@ -329,6 +335,8 @@ juce::Result persistNamCabinetPreference(
     target->setAttribute("enabled", enabled);
     settings.setValue(
         "namCabinetPreferences", xml->toString());
+    if (impulsePath.isNotEmpty())
+        settings.setValue("lastNamCabinetImpulse", impulsePath);
     return settings.saveIfNeeded()
         ? juce::Result::ok()
         : juce::Result::fail(

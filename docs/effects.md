@@ -892,7 +892,9 @@ case-insensitive `Cab` defaults the cabinet IR off, while exact-case `DI` or
 case-insensitive `Direct` defaults it on; `Cab` takes precedence. **IR ON/OFF**
 is a per-model manual override. The selected speaker IR
 and override are global preferences keyed by the NAM path, so they are restored
-for that model across plug-in and DAW restarts without saving a preset.
+for that model across plug-in and DAW restarts without saving a preset. A model
+without its own speaker IR automatically uses the last successfully loaded NAM
+speaker IR.
 Clicking a row once schedules that model for immediate background preparation
 and swaps it in when ready. The recursive
 model library uses one root directory, and megaDSP persists it in both project
