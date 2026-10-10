@@ -4487,12 +4487,17 @@ juce::Result MegaDSPAudioProcessor::setNamModelFavorite(
 
 juce::Result MegaDSPAudioProcessor::deleteNamModel(int slot)
 {
-    const auto path = namModelPath(slot);
-    const auto file = juce::File(path);
-    if (path.isEmpty() || !file.existsAsFile()
+    return deleteNamModel(juce::File(namModelPath(slot)));
+}
+
+juce::Result MegaDSPAudioProcessor::deleteNamModel(
+    const juce::File& file)
+{
+    const auto path = file.getFullPathName();
+    if (!file.existsAsFile()
         || !file.hasFileExtension("nam"))
         return juce::Result::fail(
-            "The current NAM model file does not exist.");
+            "The selected NAM model file does not exist.");
     auto expected = false;
     if (!topologyMutationInProgress.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel))

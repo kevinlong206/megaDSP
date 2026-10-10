@@ -884,8 +884,9 @@ tones powered by machine learning. Supports all standard NAM architectures
 (Linear, LSTM, WaveNet, ConvNet, Container) plus the A2 Standard (8-channel)
 and A2 Nano (3-channel) fast-path models.
 
-The widget keeps model loading and clearing beside the current model name. The
-adjacent **<** and **>** buttons step through the validated recursive library
+The widget keeps model clearing beside the current model name. Click a row in
+the compact library to load it; the adjacent **<** and **>** buttons step
+through the validated recursive library
 and wrap at either end. Its compact visualization is a continuously scrollable
 list of the indexed library with a case-insensitive filter directly above it;
 the second asset row loads an optional speaker-cabinet WAV, AIFF, or FLAC after
@@ -911,14 +912,11 @@ amp/capture metadata, authors, and architectures; queries also accept
 `sr:48000`, `type:pedal`, `cab:no`, and `favorite`. Terms can appear in any
 order, quoted phrases stay together, `-term` excludes matches, common gain and
 DI aliases are recognized, and small typos are ranked below exact matches.
-Each row has a clickable star, and the
+Each row has a clickable star and a confirmed-delete trash icon, and the
 **FAVORITES** toggle filters the list to starred models. The header
 **SETTINGS > Libraries** menu changes the recursive directory and rebuilds its
-validated index. Favorites persist globally and sort above other matches. The
-card's **FAVORITE** button also
-toggles the loaded model, while **DELETE** requires confirmation before
-permanently removing the `.nam` file, its library entry, cabinet preference,
-and favorite. The **A1**, **A2**, **CAB**, and **AMP** pills filter
+validated index. Favorites persist globally and sort above other matches.
+The **A1**, **A2**, **CAB**, and **AMP** pills filter
 architecture generation and whether capture metadata says the cabinet is
 included. Results show model, capture, architecture, sample rate, and cabinet
 status and load directly when clicked.

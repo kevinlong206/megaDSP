@@ -103,6 +103,7 @@ private:
     void refreshCompactAssetLibrary(bool resetScroll = false);
     void activateCompactAsset(int index);
     void toggleCompactAssetFavorite(int index);
+    void deleteCompactNamModel(int index);
     int compactAssetCount() const;
     int compactAssetVisibleRowCount() const;
     int compactAssetAt(juce::Point<float>) const;

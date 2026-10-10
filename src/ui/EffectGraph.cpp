@@ -348,6 +348,38 @@ void EffectGraph::toggleCompactAssetFavorite(int index)
     repaint();
 }
 
+void EffectGraph::deleteCompactNamModel(int index)
+{
+    if (!isCompactNamLibrary()
+        || !juce::isPositiveAndBelow(
+            index, static_cast<int>(compactNamModels.size())))
+        return;
+    const auto file =
+        compactNamModels[static_cast<size_t>(index)].file;
+    const juce::Component::SafePointer<EffectGraph> safeThis(this);
+    juce::AlertWindow::showOkCancelBox(
+        juce::MessageBoxIconType::WarningIcon,
+        "Delete NAM model?",
+        "Permanently delete " + file.getFileName()
+            + " from disk? This cannot be undone.",
+        "DELETE", "CANCEL", nullptr,
+        juce::ModalCallbackFunction::create(
+            [safeThis, file](int result)
+            {
+                if (safeThis == nullptr || result == 0)
+                    return;
+                const auto deleted =
+                    safeThis->processor.deleteNamModel(file);
+                if (deleted.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not delete NAM model",
+                        deleted.getErrorMessage());
+                safeThis->refreshCompactAssetLibrary();
+                safeThis->repaint();
+            }));
+}
+
 void EffectGraph::scrollCompactAssetLibrary(int rows)
 {
     const auto maximumFirst = juce::jmax(
@@ -453,8 +485,11 @@ void EffectGraph::paintCompactAssetLibrary(
         }
 
         auto text = rowBounds.reduced(6.0f, 2.0f);
+        auto trashBounds = juce::Rectangle<float>();
+        if (isCompactNamLibrary())
+            trashBounds = rowBounds.removeFromRight(24.0f);
         const auto starBounds = rowBounds.removeFromRight(24.0f);
-        text.removeFromRight(24.0f);
+        text.removeFromRight(isCompactNamLibrary() ? 48.0f : 24.0f);
         graphics.setColour(
             loaded ? accent : juce::Colours::white.withAlpha(0.9f));
         graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
@@ -481,6 +516,27 @@ void EffectGraph::paintCompactAssetLibrary(
         else
             graphics.strokePath(
                 star, juce::PathStrokeType(1.0f));
+        if (isCompactNamLibrary())
+        {
+            const auto icon = trashBounds.reduced(6.0f, 5.0f);
+            juce::Path bin;
+            bin.addRoundedRectangle(
+                icon.getX() + 1.0f, icon.getY() + 3.0f,
+                icon.getWidth() - 2.0f, icon.getHeight() - 3.0f,
+                1.0f);
+            bin.startNewSubPath(icon.getX(), icon.getY() + 2.0f);
+            bin.lineTo(icon.getRight(), icon.getY() + 2.0f);
+            bin.startNewSubPath(
+                icon.getCentreX() - 2.0f, icon.getY());
+            bin.lineTo(
+                icon.getCentreX() + 2.0f, icon.getY());
+            graphics.setColour(
+                juce::Colours::white.withAlpha(0.34f));
+            graphics.strokePath(
+                bin, juce::PathStrokeType(
+                         1.1f, juce::PathStrokeType::curved,
+                         juce::PathStrokeType::rounded));
+        }
         if (loaded || (selected && compactAssetLoadPending))
         {
             graphics.setColour(accent.withAlpha(0.9f));
@@ -2378,8 +2434,16 @@ void EffectGraph::mouseDown(const juce::MouseEvent& event)
         const auto index = compactAssetAt(event.position);
         if (index >= 0)
         {
-            if (event.position.x
+            if (isCompactNamLibrary()
+                && event.position.x
                        >= static_cast<float>(getWidth() - 40))
+            {
+                deleteCompactNamModel(index);
+            }
+            else if (event.position.x
+                         >= static_cast<float>(
+                             getWidth()
+                             - (isCompactNamLibrary() ? 64 : 40)))
             {
                 toggleCompactAssetFavorite(index);
             }

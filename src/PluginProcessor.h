@@ -200,6 +200,7 @@ public:
     bool isNamModelFavorite(const juce::File&) const;
     juce::Result setNamModelFavorite(const juce::File&, bool);
     juce::Result deleteNamModel(int slot);
+    juce::Result deleteNamModel(const juce::File&);
     bool isNamModelLibraryIndexing() const noexcept
     {
         return namModelIndexInProgress.load(

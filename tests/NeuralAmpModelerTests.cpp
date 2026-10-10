@@ -1254,6 +1254,17 @@ public:
                 static_cast<int>(
                     inherited.searchNamModels("copper drive").size()),
                 1);
+            const auto unloadedDeletable =
+                root.getChildFile("delete-unloaded-model.nam");
+            expect(unloadedDeletable.replaceWithText(linearNamJson()));
+            expect(browser.rebuildNamModelLibrary().wasOk());
+            expectEquals(browser.namModelLibrarySize(), 4);
+            expect(browser.loadNamModel(0, ampModel).wasOk());
+            expect(browser.deleteNamModel(unloadedDeletable).wasOk());
+            expect(!unloadedDeletable.existsAsFile());
+            expectEquals(
+                browser.namModelPath(0), ampModel.getFullPathName());
+            expectEquals(browser.namModelLibrarySize(), 3);
             const auto deletable =
                 root.getChildFile("delete-this-model.nam");
             expect(deletable.replaceWithText(linearNamJson()));
