@@ -513,6 +513,40 @@ public:
             f.deleteFile();
         }
 
+        beginTest("Metadata loudness drives bounded automatic matching");
+        {
+            auto json = nlohmann::json::parse(
+                linearNamJson().toStdString());
+            json["metadata"]["loudness"] = -30.0;
+            auto file = writeNam(
+                juce::String(json.dump()), "metadata_level_match");
+            auto module =
+                createDspModule(ModuleType::neuralAmpModeler);
+            module->prepare({ 48000.0, 256, 1 });
+            PreparedNamModelPtr prepared;
+            auto* capability = module->namModelCapability();
+            expect(capability->prepareNamModel(
+                       file, prepared).wasOk());
+            expect(capability->commitPreparedNamModel(prepared));
+            expectWithinAbsoluteError(
+                capability->namModelInfo().levelMatchDb,
+                12.0, 0.01);
+            juce::AudioBuffer<float> buffer(1, 256);
+            for (int block = 0; block < 12; ++block)
+            {
+                for (int sample = 0;
+                     sample < buffer.getNumSamples(); ++sample)
+                    buffer.setSample(0, sample, 0.1f);
+                module->process(
+                    buffer,
+                    moduleDefaults(ModuleType::neuralAmpModeler), {});
+            }
+            expect(buffer.getMagnitude(0, 0, buffer.getNumSamples())
+                       > 0.25f,
+                   "The metadata level-match trim must affect audio.");
+            file.deleteFile();
+        }
+
         beginTest("WaveNet parser is explicitly available");
         {
             auto m = createDspModule(ModuleType::neuralAmpModeler);
@@ -979,6 +1013,30 @@ public:
                         "studio a1 cab sr:48000").size()),
                 1);
             expect(browser.searchNamModels("a2").empty());
+            expect(browser.setNamModelFavorite(
+                       pedalModel, true).wasOk());
+            const auto favorites =
+                browser.searchNamModels("favorite");
+            expectEquals(
+                static_cast<int>(favorites.size()), 1);
+            if (!favorites.empty())
+            {
+                expectEquals(
+                    favorites.front().file.getFullPathName(),
+                    pedalModel.getFullPathName());
+                expect(favorites.front().favorite);
+            }
+            const auto allWithFavoriteFirst =
+                browser.searchNamModels({});
+            expect(!allWithFavoriteFirst.empty());
+            if (!allWithFavoriteFirst.empty())
+                expectEquals(
+                    allWithFavoriteFirst.front()
+                        .file.getFullPathName(),
+                    pedalModel.getFullPathName());
+            MegaDSPAudioProcessor favoriteRestored;
+            expect(favoriteRestored.isNamModelFavorite(pedalModel),
+                   "Favorites must persist across processor instances.");
             browser.prepareToPlay(48000.0, 64);
             browser.addModule(ModuleType::neuralAmpModeler);
             expect(browser.loadAdjacentNamModel(0, 1).wasOk());
@@ -1126,6 +1184,21 @@ public:
                 static_cast<int>(
                     inherited.searchNamModels("copper drive").size()),
                 1);
+            const auto deletable =
+                root.getChildFile("delete-this-model.nam");
+            expect(deletable.replaceWithText(linearNamJson()));
+            expect(browser.rebuildNamModelLibrary().wasOk());
+            expectEquals(browser.namModelLibrarySize(), 4);
+            expect(browser.loadNamModel(0, deletable).wasOk());
+            expect(browser.setNamModelFavorite(
+                       deletable, true).wasOk());
+            expect(browser.deleteNamModel(0).wasOk());
+            expect(!deletable.existsAsFile());
+            expect(browser.namModelPath(0).isEmpty());
+            expectEquals(browser.namModelLibrarySize(), 3);
+            expect(!browser.isNamModelFavorite(deletable));
+            expect(browser.setNamModelFavorite(
+                       pedalModel, false).wasOk());
             root.deleteRecursively();
         }
     }

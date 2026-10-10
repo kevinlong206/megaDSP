@@ -33,6 +33,7 @@ struct NamModelLibraryEntry
     int submodelCount = 1;
     int cabIncluded = -1;
     bool isA2 = false;
+    bool favorite = false;
 };
 
 namespace megadsp
@@ -193,6 +194,9 @@ public:
     std::vector<NamModelLibraryEntry> searchNamModels(
         const juce::String& query, int maximumResults = 200);
     int namModelLibrarySize();
+    bool isNamModelFavorite(const juce::File&) const;
+    juce::Result setNamModelFavorite(const juce::File&, bool);
+    juce::Result deleteNamModel(int slot);
     bool isNamModelLibraryIndexing() const noexcept
     {
         return namModelIndexInProgress.load(
@@ -214,6 +218,10 @@ public:
     juce::String namCabinetPath(int slot) const
     {
         return getRack().namCabinetPath(slot);
+    }
+    float namLevelMatchDb(int slot) const
+    {
+        return getRack().namLevelMatchDb(slot);
     }
     juce::Result clearNamModel(int slot);
     juce::String namModelPath(int slot) const

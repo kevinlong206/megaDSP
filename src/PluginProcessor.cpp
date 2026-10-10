@@ -320,6 +320,90 @@ juce::Result persistNamCabinetPreference(
               "Could not save the NAM cabinet preference.");
 }
 
+juce::StringArray globalNamFavorites()
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    juce::PropertiesFile settings(
+        globalSettingsFile(), globalSettingsOptions());
+    const auto xml = juce::XmlDocument::parse(
+        settings.getValue("namModelFavorites"));
+    juce::StringArray favorites;
+    if (xml == nullptr || !xml->hasTagName("NAM_FAVORITES"))
+        return favorites;
+    for (auto* child : xml->getChildWithTagNameIterator("MODEL"))
+    {
+        const auto path = child->getStringAttribute("path");
+        if (path.isNotEmpty())
+            favorites.addIfNotAlreadyThere(path);
+    }
+    return favorites;
+}
+
+juce::Result persistNamFavorite(
+    const juce::String& modelPath, bool favorite)
+{
+    if (modelPath.isEmpty())
+        return juce::Result::fail("Choose a NAM model first.");
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto file = globalSettingsFile();
+    const auto directoryResult =
+        file.getParentDirectory().createDirectory();
+    if (directoryResult.failed())
+        return directoryResult;
+    juce::PropertiesFile settings(file, globalSettingsOptions());
+    auto xml = juce::XmlDocument::parse(
+        settings.getValue("namModelFavorites"));
+    if (xml == nullptr || !xml->hasTagName("NAM_FAVORITES"))
+        xml = std::make_unique<juce::XmlElement>("NAM_FAVORITES");
+    for (auto* child : xml->getChildWithTagNameIterator("MODEL"))
+        if (child->getStringAttribute("path") == modelPath)
+        {
+            xml->removeChildElement(child, true);
+            break;
+        }
+    if (favorite)
+    {
+        auto child = std::make_unique<juce::XmlElement>("MODEL");
+        child->setAttribute("path", modelPath);
+        xml->addChildElement(child.release());
+    }
+    settings.setValue("namModelFavorites", xml->toString());
+    return settings.saveIfNeeded()
+        ? juce::Result::ok()
+        : juce::Result::fail(
+              "Could not save the NAM favorite.");
+}
+
+juce::Result removeGlobalNamPreferences(
+    const juce::String& modelPath)
+{
+    const auto favoriteResult =
+        persistNamFavorite(modelPath, false);
+    if (favoriteResult.failed())
+        return favoriteResult;
+
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto file = globalSettingsFile();
+    juce::PropertiesFile settings(file, globalSettingsOptions());
+    auto xml = juce::XmlDocument::parse(
+        settings.getValue("namCabinetPreferences"));
+    if (xml != nullptr && xml->hasTagName("NAM_CABINETS"))
+    {
+        for (auto* child : xml->getChildWithTagNameIterator("MODEL"))
+            if (child->getStringAttribute("path") == modelPath)
+            {
+                xml->removeChildElement(child, true);
+                break;
+            }
+        settings.setValue(
+            "namCabinetPreferences", xml->toString());
+    }
+    return settings.saveIfNeeded()
+        ? juce::Result::ok()
+        : juce::Result::fail(
+              "Could not remove the NAM model preferences.");
+}
+
 juce::String globalWidgetSizePreference()
 {
     const juce::ScopedLock lock(globalSettingsLock());
@@ -3905,56 +3989,68 @@ MegaDSPAudioProcessor::searchNamModels(
     const auto tokens = juce::StringArray::fromTokens(
         query.toLowerCase(), " \t\r\n", "\"");
     std::vector<NamModelLibraryEntry> matches;
+    const auto favoritePaths = globalNamFavorites();
     const auto metadataAvailable =
         namModelLibraryValidated.load(std::memory_order_acquire);
-    const juce::ScopedLock lock(namModelLibraryLock);
-    matches.reserve(juce::jmin(
-        static_cast<size_t>(maximumResults),
-        namModelLibrary.size()));
-    for (const auto& entry : namModelLibrary)
     {
-        auto matched = true;
-        for (const auto& token : tokens)
+        const juce::ScopedLock lock(namModelLibraryLock);
+        matches.reserve(namModelLibrary.size());
+        for (const auto& entry : namModelLibrary)
         {
-            if (token.isEmpty())
-                continue;
-            if (!metadataAvailable)
-                matched = entry.searchableText.contains(token);
-            else if (token == "a1")
-                matched = !entry.isA2;
-            else if (token == "a2")
-                matched = entry.isA2;
-            else if (token == "cab")
-                matched = entry.cabIncluded == 1;
-            else if (token == "nocab")
-                matched = entry.cabIncluded == 0;
-            else if (token == "amp")
-                matched = entry.gearType == "amp"
-                    || (entry.gearType.isEmpty()
-                        && entry.cabIncluded == 0);
-            else if (token == "rig" || token == "full-rig")
-                matched = entry.gearType == "full-rig";
-            else if (token == "pedal")
-                matched = entry.gearType.contains("pedal");
-            else if (token.startsWith("sr:")
-                     || token.startsWith("rate:"))
+            const auto favorite = favoritePaths.contains(
+                entry.file.getFullPathName());
+            auto matched = true;
+            for (const auto& token : tokens)
             {
-                const auto requested = token.fromFirstOccurrenceOf(
-                    ":", false, false).getDoubleValue();
-                matched = requested > 0.0
-                    && std::abs(entry.sampleRate - requested) < 1.0;
+                if (token.isEmpty())
+                    continue;
+                if (token == "favorite" || token == "fav")
+                    matched = favorite;
+                else if (!metadataAvailable)
+                    matched = entry.searchableText.contains(token);
+                else if (token == "a1")
+                    matched = !entry.isA2;
+                else if (token == "a2")
+                    matched = entry.isA2;
+                else if (token == "cab")
+                    matched = entry.cabIncluded == 1;
+                else if (token == "nocab")
+                    matched = entry.cabIncluded == 0;
+                else if (token == "amp")
+                    matched = entry.gearType == "amp"
+                        || (entry.gearType.isEmpty()
+                            && entry.cabIncluded == 0);
+                else if (token == "rig" || token == "full-rig")
+                    matched = entry.gearType == "full-rig";
+                else if (token == "pedal")
+                    matched = entry.gearType.contains("pedal");
+                else if (token.startsWith("sr:")
+                         || token.startsWith("rate:"))
+                {
+                    const auto requested = token.fromFirstOccurrenceOf(
+                        ":", false, false).getDoubleValue();
+                    matched = requested > 0.0
+                        && std::abs(entry.sampleRate - requested) < 1.0;
+                }
+                else
+                    matched = entry.searchableText.contains(token);
+                if (!matched)
+                    break;
             }
-            else
-                matched = entry.searchableText.contains(token);
             if (!matched)
-                break;
+                continue;
+            matches.push_back(entry);
+            matches.back().favorite = favorite;
         }
-        if (!matched)
-            continue;
-        matches.push_back(entry);
-        if (static_cast<int>(matches.size()) >= maximumResults)
-            break;
     }
+    std::stable_sort(
+        matches.begin(), matches.end(),
+        [](const auto& left, const auto& right)
+        {
+            return left.favorite && !right.favorite;
+        });
+    if (static_cast<int>(matches.size()) > maximumResults)
+        matches.resize(static_cast<size_t>(maximumResults));
     return matches;
 }
 
@@ -3963,6 +4059,90 @@ int MegaDSPAudioProcessor::namModelLibrarySize()
     ensureNamModelLibrary();
     const juce::ScopedLock lock(namModelLibraryLock);
     return static_cast<int>(namModelLibrary.size());
+}
+
+bool MegaDSPAudioProcessor::isNamModelFavorite(
+    const juce::File& file) const
+{
+    return file.existsAsFile()
+        && globalNamFavorites().contains(file.getFullPathName());
+}
+
+juce::Result MegaDSPAudioProcessor::setNamModelFavorite(
+    const juce::File& file, bool favorite)
+{
+    if (!file.existsAsFile() || !file.hasFileExtension("nam"))
+        return juce::Result::fail(
+            "Choose an existing NAM model to favorite.");
+    const auto result = persistNamFavorite(
+        file.getFullPathName(), favorite);
+    if (result.wasOk())
+        libraryGeneration.fetch_add(1, std::memory_order_release);
+    return result;
+}
+
+juce::Result MegaDSPAudioProcessor::deleteNamModel(int slot)
+{
+    const auto path = namModelPath(slot);
+    const auto file = juce::File(path);
+    if (path.isEmpty() || !file.existsAsFile()
+        || !file.hasFileExtension("nam"))
+        return juce::Result::fail(
+            "The current NAM model file does not exist.");
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "A model or topology update is already in progress.");
+    if (!file.deleteFile())
+    {
+        topologyMutationInProgress.store(
+            false, std::memory_order_release);
+        return juce::Result::fail(
+            "Could not delete the NAM model file.");
+    }
+
+    suspendProcessing(true);
+    for (int snapshot = 0; snapshot < megadsp::snapshotCount; ++snapshot)
+        for (int rackSlot = 0; rackSlot < megadsp::slotCount; ++rackSlot)
+            if (snapshotRacks[static_cast<size_t>(snapshot)]
+                    ->namModelPath(rackSlot) == path)
+                snapshotRacks[static_cast<size_t>(snapshot)]
+                    ->clearNamModel(rackSlot);
+    refreshLatency();
+    suspendProcessing(false);
+
+    std::vector<NamModelLibraryEntry> remaining;
+    {
+        const juce::ScopedLock lock(namModelLibraryLock);
+        std::erase_if(
+            namModelLibrary,
+            [&file](const auto& entry)
+            {
+                return entry.file == file;
+            });
+        remaining = namModelLibrary;
+    }
+    const auto root = namModelRootDirectory();
+    if (root.isDirectory())
+    {
+        const auto cacheResult =
+            persistNamModelLibraryCache(root, remaining);
+        if (cacheResult.failed())
+            megadsp::Diagnostics::instance().log(
+                "nam-cache-delete-failed",
+                cacheResult.getErrorMessage());
+    }
+    const auto preferencesResult =
+        removeGlobalNamPreferences(path);
+    topologyMutationInProgress.store(false, std::memory_order_release);
+    libraryGeneration.fetch_add(1, std::memory_order_release);
+    publishSnapshotToParameters(getSelectedSnapshot());
+    updateHostDisplay(
+        ChangeDetails{}.withNonParameterStateChanged(true));
+    if (topologyDirty.load(std::memory_order_acquire))
+        triggerAsyncUpdate();
+    return preferencesResult;
 }
 
 juce::Result MegaDSPAudioProcessor::loadAdjacentNamModel(

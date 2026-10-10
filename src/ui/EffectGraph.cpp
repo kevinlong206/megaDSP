@@ -67,7 +67,8 @@ EffectGraph::EffectGraph(
             "Searchable, scrollable library. Click an item to load it.");
         setHelpText(
             "Type to filter the indexed library, scroll to browse it, "
-            "and click an item to prepare and load it.");
+            "click an item to prepare and load it, or click FAV to "
+            "favorite a NAM model.");
         compactAssetSearch.setMultiLine(false);
         compactAssetSearch.setReturnKeyStartsNewLine(false);
         compactAssetSearch.setTextToShowWhenEmpty(
@@ -390,12 +391,22 @@ void EffectGraph::paintCompactAssetLibrary(
             relativePath,
             text.toNearestInt(),
             juce::Justification::centredLeft, 1, 0.72f);
-        if (loaded || (selected && compactAssetLoadPending))
+        const auto favorite = isCompactNamLibrary()
+            && compactNamModels[static_cast<size_t>(index)].favorite;
+        if (favorite || loaded
+            || (selected && compactAssetLoadPending))
         {
             graphics.setColour(accent.withAlpha(0.9f));
             graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
+            auto statusText = favorite ? juce::String("FAV") : juce::String();
+            if (loaded)
+                statusText +=
+                    (statusText.isNotEmpty() ? "  " : "") + juce::String("LOADED");
+            else if (selected && compactAssetLoadPending)
+                statusText +=
+                    (statusText.isNotEmpty() ? "  " : "") + juce::String("LOADING...");
             graphics.drawText(
-                loaded ? "LOADED" : "LOADING...",
+                statusText,
                 rowBounds.reduced(6.0f, 0.0f).toNearestInt(),
                 juce::Justification::centredRight);
         }
@@ -2281,7 +2292,26 @@ void EffectGraph::mouseDown(const juce::MouseEvent& event)
         grabKeyboardFocus();
         const auto index = compactAssetAt(event.position);
         if (index >= 0)
-            activateCompactAsset(index);
+        {
+            if (isCompactNamLibrary()
+                && event.position.x
+                       >= static_cast<float>(getWidth() - 58))
+            {
+                const auto& entry =
+                    compactNamModels[static_cast<size_t>(index)];
+                const auto result = processor.setNamModelFavorite(
+                    entry.file, !entry.favorite);
+                if (result.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not update NAM favorite",
+                        result.getErrorMessage());
+                refreshCompactAssetLibrary();
+                repaint();
+            }
+            else
+                activateCompactAsset(index);
+        }
     }
     else if (type == ModuleType::compressor
              && compactCompressorLevelArea().contains(event.position))

@@ -891,17 +891,28 @@ off; exact-case `DI` defaults it on, with `Cab` taking precedence when both are
 present. **IR ON/OFF** is a per-model manual override. The selected speaker IR
 and override are global preferences keyed by the NAM path, so they are restored
 for that model across plug-in and DAW restarts without saving a preset.
-clicking a row once schedules that model for immediate background preparation
+Clicking a row once schedules that model for immediate background preparation
 and swaps it in when ready. The recursive
 model library uses one root directory, and megaDSP persists it in both project
 state and user settings so new instances inherit it across DAW restarts. The
 catalog accepts structurally valid supported `.nam` files and ignores malformed
 or unsupported entries. **FIND** opens filtered search over model names,
 relative paths, amp/capture metadata, authors, and architectures; queries also
-accept `sr:48000`. The **A1**, **A2**, **CAB**, and **AMP** pills filter
+accept `sr:48000` and `favorite`. Favorite models persist globally, sort above
+other matches, and show **FAV** in the compact library. The card's
+**FAVORITE** button toggles the loaded model, while **DELETE** requires
+confirmation before permanently removing the `.nam` file, its library entry,
+cabinet preference, and favorite. The **A1**, **A2**, **CAB**, and **AMP** pills filter
 architecture generation and whether capture metadata says the cabinet is
 included. Results show model, capture, architecture, sample rate, and cabinet
 status and load directly when clicked.
+
+Model output is automatically level-matched before Post Gain. Models carrying
+standard NAM loudness metadata target -18 dB, matching the official NAM
+normalized mode. Models without loudness metadata are measured during
+background preparation with a deterministic multi-tone guitar-band probe. The
+result is bounded to +/-18 dB, shown as **AUTO MATCH**, and never measured on
+the message or audio thread.
 
 ### Controls
 
@@ -911,7 +922,7 @@ status and load directly when clicked.
 | 1 | Bass | -12..+12 dB | 0 dB | Low-shelf tone control at 120 Hz |
 | 2 | Mid | -12..+12 dB | 0 dB | Broad mid control centered at 750 Hz |
 | 3 | Treble | -12..+12 dB | 0 dB | High-shelf tone control at 3.2 kHz |
-| 4 | Post Gain | -24..+24 dB | 0 dB | Level after the model and tone stack |
+| 4 | Post Gain | -24..+24 dB | 0 dB | User trim after automatic model matching and the tone stack |
 
 The module always outputs the modeled path; use the rack's module bypass for
 dry comparison. `SlimmableContainer` models load at their full-size setting.

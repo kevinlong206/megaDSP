@@ -51,6 +51,7 @@ struct NamModelInfo
     double expectedSampleRate = -1.0;
     double inputLevelDbU = std::numeric_limits<double>::quiet_NaN();
     double validationEsr = std::numeric_limits<double>::quiet_NaN();
+    double levelMatchDb = 0.0;
     int submodelCount = 1;
     bool fullQuality = true;
     bool valid = false;
@@ -158,7 +159,10 @@ private:
     juce::AudioBuffer<float> cabinetDryBuffer;
     std::array<std::array<Biquad, 3>, maxChannels> toneFilters {};
     std::array<juce::SmoothedValue<float>, 5> controlSmoothers {};
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>
+        levelMatchSmoother;
     std::array<std::vector<float>, 5> controlFrames;
+    std::vector<float> levelMatchFrames;
 
     double hostRate = 44100.0;
     int preparedBlock = 512;
@@ -167,6 +171,7 @@ private:
     std::atomic<bool> cabinetReady { false };
     std::atomic<bool> cabinetEnabled { false };
     std::atomic<int> reportedLatency { 0 };
+    std::atomic<float> currentLevelMatchDb { 0.0f };
     int modelLatency = 0;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>
         cabinetMix;

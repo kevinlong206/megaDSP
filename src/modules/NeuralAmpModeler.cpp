@@ -34,6 +34,8 @@ constexpr float toneLow = -12.0f;
 constexpr float toneHigh = 12.0f;
 constexpr float maximumSafeOutput = 8.0f;
 constexpr double defaultModelRate = 48000.0;
+constexpr float maximumLevelMatchDb = 18.0f;
+constexpr double levelMatchSeconds = 0.25;
 
 float linMap(float lo, float hi, float n)
 {
@@ -56,6 +58,68 @@ double jsonNumber(
     return found != object.end() && found->is_number()
         ? found->get<double>()
         : std::numeric_limits<double>::quiet_NaN();
+}
+
+float measureLevelMatchDb(
+    nam::DSP& model, double sampleRate, int maximumBlock)
+{
+    const auto blockSize = juce::jmax(1, maximumBlock);
+    const auto totalSamples = juce::jmax(
+        blockSize, static_cast<int>(sampleRate * levelMatchSeconds));
+    const auto settleSamples = totalSamples / 4;
+    std::vector<float> input(static_cast<size_t>(blockSize));
+    std::vector<float> output(static_cast<size_t>(blockSize));
+    double inputEnergy = 0.0;
+    double outputEnergy = 0.0;
+    auto measuredSamples = 0;
+
+    model.SetPrewarmOnReset(false);
+    model.Reset(sampleRate, blockSize);
+    model.prewarm();
+    for (int offset = 0; offset < totalSamples; offset += blockSize)
+    {
+        const auto samples =
+            juce::jmin(blockSize, totalSamples - offset);
+        for (int sample = 0; sample < samples; ++sample)
+        {
+            const auto time =
+                static_cast<double>(offset + sample) / sampleRate;
+            input[static_cast<size_t>(sample)] = static_cast<float>(
+                0.055 * std::sin(
+                    juce::MathConstants<double>::twoPi * 82.41 * time)
+                + 0.045 * std::sin(
+                    juce::MathConstants<double>::twoPi * 196.0 * time)
+                + 0.035 * std::sin(
+                    juce::MathConstants<double>::twoPi * 392.0 * time)
+                + 0.025 * std::sin(
+                    juce::MathConstants<double>::twoPi * 987.77 * time));
+        }
+        auto* inputPointer = input.data();
+        auto* outputPointer = output.data();
+        float* inputs[1] { inputPointer };
+        float* outputs[1] { outputPointer };
+        model.process(inputs, outputs, samples);
+        for (int sample = 0; sample < samples; ++sample)
+        {
+            if (offset + sample < settleSamples)
+                continue;
+            const auto in = input[static_cast<size_t>(sample)];
+            const auto out = output[static_cast<size_t>(sample)];
+            if (!std::isfinite(out)
+                || std::abs(out) > maximumSafeOutput)
+                return 0.0f;
+            inputEnergy += static_cast<double>(in) * in;
+            outputEnergy += static_cast<double>(out) * out;
+            ++measuredSamples;
+        }
+    }
+    if (measuredSamples <= 0 || inputEnergy <= 1.0e-12
+        || outputEnergy <= 1.0e-12)
+        return 0.0f;
+    return juce::jlimit(
+        -maximumLevelMatchDb, maximumLevelMatchDb,
+        static_cast<float>(
+            10.0 * std::log10(inputEnergy / outputEnergy)));
 }
 
 const nlohmann::json* highestQualityModel(
@@ -317,8 +381,10 @@ void NeuralAmpModelerModule::prepare(const juce::dsp::ProcessSpec& spec)
     wetBuffer.setSize(preparedChans, preparedBlock);
     for (auto& smoother : controlSmoothers)
         smoother.reset(hostRate, 0.025);
+    levelMatchSmoother.reset(hostRate, 0.05);
     for (auto& frames : controlFrames)
         frames.resize(static_cast<size_t>(preparedBlock));
+    levelMatchFrames.resize(static_cast<size_t>(preparedBlock));
     cabinet->processor.prepare(spec);
     cabinetDryBuffer.setSize(preparedChans, preparedBlock);
     cabinetMix.reset(hostRate, 0.02);
@@ -343,6 +409,9 @@ void NeuralAmpModelerModule::reset()
     const std::array<float, 5> defaults { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
     for (size_t index = 0; index < controlSmoothers.size(); ++index)
         controlSmoothers[index].setCurrentAndTargetValue(defaults[index]);
+    levelMatchSmoother.setCurrentAndTargetValue(
+        juce::Decibels::decibelsToGain(
+            currentLevelMatchDb.load(std::memory_order_relaxed)));
 }
 
 void NeuralAmpModelerModule::process(
@@ -387,6 +456,12 @@ void NeuralAmpModelerModule::process(
                 controlSmoothers[index].getNextValue();
     }
     const bool hasModel = modelReady.load(std::memory_order_acquire);
+    levelMatchSmoother.setTargetValue(
+        juce::Decibels::decibelsToGain(
+            currentLevelMatchDb.load(std::memory_order_relaxed)));
+    for (int sample = 0; sample < ns; ++sample)
+        levelMatchFrames[static_cast<size_t>(sample)] =
+            levelMatchSmoother.getNextValue();
 
     for (int ch = 0; ch < nc; ++ch)
         wetBuffer.copyFrom(ch, 0, buffer, ch, 0, ns);
@@ -411,7 +486,9 @@ void NeuralAmpModelerModule::process(
                 auto sample = wet[i];
                 for (auto& filter : toneFilters[static_cast<size_t>(ci)])
                     sample = filter.process(sample);
-                wet[i] = sample * controlFrames[4][static_cast<size_t>(i)];
+                wet[i] = sample
+                    * levelMatchFrames[static_cast<size_t>(i)]
+                    * controlFrames[4][static_cast<size_t>(i)];
             }
         }
     }
@@ -576,6 +653,22 @@ juce::Result NeuralAmpModelerModule::prepareNamModel(
                                      : defaultModelRate;
         const bool resample = std::abs(modelRate - hostRate) > 1.0;
         const int blk = juce::jmax(1, preparedBlock);
+        if (mdl->HasLoudness())
+            load->info.levelMatchDb = juce::jlimit(
+                -static_cast<double>(maximumLevelMatchDb),
+                static_cast<double>(maximumLevelMatchDb),
+                -18.0 - mdl->GetLoudness());
+        else
+        {
+            auto measurementConfig = config;
+            auto measurementModel = nam::get_dsp(
+                measurementConfig, nam::DspLoadOptions { false });
+            if (!measurementModel)
+                return juce::Result::fail(
+                    "Failed to construct NAM level-match probe.");
+            load->info.levelMatchDb = measureLevelMatchDb(
+                *measurementModel, modelRate, blk);
+        }
 
         auto makeVariant = [&](std::unique_ptr<nam::DSP> m)
             -> std::unique_ptr<ModelVariant>
@@ -663,6 +756,9 @@ bool NeuralAmpModelerModule::commitPreparedNamModel(PreparedNamModelPtr& p)
     }
     reportedLatency.store(ld->latency, std::memory_order_relaxed);
     modelLatency = ld->latency;
+    currentLevelMatchDb.store(
+        static_cast<float>(ld->info.levelMatchDb),
+        std::memory_order_relaxed);
     { const juce::ScopedLock sl(infoLock); currentInfo = ld->info; }
     modelReady.store(true, std::memory_order_release);
     // Return the displaced graphs to the caller so asynchronous hosts can
@@ -685,6 +781,7 @@ void NeuralAmpModelerModule::clearNamModel()
     }
     reportedLatency.store(0, std::memory_order_relaxed);
     modelLatency = 0;
+    currentLevelMatchDb.store(0.0f, std::memory_order_relaxed);
     { const juce::ScopedLock sl(infoLock); currentInfo = {}; }
 }
 

@@ -1576,6 +1576,66 @@ public:
                 graph->repaint();
             };
             addAndMakeVisible(clearNam);
+            favoriteNam.setButtonText("FAVORITE");
+            favoriteNam.setTooltip(
+                "Favorite this NAM model and sort it above other matches.");
+            favoriteNam.onClick = [this]
+            {
+                const auto file = juce::File(
+                    processor.namModelPath(slot));
+                const auto result = processor.setNamModelFavorite(
+                    file, !processor.isNamModelFavorite(file));
+                if (result.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not update NAM favorite",
+                        result.getErrorMessage());
+                syncAssetName();
+                graph->repaint();
+            };
+            addAndMakeVisible(favoriteNam);
+            deleteNam.setButtonText("DELETE");
+            deleteNam.setTooltip(
+                "Permanently delete the loaded .nam file.");
+            deleteNam.onClick = [this]
+            {
+                const auto path = processor.namModelPath(slot);
+                if (path.isEmpty())
+                    return;
+                const juce::Component::SafePointer<ModuleCard>
+                    safeThis(this);
+                juce::AlertWindow::showOkCancelBox(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Delete NAM model?",
+                    "Permanently delete "
+                        + juce::File(path).getFileName()
+                        + " from disk? This cannot be undone.",
+                    "DELETE", "CANCEL", nullptr,
+                    juce::ModalCallbackFunction::create(
+                        [safeThis](int result)
+                        {
+                            if (safeThis == nullptr || result == 0)
+                                return;
+                            const auto deleted =
+                                safeThis->processor.deleteNamModel(
+                                    safeThis->slot);
+                            if (deleted.failed())
+                                juce::AlertWindow::showMessageBoxAsync(
+                                    juce::MessageBoxIconType::WarningIcon,
+                                    "Could not delete NAM model",
+                                    deleted.getErrorMessage());
+                            safeThis->syncAssetName();
+                            safeThis->graph->repaint();
+                        }));
+            };
+            addAndMakeVisible(deleteNam);
+            namMatchStatus.setColour(
+                juce::Label::textColourId,
+                juce::Colours::white.withAlpha(0.72f));
+            namMatchStatus.setFont(juce::FontOptions(9.0f));
+            namMatchStatus.setJustificationType(
+                juce::Justification::centredLeft);
+            addAndMakeVisible(namMatchStatus);
 
             namCabinetEnabled.setButtonText("IR OFF");
             namCabinetEnabled.setTooltip(
@@ -1810,6 +1870,13 @@ public:
                     assetRow.removeFromRight(44).reduced(1));
                 loadNam.setBounds(
                     assetRow.removeFromRight(58).reduced(1));
+                auto modelActionRow = bounds.removeFromTop(28);
+                deleteNam.setBounds(
+                    modelActionRow.removeFromRight(58).reduced(1));
+                favoriteNam.setBounds(
+                    modelActionRow.removeFromRight(76).reduced(1));
+                namMatchStatus.setBounds(
+                    modelActionRow.reduced(4, 1));
                 auto cabinetRow = bounds.removeFromTop(28);
                 namCabinetEnabled.setBounds(
                     cabinetRow.removeFromRight(54).reduced(1));
@@ -2133,6 +2200,22 @@ public:
             namCabinetEnabled.setToggleState(
                 enabled, juce::dontSendNotification);
             const auto hasModel = path.isNotEmpty();
+            const auto favorite = hasModel
+                && processor.isNamModelFavorite(juce::File(path));
+            favoriteNam.setButtonText(
+                favorite ? "FAVORITED" : "FAVORITE");
+            favoriteNam.setToggleState(
+                favorite, juce::dontSendNotification);
+            favoriteNam.setEnabled(hasModel);
+            deleteNam.setEnabled(hasModel);
+            namMatchStatus.setText(
+                hasModel
+                    ? "AUTO MATCH  "
+                          + juce::String(
+                              processor.namLevelMatchDb(slot), 1)
+                          + " dB"
+                    : "AUTO MATCH  No model",
+                juce::dontSendNotification);
             loadNamCabinet.setEnabled(hasModel && !namCabinetLoadPending);
             previousNamCabinet.setEnabled(
                 hasModel && !namCabinetLoadPending);
@@ -2609,6 +2692,8 @@ private:
                     for (const auto& entry : matches)
                     {
                         juce::StringArray details;
+                        if (entry.favorite)
+                            details.add("FAVORITE");
                         details.add(entry.relativePath);
                         if (entry.architecture.isNotEmpty())
                             details.add(entry.architecture);
@@ -2986,6 +3071,9 @@ private:
     juce::TextButton nextNam;
     juce::TextButton namLibrary;
     juce::TextButton clearNam;
+    juce::TextButton favoriteNam;
+    juce::TextButton deleteNam;
+    juce::Label namMatchStatus;
     std::unique_ptr<juce::FileChooser> namChooser;
     std::unique_ptr<juce::FileChooser> namRootChooser;
     juce::Label namCabinetName;

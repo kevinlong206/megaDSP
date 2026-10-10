@@ -133,6 +133,7 @@ public:
     bool isNamCabinetEnabled(int slot) const;
     bool hasNamCabinet(int slot) const;
     juce::String namCabinetPath(int slot) const;
+    float namLevelMatchDb(int slot) const;
     void cancelNamModel(PreparedNamModelLoad&) noexcept;
     juce::Result clearNamModel(int slot);
     juce::String namModelPath(int slot) const;

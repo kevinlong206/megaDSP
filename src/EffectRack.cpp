@@ -1691,6 +1691,18 @@ juce::String EffectRack::namCabinetPath(int slot) const
     return {};
 }
 
+float EffectRack::namLevelMatchDb(int slot) const
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return 0.0f;
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (const auto* module = selectedModule(rackSlot))
+        if (const auto* capability = module->namModelCapability())
+            return static_cast<float>(
+                capability->namModelInfo().levelMatchDb);
+    return 0.0f;
+}
+
 void EffectRack::cancelNamModel(PreparedNamModelLoad& load) noexcept
 {
     if (juce::isPositiveAndBelow(load.slot, slotCount))
