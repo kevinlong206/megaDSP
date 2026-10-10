@@ -7,7 +7,6 @@
 #include "ui/GuiLayout.h"
 #include "ui/ModuleBrowser.h"
 
-#include <cmath>
 #include <numeric>
 
 namespace
@@ -232,7 +231,6 @@ struct AssetSearchRow
     juce::File file;
     juce::String title;
     juce::String detail;
-    bool favorite = false;
 };
 
 class AssetLibraryBrowser final : public juce::Component,
@@ -251,19 +249,14 @@ public:
         std::function<void()> chooseRootFunction,
         std::function<void()> rebuildFunction,
         std::function<bool()> indexingFunction,
-        std::function<std::uint64_t()> generationFunction,
-        bool showFavorites,
-        std::function<juce::Result(const juce::File&, bool)>
-            setFavoriteFunction)
+        std::function<std::uint64_t()> generationFunction)
         : searchRows(std::move(searchFunction)),
           choose(std::move(chooseFunction)),
           currentRoot(std::move(rootFunction)),
           chooseRoot(std::move(chooseRootFunction)),
           rebuild(std::move(rebuildFunction)),
           isIndexing(std::move(indexingFunction)),
-          generation(std::move(generationFunction)),
-          favoritesAvailable(showFavorites),
-          setFavorite(std::move(setFavoriteFunction))
+          generation(std::move(generationFunction))
     {
         setSize(540, 420);
         setWantsKeyboardFocus(true);
@@ -317,13 +310,6 @@ public:
         search.onEscapeKey = [this] { dismiss(); };
         addAndMakeVisible(search);
 
-        favoriteFilter.setButtonText("FAVORITES");
-        favoriteFilter.setClickingTogglesState(true);
-        favoriteFilter.setTooltip("Show only favorited NAM models.");
-        favoriteFilter.onClick = [this] { refresh(); };
-        if (favoritesAvailable)
-            addAndMakeVisible(favoriteFilter);
-
         list.setModel(this);
         list.setRowHeight(48);
         list.setColour(
@@ -374,11 +360,7 @@ public:
         rootButton.setBounds(rootRow.removeFromRight(64).reduced(1));
         root.setBounds(rootRow.reduced(4, 1));
         bounds.removeFromTop(5);
-        auto searchRow = bounds.removeFromTop(34);
-        if (favoritesAvailable)
-            favoriteFilter.setBounds(
-                searchRow.removeFromRight(92).reduced(1));
-        search.setBounds(searchRow);
+        search.setBounds(bounds.removeFromTop(34));
         bounds.removeFromTop(6);
         status.setBounds(bounds.removeFromBottom(22));
         list.setBounds(bounds);
@@ -400,10 +382,6 @@ private:
         const auto& result = rows[static_cast<size_t>(row)];
         const auto bounds =
             juce::Rectangle<int>(0, 0, width, height).reduced(2, 1);
-        const auto starBounds = favoriteStarBounds(width, height);
-        const auto textBounds = favoritesAvailable
-            ? bounds.withTrimmedRight(starBounds.getWidth() + 4)
-            : bounds;
         graphics.setColour(
             selected ? accent.withAlpha(0.20f)
                      : juce::Colour(0xff17202a));
@@ -412,49 +390,24 @@ private:
             selected ? accent : juce::Colours::white);
         graphics.setFont(juce::FontOptions(12.5f, juce::Font::bold));
         graphics.drawFittedText(
-            result.title, textBounds.withTrimmedBottom(height / 2),
+            result.title, bounds.withTrimmedBottom(height / 2),
             juce::Justification::centredLeft, 1, 0.75f);
         graphics.setColour(juce::Colours::white.withAlpha(0.56f));
         graphics.setFont(juce::FontOptions(9.5f));
         graphics.drawFittedText(
-            result.detail, textBounds.withTrimmedTop(height / 2),
+            result.detail, bounds.withTrimmedTop(height / 2),
             juce::Justification::centredLeft, 1, 0.7f);
-        if (favoritesAvailable)
-        {
-            const auto star = favoriteStarPath(starBounds.toFloat());
-            graphics.setColour(
-                result.favorite
-                    ? accent
-                    : juce::Colours::white.withAlpha(0.28f));
-            if (result.favorite)
-                graphics.fillPath(star);
-            else
-                graphics.strokePath(
-                    star, juce::PathStrokeType(1.25f));
-        }
     }
 
     void listBoxItemClicked(
-        int row, const juce::MouseEvent& event) override
+        int row, const juce::MouseEvent&) override
     {
         list.selectRow(row);
-        const auto rowWidth = event.eventComponent != nullptr
-            ? event.eventComponent->getWidth() : list.getWidth();
-        if (favoritesAvailable
-            && favoriteStarBounds(rowWidth, list.getRowHeight())
-                   .contains(event.getPosition()))
-            toggleFavorite(row);
     }
 
     void listBoxItemDoubleClicked(
-        int row, const juce::MouseEvent& event) override
+        int row, const juce::MouseEvent&) override
     {
-        const auto rowWidth = event.eventComponent != nullptr
-            ? event.eventComponent->getWidth() : list.getWidth();
-        if (favoritesAvailable
-            && favoriteStarBounds(rowWidth, list.getRowHeight())
-                   .contains(event.getPosition()))
-            return;
         list.selectRow(row);
         activateSelection();
     }
@@ -510,9 +463,6 @@ private:
             : juce::File();
         rows = searchRows ? searchRows(search.getText())
                           : std::vector<AssetSearchRow> {};
-        if (favoritesAvailable && favoriteFilter.getToggleState())
-            std::erase_if(
-                rows, [](const auto& row) { return !row.favorite; });
         list.updateContent();
         auto selection = rows.empty() ? -1 : 0;
         if (selectedFile.existsAsFile())
@@ -562,61 +512,6 @@ private:
         dismiss();
     }
 
-    static juce::Rectangle<int> favoriteStarBounds(
-        int width, int height)
-    {
-        return { juce::jmax(0, width - 40), 0, 40, height };
-    }
-
-    static juce::Path favoriteStarPath(
-        juce::Rectangle<float> bounds)
-    {
-        juce::Path path;
-        const auto centre = bounds.getCentre();
-        const auto outerRadius =
-            0.28f * juce::jmin(bounds.getWidth(), bounds.getHeight());
-        const auto innerRadius = outerRadius * 0.43f;
-        for (int point = 0; point < 10; ++point)
-        {
-            const auto angle =
-                -juce::MathConstants<float>::halfPi
-                + static_cast<float>(point)
-                    * juce::MathConstants<float>::pi / 5.0f;
-            const auto radius =
-                point % 2 == 0 ? outerRadius : innerRadius;
-            const juce::Point<float> position {
-                centre.x + radius * std::cos(angle),
-                centre.y + radius * std::sin(angle)
-            };
-            if (point == 0)
-                path.startNewSubPath(position);
-            else
-                path.lineTo(position);
-        }
-        path.closeSubPath();
-        return path;
-    }
-
-    void toggleFavorite(int row)
-    {
-        if (!juce::isPositiveAndBelow(
-                row, static_cast<int>(rows.size()))
-            || !setFavorite)
-            return;
-        const auto& selected = rows[static_cast<size_t>(row)];
-        const auto result =
-            setFavorite(selected.file, !selected.favorite);
-        if (result.failed())
-        {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::MessageBoxIconType::WarningIcon,
-                "Could not update NAM favorite",
-                result.getErrorMessage());
-            return;
-        }
-        refresh();
-    }
-
     void dismiss()
     {
         if (auto* callout =
@@ -632,14 +527,11 @@ private:
     std::function<void()> rebuild;
     std::function<bool()> isIndexing;
     std::function<std::uint64_t()> generation;
-    const bool favoritesAvailable = false;
-    std::function<juce::Result(const juce::File&, bool)> setFavorite;
     juce::Label heading;
     juce::Label root;
     juce::TextButton rootButton;
     juce::TextButton rebuildButton;
     juce::TextEditor search;
-    juce::TextButton favoriteFilter;
     juce::ListBox list;
     juce::Label status;
     std::vector<AssetSearchRow> rows;
@@ -1593,7 +1485,7 @@ public:
                 "Search the indexed impulse-response library.");
             impulseLibrary.onClick = [this]
             {
-                showAssetLibrarySearch(0, impulseLibrary);
+                showImpulseLibrarySearch(0, impulseLibrary);
             };
             addAndMakeVisible(impulseLibrary);
             clearImpulse.setButtonText("Clear IR");
@@ -1620,7 +1512,7 @@ public:
                     "Search the indexed impulse-response library for lane B.");
                 impulseLibrary2.onClick = [this]
                 {
-                    showAssetLibrarySearch(1, impulseLibrary2);
+                    showImpulseLibrarySearch(1, impulseLibrary2);
                 };
                 addAndMakeVisible(impulseLibrary2);
             }
@@ -1668,14 +1560,23 @@ public:
                 "Load the next model in the validated NAM library.");
             nextNam.onClick = [this] { loadAdjacentNamModel(1); };
             addAndMakeVisible(nextNam);
-            namLibrary.setButtonText("FIND");
-            namLibrary.setTooltip(
-                "Search the indexed NAM model library.");
-            namLibrary.onClick = [this]
+            namRoot.setButtonText("ROOT");
+            namRoot.setTooltip("Choose the recursive NAM model directory.");
+            namRoot.onClick = [this] { chooseNamModelRoot(); };
+            addAndMakeVisible(namRoot);
+            namRebuild.setButtonText("REBUILD");
+            namRebuild.setTooltip(
+                "Rescan and validate the recursive NAM model library.");
+            namRebuild.onClick = [this]
             {
-                showAssetLibrarySearch(0, namLibrary);
+                const auto result = processor.rebuildNamModelLibrary();
+                if (result.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not rebuild NAM library",
+                        result.getErrorMessage());
             };
-            addAndMakeVisible(namLibrary);
+            addAndMakeVisible(namRebuild);
             clearNam.setButtonText("Clear NAM");
             clearNam.setTooltip("Unload the current neural amp model.");
             clearNam.onClick = [this]
@@ -1974,7 +1875,9 @@ public:
                     assetRow.removeFromRight(38).reduced(1));
                 previousNam.setBounds(
                     assetRow.removeFromRight(38).reduced(1));
-                namLibrary.setBounds(
+                namRebuild.setBounds(
+                    assetRow.removeFromRight(58).reduced(1));
+                namRoot.setBounds(
                     assetRow.removeFromRight(44).reduced(1));
                 loadNam.setBounds(
                     assetRow.removeFromRight(58).reduced(1));
@@ -2430,8 +2333,10 @@ public:
     bool hasAssetSearchForTesting() const
     {
         if (supportsNamModel)
-            return namLibrary.isVisible()
-                && !namLibrary.getBounds().isEmpty();
+            return namRoot.isVisible()
+                && !namRoot.getBounds().isEmpty()
+                && namRebuild.isVisible()
+                && !namRebuild.getBounds().isEmpty();
         if (!supportsImpulseResponse)
             return false;
         return impulseLibrary.isVisible()
@@ -2782,7 +2687,7 @@ private:
             });
     }
 
-    void showAssetLibrarySearch(
+    void showImpulseLibrarySearch(
         int impulseLane, juce::Component& target)
     {
         juce::Component::SafePointer<ModuleCard> safeThis(this);
@@ -2792,30 +2697,6 @@ private:
                 std::vector<AssetSearchRow> rows;
                 if (safeThis == nullptr)
                     return rows;
-                if (safeThis->supportsNamModel)
-                {
-                    const auto matches =
-                        safeThis->processor.searchNamModels(query, 500);
-                    rows.reserve(matches.size());
-                    for (const auto& entry : matches)
-                    {
-                        juce::StringArray details;
-                        details.add(entry.relativePath);
-                        if (entry.architecture.isNotEmpty())
-                            details.add(entry.architecture);
-                        if (entry.captureDescription.isNotEmpty())
-                            details.add(entry.captureDescription);
-                        rows.push_back({
-                            entry.file,
-                            entry.displayName.isNotEmpty()
-                                ? entry.displayName
-                                : entry.file.getFileNameWithoutExtension(),
-                            details.joinIntoString("  |  "),
-                            entry.favorite
-                        });
-                    }
-                    return rows;
-                }
                 const auto matches =
                     safeThis->processor.searchImpulseResponses(query, 500);
                 rows.reserve(matches.size());
@@ -2851,28 +2732,22 @@ private:
             {
                 if (safeThis == nullptr)
                     return juce::File();
-                return safeThis->supportsNamModel
-                    ? safeThis->processor.namModelRootDirectory()
-                    : safeThis->processor.impulseResponseRootDirectory();
+                return safeThis->processor.impulseResponseRootDirectory();
             };
         auto chooseRootFunction =
             [safeThis]
             {
                 if (safeThis == nullptr)
                     return;
-                if (safeThis->supportsNamModel)
-                    safeThis->chooseNamModelRoot();
-                else
-                    safeThis->chooseImpulseResponseRoot();
+                safeThis->chooseImpulseResponseRoot();
             };
         auto rebuildFunction =
             [safeThis]
             {
                 if (safeThis == nullptr)
                     return;
-                const auto result = safeThis->supportsNamModel
-                    ? safeThis->processor.rebuildNamModelLibrary()
-                    : safeThis->processor.rebuildImpulseResponseLibrary();
+                const auto result =
+                    safeThis->processor.rebuildImpulseResponseLibrary();
                 if (result.failed())
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::MessageBoxIconType::WarningIcon,
@@ -2884,10 +2759,8 @@ private:
             {
                 if (safeThis == nullptr)
                     return false;
-                return safeThis->supportsNamModel
-                    ? safeThis->processor.isNamModelLibraryIndexing()
-                    : safeThis->processor
-                          .isImpulseResponseLibraryIndexing();
+                return safeThis->processor
+                    .isImpulseResponseLibraryIndexing();
             };
         auto generationFunction =
             [safeThis]
@@ -2896,30 +2769,15 @@ private:
                     ? safeThis->processor.assetLibraryGeneration()
                     : std::uint64_t { 0 };
             };
-        auto setFavoriteFunction =
-            [safeThis](const juce::File& file, bool favorite)
-            {
-                return safeThis != nullptr
-                    ? safeThis->processor.setNamModelFavorite(
-                          file, favorite)
-                    : juce::Result::fail(
-                          "The NAM browser is no longer available.");
-            };
         auto browser = std::make_unique<AssetLibraryBrowser>(
-            supportsNamModel ? "Search NAM Models"
-                             : (isWormhole && impulseLane == 1
-                                    ? "Search IR Library - Lane B"
-                                    : "Search Impulse Responses"),
-            supportsNamModel
-                ? "Search model, amp, tone, author..."
-                : "Search filename or path...",
+            isWormhole && impulseLane == 1
+                ? "Search IR Library - Lane B"
+                : "Search Impulse Responses",
+            "Search filename or path...",
             std::move(searchFunction), std::move(chooseFunction),
             std::move(rootFunction), std::move(chooseRootFunction),
             std::move(rebuildFunction), std::move(indexingFunction),
-            std::move(generationFunction), supportsNamModel,
-            supportsNamModel ? std::move(setFavoriteFunction)
-                             : std::function<juce::Result(
-                                   const juce::File&, bool)> {});
+            std::move(generationFunction));
         auto* browserPointer = browser.get();
         auto& callout = juce::CallOutBox::launchAsynchronously(
             std::move(browser),
@@ -3188,7 +3046,8 @@ private:
     juce::TextButton loadNam;
     juce::TextButton previousNam;
     juce::TextButton nextNam;
-    juce::TextButton namLibrary;
+    juce::TextButton namRoot;
+    juce::TextButton namRebuild;
     juce::TextButton clearNam;
     juce::TextButton favoriteNam;
     juce::TextButton deleteNam;

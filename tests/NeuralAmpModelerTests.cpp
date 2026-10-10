@@ -1147,6 +1147,18 @@ public:
                 graph.setBounds(0, 0, 384, 70);
                 expectEquals(
                     graph.compactNamLibraryModelCountForTesting(), 3);
+                graph.setCompactNamFavoritesOnlyForTesting(true);
+                expectEquals(
+                    graph.compactNamLibraryModelCountForTesting(), 1);
+                graph.toggleCompactNamFavoriteForTesting(0);
+                expectEquals(
+                    graph.compactNamLibraryModelCountForTesting(), 0);
+                expect(!compactBrowser.isNamModelFavorite(pedalModel));
+                expect(compactBrowser.setNamModelFavorite(
+                           pedalModel, true).wasOk());
+                graph.setCompactNamFavoritesOnlyForTesting(false);
+                expectEquals(
+                    graph.compactNamLibraryModelCountForTesting(), 3);
                 graph.scrollCompactNamLibraryForTesting(1);
                 expectEquals(
                     graph.compactNamFirstVisibleModelForTesting(), 1);

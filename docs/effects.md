@@ -900,10 +900,11 @@ and swaps it in when ready. The recursive
 model library uses one root directory, and megaDSP persists it in both project
 state and user settings so new instances inherit it across DAW restarts. The
 catalog accepts structurally valid supported `.nam` files and ignores malformed
-or unsupported entries. **FIND** opens filtered search over model names,
-relative paths, amp/capture metadata, authors, and architectures; queries also
-accept `sr:48000` and `favorite`. Each row has a clickable star, and the
-**FAVORITES** toggle filters the browser to starred models. Favorites persist
+or unsupported entries. The compact list filters model names, relative paths,
+amp/capture metadata, authors, and architectures; queries also accept
+`sr:48000` and `favorite`. Each row has a clickable star, and the
+**FAVORITES** toggle filters the list to starred models. **ROOT** changes the
+recursive directory and **REBUILD** rescans and validates it. Favorites persist
 globally and sort above other matches. The card's **FAVORITE** button also
 toggles the loaded model, while **DELETE** requires confirmation before
 permanently removing the `.nam` file, its library entry, cabinet preference,

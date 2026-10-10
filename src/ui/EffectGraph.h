@@ -64,6 +64,8 @@ public:
     void activateCompactNamModelForTesting(int index);
     void scrollCompactNamLibraryForTesting(int rows);
     void setCompactAssetFilterForTesting(const juce::String&);
+    void setCompactNamFavoritesOnlyForTesting(bool);
+    void toggleCompactNamFavoriteForTesting(int index);
     void activateCompactImpulseResponseForTesting(int index);
 #endif
 
@@ -98,6 +100,7 @@ private:
         juce::Graphics&, juce::Rectangle<float>);
     void refreshCompactAssetLibrary(bool resetScroll = false);
     void activateCompactAsset(int index);
+    void toggleCompactNamFavorite(int index);
     int compactAssetCount() const;
     int compactAssetVisibleRowCount() const;
     int compactAssetAt(juce::Point<float>) const;
@@ -151,6 +154,7 @@ private:
     uint64_t lastOutputHistoryPosition = 0;
     juce::String dragReadout;
     juce::TextEditor compactAssetSearch;
+    juce::TextButton compactNamFavoriteFilter;
     std::vector<NamModelLibraryEntry> compactNamModels;
     std::vector<ImpulseResponseLibraryEntry> compactImpulseResponses;
     std::uint64_t compactAssetLibraryGeneration = 0;
