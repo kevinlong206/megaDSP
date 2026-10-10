@@ -886,9 +886,11 @@ list of the indexed library with a case-insensitive filter directly above it;
 the second asset row loads an optional speaker-cabinet WAV, AIFF, or FLAC after
 the NAM model. **ROOT** selects a separate recursive speaker-IR directory and
 the adjacent **<** and **>** buttons browse those files directly without search
-indexing. A case-insensitive `Cab` in the NAM filename defaults the cabinet IR
-off; exact-case `DI` defaults it on, with `Cab` taking precedence when both are
-present. **IR ON/OFF** is a per-model manual override. The selected speaker IR
+indexing. NAM `with_cab` and gear metadata determine the default cabinet state
+when available. Otherwise, the model's full root-relative path is matched:
+case-insensitive `Cab` defaults the cabinet IR off, while exact-case `DI` or
+case-insensitive `Direct` defaults it on; `Cab` takes precedence. **IR ON/OFF**
+is a per-model manual override. The selected speaker IR
 and override are global preferences keyed by the NAM path, so they are restored
 for that model across plug-in and DAW restarts without saving a preset.
 Clicking a row once schedules that model for immediate background preparation

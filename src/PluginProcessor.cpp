@@ -242,19 +242,34 @@ struct NamCabinetPreference
     bool exists = false;
 };
 
-bool defaultNamCabinetEnabled(const juce::File& model)
+std::optional<NamModelLibraryEntry> inspectNamModel(
+    const juce::File&, const juce::File&);
+
+bool defaultNamCabinetEnabled(
+    const juce::File& model, const juce::File& modelRoot)
 {
-    const auto name = model.getFileNameWithoutExtension();
-    if (name.containsIgnoreCase("Cab"))
+    const auto inspectionRoot = modelRoot.isDirectory()
+        ? modelRoot : model.getParentDirectory();
+    if (const auto metadata = inspectNamModel(model, inspectionRoot);
+        metadata && metadata->cabIncluded >= 0)
+        return metadata->cabIncluded == 0;
+
+    const auto matchPath =
+        modelRoot.isDirectory() && model.isAChildOf(modelRoot)
+        ? model.getRelativePathFrom(modelRoot).replaceCharacter('\\', '/')
+        : model.getFileNameWithoutExtension();
+    if (matchPath.containsIgnoreCase("Cab"))
         return false;
-    return name.contains("DI");
+    return matchPath.contains("DI")
+        || matchPath.containsIgnoreCase("Direct");
 }
 
-NamCabinetPreference namCabinetPreference(const juce::String& modelPath)
+NamCabinetPreference namCabinetPreference(
+    const juce::String& modelPath, const juce::File& modelRoot)
 {
     NamCabinetPreference preference;
     preference.enabled =
-        defaultNamCabinetEnabled(juce::File(modelPath));
+        defaultNamCabinetEnabled(juce::File(modelPath), modelRoot);
     if (modelPath.isEmpty())
         return preference;
 
@@ -1957,7 +1972,8 @@ void MegaDSPAudioProcessor::restoreSnapshotAssets(int index)
             megadsp::EffectRack::PreparedNamModelLoad cabinetLoad;
             auto result = rack.prepareNamModel(
                 slot, juce::File(nam), modelLoad);
-            const auto preference = namCabinetPreference(nam);
+            const auto preference = namCabinetPreference(
+                nam, namModelRootDirectory());
             const auto impulse = juce::File(preference.impulsePath);
             if (result.wasOk() && impulse.existsAsFile())
                 result = rack.prepareNamCabinet(
@@ -4343,7 +4359,7 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentNamModelAsync(
             if (prepared)
             {
                 const auto preference = namCabinetPreference(
-                    resolved.getFullPathName());
+                    resolved.getFullPathName(), namModelRootDirectory());
                 completed->cabinetEnabled = preference.enabled;
                 completed->clearCabinet = true;
                 const auto impulse = juce::File(preference.impulsePath);
@@ -4399,7 +4415,7 @@ juce::Result MegaDSPAudioProcessor::loadNamModelAsync(
             if (completed->result.wasOk())
             {
                 const auto preference = namCabinetPreference(
-                    file.getFullPathName());
+                    file.getFullPathName(), namModelRootDirectory());
                 completed->cabinetEnabled = preference.enabled;
                 completed->clearCabinet = true;
                 const auto impulse = juce::File(preference.impulsePath);
@@ -4680,7 +4696,8 @@ juce::Result MegaDSPAudioProcessor::loadNamModel(
         return result;
     }
 
-    const auto preference = namCabinetPreference(file.getFullPathName());
+    const auto preference = namCabinetPreference(
+        file.getFullPathName(), namModelRootDirectory());
     const auto impulse = juce::File(preference.impulsePath);
     if (preference.impulsePath.isNotEmpty()
         && !impulse.existsAsFile())

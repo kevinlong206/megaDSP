@@ -854,31 +854,58 @@ public:
             f.deleteFile();
         }
 
-        beginTest("Cab and DI filename defaults use Cab precedence");
+        beginTest("Cabinet defaults use relative paths and NAM metadata");
         {
+            const auto root =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getNonexistentChildFile(
+                        "megaDSP-nam-cabinet-defaults", {}, true);
+            const auto directDirectory = root.getChildFile("Direct");
+            const auto cabDirectory = root.getChildFile("Cab Models");
+            const auto diDirectory = root.getChildFile("DI Models");
+            expect(directDirectory.createDirectory().wasOk());
+            expect(cabDirectory.createDirectory().wasOk());
+            expect(diDirectory.createDirectory().wasOk());
             const auto unique = juce::String::toHexString(
                 juce::Time::getHighResolutionTicks());
-            auto di = writeNam(
-                linearNamJson(), "speaker-default-" + unique + "-DI");
-            auto cabDi = writeNam(
-                linearNamJson(), "speaker-Cab-" + unique + "-DI");
-            auto neutral = writeNam(
-                linearNamJson(), "speaker-default-" + unique);
+            const auto direct = directDirectory.getChildFile(
+                "speaker-" + unique + ".nam");
+            const auto cabDi = cabDirectory.getChildFile(
+                "speaker-" + unique + "-DI.nam");
+            const auto metadataNoCab = cabDirectory.getChildFile(
+                "metadata-" + unique + ".nam");
+            const auto metadataCab = diDirectory.getChildFile(
+                "metadata-" + unique + ".nam");
+            expect(direct.replaceWithText(linearNamJson()));
+            expect(cabDi.replaceWithText(linearNamJson()));
+            auto noCabJson = nlohmann::json::parse(
+                linearNamJson().toStdString());
+            noCabJson["metadata"]["with_cab"] = false;
+            expect(metadataNoCab.replaceWithText(
+                juce::String(noCabJson.dump())));
+            auto withCabJson = nlohmann::json::parse(
+                linearNamJson().toStdString());
+            withCabJson["metadata"]["with_cab"] = true;
+            expect(metadataCab.replaceWithText(
+                juce::String(withCabJson.dump())));
             MegaDSPAudioProcessor processor;
             processor.prepareToPlay(48000.0, 64);
             processor.addModule(ModuleType::neuralAmpModeler);
-            expect(processor.loadNamModel(0, di).wasOk());
+            expect(processor.setNamModelRootDirectory(root).wasOk());
+            expect(processor.loadNamModel(0, direct).wasOk());
             expect(processor.isNamCabinetEnabled(0),
-                   "Case-sensitive DI must enable the cabinet by default.");
+                   "Direct in a parent path must enable the cabinet.");
             expect(processor.loadNamModel(0, cabDi).wasOk());
             expect(!processor.isNamCabinetEnabled(0),
-                   "Case-insensitive Cab must override DI.");
-            expect(processor.loadNamModel(0, neutral).wasOk());
+                   "Cab in a parent path must override DI.");
+            expect(processor.loadNamModel(0, metadataNoCab).wasOk());
+            expect(processor.isNamCabinetEnabled(0),
+                   "with_cab false must override a Cab path.");
+            expect(processor.loadNamModel(0, metadataCab).wasOk());
             expect(!processor.isNamCabinetEnabled(0),
-                   "Unmarked models must default to cabinet disabled.");
-            di.deleteFile();
-            cabDi.deleteFile();
-            neutral.deleteFile();
+                   "with_cab true must override a DI path.");
+            root.deleteRecursively();
         }
 
         beginTest("Per-model cabinet choice and override persist globally");
