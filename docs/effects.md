@@ -902,11 +902,12 @@ state and user settings so new instances inherit it across DAW restarts. The
 catalog accepts structurally valid supported `.nam` files and ignores malformed
 or unsupported entries. **FIND** opens filtered search over model names,
 relative paths, amp/capture metadata, authors, and architectures; queries also
-accept `sr:48000` and `favorite`. Favorite models persist globally, sort above
-other matches, and show **FAV** in the compact library. The card's
-**FAVORITE** button toggles the loaded model, while **DELETE** requires
-confirmation before permanently removing the `.nam` file, its library entry,
-cabinet preference, and favorite. The **A1**, **A2**, **CAB**, and **AMP** pills filter
+accept `sr:48000` and `favorite`. Each row has a clickable star, and the
+**FAVORITES** toggle filters the browser to starred models. Favorites persist
+globally and sort above other matches. The card's **FAVORITE** button also
+toggles the loaded model, while **DELETE** requires confirmation before
+permanently removing the `.nam` file, its library entry, cabinet preference,
+and favorite. The **A1**, **A2**, **CAB**, and **AMP** pills filter
 architecture generation and whether capture metadata says the cabinet is
 included. Results show model, capture, architecture, sample rate, and cabinet
 status and load directly when clicked.
