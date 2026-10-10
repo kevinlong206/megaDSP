@@ -320,6 +320,9 @@ public:
                     megadsp::ui::WidgetSize::small));
             expect(editor->cardChildrenFitForTesting());
             expect(editor->cardGraphsAvoidControlsForTesting());
+            expect(
+                editor->headerMeterWidthForTesting() >= 72,
+                "The header DSP readout must fit at compact editor widths.");
             expect(editor->rackOverflowsHorizontallyForTesting());
             expect(!editor->rackOverflowsVerticallyForTesting());
             expectEquals(
@@ -2873,6 +2876,66 @@ public:
             oversizedSnapshotBuffer, oversizedSnapshotMidi);
         expectEquals(
             oversizedSnapshotProcessor.getSelectedSnapshot(), 1);
+
+        beginTest("DSP performance meter reports realtime deadline load");
+        MegaDSPAudioProcessor performanceProcessor;
+        performanceProcessor.prepareToPlay(48000.0, 64);
+        performanceProcessor.addModule(megadsp::ModuleType::delay);
+        juce::AudioBuffer<float> performanceBuffer(2, 64);
+        juce::MidiBuffer performanceMidi;
+        for (int block = 0; block < 90; ++block)
+        {
+            performanceBuffer.clear();
+            performanceProcessor.processBlock(
+                performanceBuffer, performanceMidi);
+        }
+        auto performance =
+            performanceProcessor.performanceSnapshot();
+        expectWithinAbsoluteError(
+            performance.sampleRate, 48000.0, 0.001);
+        expectEquals(performance.blockSamples, 64);
+        expectWithinAbsoluteError(
+            performance.deadlineMilliseconds,
+            1000.0f * 64.0f / 48000.0f, 0.0001f);
+        expect(performance.currentLoad >= 0.0f);
+        expect(performance.averageLoad > 0.0f);
+        expect(performance.peakLoad >= performance.averageLoad);
+        expect(performance.percentile95 >= 0.0f);
+        expect(performance.percentile99
+               >= performance.percentile95);
+        expect(performance.historyCount > 0);
+        expect(
+            performance.slotAverageLoad[0] > 0.0f,
+            "The active module must publish per-slot DSP cost.");
+        expect(!performance.offline);
+        expect(!performance.liveSafe);
+        expect(!performance.hostBypassed);
+
+        performanceProcessor.setLiveSafeSnapshotsEnabled(true);
+        performanceProcessor.setNonRealtime(true);
+        performanceBuffer.clear();
+        performanceProcessor.processBlock(
+            performanceBuffer, performanceMidi);
+        performance =
+            performanceProcessor.performanceSnapshot();
+        expect(performance.liveSafe);
+        expect(performance.offline);
+
+        performanceProcessor.processBlockBypassed(
+            performanceBuffer, performanceMidi);
+        performance =
+            performanceProcessor.performanceSnapshot();
+        expect(performance.hostBypassed);
+
+        performanceProcessor.resetPerformanceMetrics();
+        performance =
+            performanceProcessor.performanceSnapshot();
+        expectEquals(performance.historyCount, 0);
+        expectEquals(
+            static_cast<juce::int64>(performance.overrunCount),
+            static_cast<juce::int64>(0));
+        expectWithinAbsoluteError(
+            performance.averageLoad, 0.0f, 0.000001f);
     }
 };
 

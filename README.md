@@ -26,6 +26,15 @@ racks alone receive live input. Host latency updates wait until audio callbacks
 stop, avoiding PDC rebuilds during monitoring without adding plugin latency;
 timing may be temporarily offset after recalling a rack with different latency.
 
+The header **DSP LOAD** readout shows megaDSP's average and held-peak share of
+the current audio callback deadline. Click it for current load and headroom,
+average, peak, p95/p99, deadline overruns, the actual sample rate/block/deadline,
+a ten-second spike history, and per-module average/peak/share. The panel marks
+offline rendering, LIVE SAFE, host bypass, and background NAM/IR work
+separately; **RESET** clears its local history and statistics. This measures
+megaDSP's real-time processing deadline rather than whole-system CPU, so it
+remains useful in hosts that do not attribute CPU to individual plug-ins.
+
 Creative spectral effects keep the live dry signal immediate: **Spectral
 Prism**, **Pitch Bloom**, **Spectral Delay Canvas**, **Harmonic Mirage**,
 **Time Mosaic**, and **Spectral Nebula** do not add delay compensation in the
@@ -177,7 +186,8 @@ amplitude transition remains click-safe. Missing IR or NAM files are shown as
 snapshot errors without preventing the rest of the rack from loading.
 
 For live use, enable **LIVE SAFE** before the performance and confirm the
-project's steady CPU load with all intended snapshots populated. This mode feeds
+project's steady CPU load with all intended snapshots populated. The DSP panel
+reports inactive snapshot work as **Other snapshots / spill**. This mode feeds
 silence through inactive snapshots to keep their processing paths hot, while
 normal mode leaves them idle to conserve CPU.
 

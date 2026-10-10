@@ -19,6 +19,14 @@ void RealtimeProcessProfile::add(
         graphMaximumTicks[index] = juce::jmax(
             graphMaximumTicks[index], other.graphMaximumTicks[index]);
         graphCalls[index] += other.graphCalls[index];
+        for (size_t slot = 0; slot < slotTicks[index].size(); ++slot)
+        {
+            slotTicks[index][slot] += other.slotTicks[index][slot];
+            slotMaximumTicks[index][slot] = juce::jmax(
+                slotMaximumTicks[index][slot],
+                other.slotMaximumTicks[index][slot]);
+            slotCalls[index][slot] += other.slotCalls[index][slot];
+        }
     }
 }
 
@@ -32,6 +40,20 @@ void RealtimeProcessProfile::recordModule(
     moduleMaximumTicks[index] = juce::jmax(
         moduleMaximumTicks[index], ticks);
     ++moduleCalls[index];
+}
+
+void RealtimeProcessProfile::recordSlot(
+    int slot, std::uint64_t ticks) noexcept
+{
+    if (!juce::isPositiveAndBelow(currentSnapshot, snapshotCount)
+        || !juce::isPositiveAndBelow(slot, slotCount))
+        return;
+    const auto snapshotIndex = static_cast<size_t>(currentSnapshot);
+    const auto slotIndex = static_cast<size_t>(slot);
+    slotTicks[snapshotIndex][slotIndex] += ticks;
+    slotMaximumTicks[snapshotIndex][slotIndex] = juce::jmax(
+        slotMaximumTicks[snapshotIndex][slotIndex], ticks);
+    ++slotCalls[snapshotIndex][slotIndex];
 }
 
 void RealtimeProcessProfile::recordGraph(
@@ -607,10 +629,13 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
             ? juce::Time::getHighResolutionTicks() : 0;
         module->process(main, controlValues, environment);
         if (profile != nullptr)
+        {
+            const auto elapsed = static_cast<std::uint64_t>(
+                juce::Time::getHighResolutionTicks() - profileStart);
             profile->recordModule(
-                slot.activeType,
-                static_cast<std::uint64_t>(
-                    juce::Time::getHighResolutionTicks() - profileStart));
+                slot.activeType, elapsed);
+            profile->recordSlot(slotIndex, elapsed);
+        }
         if (captureVisualization)
         {
             visualization.captureOutput(slotIndex, main);

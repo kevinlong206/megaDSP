@@ -37,6 +37,32 @@ struct NamModelLibraryEntry
     bool favorite = false;
 };
 
+struct PluginPerformanceSnapshot
+{
+    static constexpr int historySize = 100;
+
+    float currentLoad = 0.0f;
+    float averageLoad = 0.0f;
+    float peakLoad = 0.0f;
+    float percentile95 = 0.0f;
+    float percentile99 = 0.0f;
+    float lastCallbackMilliseconds = 0.0f;
+    float deadlineMilliseconds = 0.0f;
+    double sampleRate = 0.0;
+    int blockSamples = 0;
+    std::uint64_t overrunCount = 0;
+    std::array<float, historySize> history {};
+    int historyCount = 0;
+    std::array<float, megadsp::slotCount> slotAverageLoad {};
+    std::array<float, megadsp::slotCount> slotPeakLoad {};
+    float otherSnapshotsAverageLoad = 0.0f;
+    float otherSnapshotsPeakLoad = 0.0f;
+    bool offline = false;
+    bool liveSafe = false;
+    bool hostBypassed = false;
+    bool backgroundActivity = false;
+};
+
 namespace megadsp
 {
 class ReaperEmbeddedUI;
@@ -82,6 +108,8 @@ public:
     bool undo();
     bool redo();
     void restoreUndoState(const juce::MemoryBlock&);
+    PluginPerformanceSnapshot performanceSnapshot() const noexcept;
+    void resetPerformanceMetrics() noexcept;
 
     juce::AudioProcessorValueTreeState parameters;
     megadsp::EffectRack& getRack()
@@ -396,6 +424,9 @@ private:
         double bpm);
     void recordRealtimeDiagnostics(
         std::int64_t elapsedMicros, int blockSamples) noexcept;
+    void recordPerformanceMetrics(
+        std::uint64_t elapsedTicks, int blockSamples,
+        bool hostBypassed) noexcept;
     void mixLiveSafeSpills(juce::AudioBuffer<float>& main);
     void addSpillSnapshot(int index) noexcept;
     void processSpillSnapshots(
@@ -540,6 +571,49 @@ private:
     bool captureRealtimeProfile = false;
     megadsp::RealtimeProcessProfile realtimeProfile;
     megadsp::RealtimeProcessProfile accumulatedRealtimeProfile;
+    static constexpr int performanceHistogramBins = 401;
+    std::atomic<float> performanceCurrentLoad { 0.0f };
+    std::atomic<float> performanceAverageLoad { 0.0f };
+    std::atomic<float> performancePeakLoad { 0.0f };
+    std::atomic<float> performanceLastCallbackMs { 0.0f };
+    std::atomic<float> performanceDeadlineMs { 0.0f };
+    std::atomic<float> performanceSampleRate { 0.0f };
+    std::atomic<int> performanceBlockSamples { 0 };
+    std::atomic<std::uint64_t> performanceOverruns { 0 };
+    std::array<std::atomic<float>,
+               PluginPerformanceSnapshot::historySize>
+        performanceHistory {};
+    std::atomic<int> performanceHistoryWriteIndex { 0 };
+    std::atomic<int> performanceHistoryCount { 0 };
+    std::array<std::atomic<std::uint32_t>,
+               performanceHistogramBins>
+        performanceHistogram {};
+    std::array<std::atomic<float>, megadsp::slotCount>
+        performanceSlotAverageLoad {};
+    std::array<std::atomic<float>, megadsp::slotCount>
+        performanceSlotPeakLoad {};
+    std::atomic<float> performanceOtherSnapshotsAverageLoad { 0.0f };
+    std::atomic<float> performanceOtherSnapshotsPeakLoad { 0.0f };
+    std::atomic<bool> performanceOffline { false };
+    std::atomic<bool> performanceLiveSafe { false };
+    std::atomic<bool> performanceHostBypassed { false };
+    std::atomic<std::uint64_t> performanceResetGeneration { 0 };
+    std::uint64_t observedPerformanceResetGeneration = 0;
+    float performanceAverageState = 0.0f;
+    float performancePeakState = 0.0f;
+    int performancePeakHoldSamples = 0;
+    std::array<float, megadsp::slotCount>
+        performanceSlotAverageState {};
+    std::array<float, megadsp::slotCount>
+        performanceSlotPeakState {};
+    std::array<int, megadsp::slotCount>
+        performanceSlotPeakHoldSamples {};
+    float performanceOtherSnapshotsAverageState = 0.0f;
+    float performanceOtherSnapshotsPeakState = 0.0f;
+    int performanceOtherSnapshotsPeakHoldSamples = 0;
+    int performanceProfileSnapshot = -1;
+    int performanceHistorySamples = 0;
+    float performanceHistoryMaximum = 0.0f;
     int selectedTab = 0;
     juce::UndoManager undoManager;
     juce::MemoryBlock pendingUndoBefore;

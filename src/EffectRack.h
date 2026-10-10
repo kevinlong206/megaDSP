@@ -12,16 +12,26 @@ namespace megadsp
 {
 struct RealtimeProcessProfile
 {
+    using SlotTicks = std::array<
+        std::array<std::uint64_t, slotCount>, snapshotCount>;
+    using SlotCalls = std::array<
+        std::array<std::uint32_t, slotCount>, snapshotCount>;
+
     std::array<std::uint64_t, moduleTypeCount> moduleTicks {};
     std::array<std::uint64_t, moduleTypeCount> moduleMaximumTicks {};
     std::array<std::uint32_t, moduleTypeCount> moduleCalls {};
     std::array<std::uint64_t, snapshotCount> graphTicks {};
     std::array<std::uint64_t, snapshotCount> graphMaximumTicks {};
     std::array<std::uint32_t, snapshotCount> graphCalls {};
+    SlotTicks slotTicks {};
+    SlotTicks slotMaximumTicks {};
+    SlotCalls slotCalls {};
+    int currentSnapshot = 0;
 
     void reset() noexcept { *this = {}; }
     void add(const RealtimeProcessProfile& other) noexcept;
     void recordModule(ModuleType type, std::uint64_t ticks) noexcept;
+    void recordSlot(int slot, std::uint64_t ticks) noexcept;
     void recordGraph(int snapshot, std::uint64_t ticks) noexcept;
 };
 

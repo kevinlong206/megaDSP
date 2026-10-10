@@ -80,6 +80,7 @@ public:
     bool cardRotaryControlsWorkForTesting(int slot);
     bool rackOverflowsVerticallyForTesting() const;
     bool rackOverflowsHorizontallyForTesting() const;
+    int headerMeterWidthForTesting() const;
     void setWidgetSizeForTesting(megadsp::ui::WidgetSize);
     juce::String commitHashForTesting() const
     {
@@ -116,6 +117,7 @@ private:
     void chooseLibraryRoot(int library);
     void refreshIdentityPresentation();
     void refreshSnapshots();
+    void showPerformancePanel();
     void showResult(const juce::Result&);
     void setWidgetSize(megadsp::ui::WidgetSize, bool persist);
     void refreshWidgetSizeButtons();

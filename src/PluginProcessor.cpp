@@ -1592,15 +1592,14 @@ bool MegaDSPAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) c
 void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                          juce::MidiBuffer& midi)
 {
+    const auto callbackStart = static_cast<std::uint64_t>(
+        juce::Time::getHighResolutionTicks());
     const auto diagnosticsEnabled =
         megadsp::Diagnostics::instance().isEnabled();
-    const auto callbackStart = diagnosticsEnabled
-        ? juce::Time::getHighResolutionTicks() : 0;
     captureRealtimeProfile =
         diagnosticsEnabled
         && (++diagnosticCallbackCount % 31u) == 0u;
-    if (captureRealtimeProfile)
-        realtimeProfile.reset();
+    realtimeProfile.reset();
     auto recalledSnapshot = false;
     audioStreamActive.store(true, std::memory_order_release);
     lastAudioBlockSamples.store(
@@ -1748,12 +1747,12 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             diagnosticInstanceId, lastDiagnosticBlockSize,
             lastDiagnosticChannelCount);
     }
-    const auto elapsedMicros = diagnosticsEnabled
-        ? static_cast<std::int64_t>(
-              juce::Time::highResolutionTicksToSeconds(
-                  juce::Time::getHighResolutionTicks() - callbackStart)
-              * 1000000.0)
-        : 0;
+    const auto elapsedTicks = static_cast<std::uint64_t>(
+        juce::Time::getHighResolutionTicks()) - callbackStart;
+    const auto elapsedMicros = static_cast<std::int64_t>(
+        juce::Time::highResolutionTicksToSeconds(
+            static_cast<juce::int64>(elapsedTicks))
+        * 1000000.0);
     if (recalledSnapshot)
     {
         snapshotRecallDurationMicros.store(
@@ -1765,11 +1764,16 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 std::memory_order_relaxed));
     }
     recordRealtimeDiagnostics(elapsedMicros, main.getNumSamples());
+    recordPerformanceMetrics(
+        elapsedTicks, main.getNumSamples(), false);
 }
 
 void MegaDSPAudioProcessor::processBlockBypassed(
     juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
+    const auto callbackStart = static_cast<std::uint64_t>(
+        juce::Time::getHighResolutionTicks());
+    realtimeProfile.reset();
     audioStreamActive.store(true, std::memory_order_release);
     lastAudioBlockSamples.store(
         buffer.getNumSamples(), std::memory_order_relaxed);
@@ -1816,7 +1820,14 @@ void MegaDSPAudioProcessor::processBlockBypassed(
         getLatencySamples(), static_cast<int>(hostBypassDelay[0].size()));
     updateHostBypassLatency(latency);
     if (latency <= 0)
+    {
+        recordPerformanceMetrics(
+            static_cast<std::uint64_t>(
+                juce::Time::getHighResolutionTicks())
+                - callbackStart,
+            main.getNumSamples(), true);
         return;
+    }
 
     for (int sample = 0; sample < main.getNumSamples(); ++sample)
     {
@@ -1831,6 +1842,303 @@ void MegaDSPAudioProcessor::processBlockBypassed(
 
         if (++hostBypassWritePosition >= latency)
             hostBypassWritePosition = 0;
+    }
+    recordPerformanceMetrics(
+        static_cast<std::uint64_t>(
+            juce::Time::getHighResolutionTicks())
+            - callbackStart,
+        main.getNumSamples(), true);
+}
+
+PluginPerformanceSnapshot
+MegaDSPAudioProcessor::performanceSnapshot() const noexcept
+{
+    PluginPerformanceSnapshot result;
+    result.currentLoad =
+        performanceCurrentLoad.load(std::memory_order_acquire);
+    result.averageLoad =
+        performanceAverageLoad.load(std::memory_order_acquire);
+    result.peakLoad =
+        performancePeakLoad.load(std::memory_order_acquire);
+    result.lastCallbackMilliseconds =
+        performanceLastCallbackMs.load(std::memory_order_acquire);
+    result.deadlineMilliseconds =
+        performanceDeadlineMs.load(std::memory_order_acquire);
+    result.sampleRate =
+        performanceSampleRate.load(std::memory_order_acquire);
+    result.blockSamples =
+        performanceBlockSamples.load(std::memory_order_acquire);
+    result.overrunCount =
+        performanceOverruns.load(std::memory_order_acquire);
+    result.offline =
+        performanceOffline.load(std::memory_order_acquire);
+    result.liveSafe =
+        performanceLiveSafe.load(std::memory_order_acquire);
+    result.hostBypassed =
+        performanceHostBypassed.load(std::memory_order_acquire);
+    result.backgroundActivity =
+        impulseResponseIndexInProgress.load(std::memory_order_acquire)
+        || namModelIndexInProgress.load(std::memory_order_acquire)
+        || topologyMutationInProgress.load(std::memory_order_acquire);
+
+    const auto writeIndex = juce::jlimit(
+        0, PluginPerformanceSnapshot::historySize - 1,
+        performanceHistoryWriteIndex.load(std::memory_order_acquire));
+    result.historyCount = juce::jlimit(
+        0, PluginPerformanceSnapshot::historySize,
+        performanceHistoryCount.load(std::memory_order_acquire));
+    const auto oldest = result.historyCount
+            == PluginPerformanceSnapshot::historySize
+        ? writeIndex : 0;
+    for (int index = 0; index < result.historyCount; ++index)
+        result.history[static_cast<size_t>(index)] =
+            performanceHistory[static_cast<size_t>(
+                (oldest + index)
+                % PluginPerformanceSnapshot::historySize)]
+                .load(std::memory_order_acquire);
+
+    std::array<std::uint32_t, performanceHistogramBins> histogram {};
+    std::uint64_t total = 0;
+    for (size_t index = 0; index < histogram.size(); ++index)
+    {
+        histogram[index] =
+            performanceHistogram[index].load(std::memory_order_acquire);
+        total += histogram[index];
+    }
+    const auto percentile = [&histogram, total](double fraction)
+    {
+        if (total == 0)
+            return 0.0f;
+        const auto target = static_cast<std::uint64_t>(
+            std::ceil(fraction * static_cast<double>(total)));
+        std::uint64_t accumulated = 0;
+        for (size_t index = 0; index < histogram.size(); ++index)
+        {
+            accumulated += histogram[index];
+            if (accumulated >= target)
+                return static_cast<float>(index) / 200.0f;
+        }
+        return 2.0f;
+    };
+    result.percentile95 = percentile(0.95);
+    result.percentile99 = percentile(0.99);
+
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        result.slotAverageLoad[static_cast<size_t>(slot)] =
+            performanceSlotAverageLoad[static_cast<size_t>(slot)].load(
+                std::memory_order_acquire);
+        result.slotPeakLoad[static_cast<size_t>(slot)] =
+            performanceSlotPeakLoad[static_cast<size_t>(slot)].load(
+                std::memory_order_acquire);
+    }
+    result.otherSnapshotsAverageLoad =
+        performanceOtherSnapshotsAverageLoad.load(
+            std::memory_order_acquire);
+    result.otherSnapshotsPeakLoad =
+        performanceOtherSnapshotsPeakLoad.load(
+            std::memory_order_acquire);
+    return result;
+}
+
+void MegaDSPAudioProcessor::resetPerformanceMetrics() noexcept
+{
+    performanceCurrentLoad.store(0.0f, std::memory_order_release);
+    performanceAverageLoad.store(0.0f, std::memory_order_release);
+    performancePeakLoad.store(0.0f, std::memory_order_release);
+    performanceLastCallbackMs.store(0.0f, std::memory_order_release);
+    performanceOverruns.store(0, std::memory_order_release);
+    performanceHistoryWriteIndex.store(0, std::memory_order_release);
+    performanceHistoryCount.store(0, std::memory_order_release);
+    for (auto& value : performanceHistory)
+        value.store(0.0f, std::memory_order_release);
+    for (auto& value : performanceHistogram)
+        value.store(0, std::memory_order_release);
+    for (auto& value : performanceSlotAverageLoad)
+        value.store(0.0f, std::memory_order_release);
+    for (auto& value : performanceSlotPeakLoad)
+        value.store(0.0f, std::memory_order_release);
+    performanceOtherSnapshotsAverageLoad.store(
+        0.0f, std::memory_order_release);
+    performanceOtherSnapshotsPeakLoad.store(
+        0.0f, std::memory_order_release);
+    performanceResetGeneration.fetch_add(
+        1, std::memory_order_acq_rel);
+}
+
+void MegaDSPAudioProcessor::recordPerformanceMetrics(
+    std::uint64_t elapsedTicks, int blockSamples,
+    bool hostBypassed) noexcept
+{
+    if (blockSamples <= 0 || preparedSampleRate <= 0.0)
+        return;
+
+    const auto resetGeneration =
+        performanceResetGeneration.load(std::memory_order_acquire);
+    if (resetGeneration != observedPerformanceResetGeneration)
+    {
+        observedPerformanceResetGeneration = resetGeneration;
+        performanceAverageState = 0.0f;
+        performancePeakState = 0.0f;
+        performancePeakHoldSamples = 0;
+        performanceSlotAverageState.fill(0.0f);
+        performanceSlotPeakState.fill(0.0f);
+        performanceSlotPeakHoldSamples.fill(0);
+        performanceOtherSnapshotsAverageState = 0.0f;
+        performanceOtherSnapshotsPeakState = 0.0f;
+        performanceOtherSnapshotsPeakHoldSamples = 0;
+        performanceProfileSnapshot = -1;
+        performanceHistorySamples = 0;
+        performanceHistoryMaximum = 0.0f;
+    }
+
+    const auto elapsedSeconds =
+        juce::Time::highResolutionTicksToSeconds(
+            static_cast<juce::int64>(elapsedTicks));
+    const auto deadlineSeconds =
+        static_cast<double>(blockSamples) / preparedSampleRate;
+    const auto load = static_cast<float>(
+        elapsedSeconds / juce::jmax(1.0e-9, deadlineSeconds));
+    const auto smoothing = static_cast<float>(
+        deadlineSeconds / (1.0 + deadlineSeconds));
+    const auto peakDecay = static_cast<float>(
+        juce::jmax(0.0, 1.0 - deadlineSeconds / 1.5));
+    const auto peakHoldSamples = juce::roundToInt(
+        preparedSampleRate * 5.0);
+    const auto updatePeak = [
+        blockSamples, peakHoldSamples, peakDecay](
+        float value, float& peak, int& hold)
+    {
+        if (value >= peak)
+        {
+            peak = value;
+            hold = peakHoldSamples;
+        }
+        else if (hold > 0)
+            hold = juce::jmax(0, hold - blockSamples);
+        else
+            peak = juce::jmax(value, peak * peakDecay);
+    };
+
+    performanceAverageState +=
+        smoothing * (load - performanceAverageState);
+    updatePeak(
+        load, performancePeakState, performancePeakHoldSamples);
+    performanceCurrentLoad.store(load, std::memory_order_release);
+    performanceAverageLoad.store(
+        performanceAverageState, std::memory_order_release);
+    performancePeakLoad.store(
+        performancePeakState, std::memory_order_release);
+    performanceLastCallbackMs.store(
+        static_cast<float>(elapsedSeconds * 1000.0),
+        std::memory_order_release);
+    performanceDeadlineMs.store(
+        static_cast<float>(deadlineSeconds * 1000.0),
+        std::memory_order_release);
+    performanceSampleRate.store(
+        static_cast<float>(preparedSampleRate),
+        std::memory_order_release);
+    performanceBlockSamples.store(
+        blockSamples, std::memory_order_release);
+    const auto offline = isNonRealtime();
+    if (load > 1.0f && !offline)
+        performanceOverruns.fetch_add(1, std::memory_order_relaxed);
+    const auto histogramIndex = static_cast<size_t>(juce::jlimit(
+        0, performanceHistogramBins - 1,
+        juce::roundToInt(load * 200.0f)));
+    performanceHistogram[histogramIndex].fetch_add(
+        1, std::memory_order_relaxed);
+    performanceOffline.store(
+        offline, std::memory_order_release);
+    performanceLiveSafe.store(
+        liveSafeSnapshots.load(std::memory_order_relaxed),
+        std::memory_order_release);
+    performanceHostBypassed.store(
+        hostBypassed, std::memory_order_release);
+
+    const auto profileSnapshot =
+        activeAudioSnapshot.load(std::memory_order_relaxed);
+    if (profileSnapshot != performanceProfileSnapshot)
+    {
+        performanceProfileSnapshot = profileSnapshot;
+        performanceSlotAverageState.fill(0.0f);
+        performanceSlotPeakState.fill(0.0f);
+        performanceSlotPeakHoldSamples.fill(0);
+    }
+    const auto ticksToLoad = [deadlineSeconds](std::uint64_t ticks)
+    {
+        return static_cast<float>(
+            juce::Time::highResolutionTicksToSeconds(
+                static_cast<juce::int64>(ticks))
+            / juce::jmax(1.0e-9, deadlineSeconds));
+    };
+    std::uint64_t otherSnapshotTicks = 0;
+    for (int snapshot = 0; snapshot < megadsp::snapshotCount; ++snapshot)
+        for (int slot = 0; slot < megadsp::slotCount; ++slot)
+        {
+            const auto ticks = realtimeProfile.slotTicks[
+                static_cast<size_t>(snapshot)][static_cast<size_t>(slot)];
+            if (snapshot != profileSnapshot)
+                otherSnapshotTicks += ticks;
+        }
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        const auto slotLoad = juce::isPositiveAndBelow(
+                                  profileSnapshot,
+                                  megadsp::snapshotCount)
+            ? ticksToLoad(realtimeProfile.slotTicks[
+                  static_cast<size_t>(profileSnapshot)]
+                  [static_cast<size_t>(slot)])
+            : 0.0f;
+        auto& average =
+            performanceSlotAverageState[static_cast<size_t>(slot)];
+        auto& peak =
+            performanceSlotPeakState[static_cast<size_t>(slot)];
+        auto& hold =
+            performanceSlotPeakHoldSamples[static_cast<size_t>(slot)];
+        average += smoothing * (slotLoad - average);
+        updatePeak(slotLoad, peak, hold);
+        performanceSlotAverageLoad[static_cast<size_t>(slot)].store(
+            average, std::memory_order_release);
+        performanceSlotPeakLoad[static_cast<size_t>(slot)].store(
+            peak, std::memory_order_release);
+    }
+    const auto otherLoad = ticksToLoad(otherSnapshotTicks);
+    performanceOtherSnapshotsAverageState += smoothing
+        * (otherLoad - performanceOtherSnapshotsAverageState);
+    updatePeak(
+        otherLoad, performanceOtherSnapshotsPeakState,
+        performanceOtherSnapshotsPeakHoldSamples);
+    performanceOtherSnapshotsAverageLoad.store(
+        performanceOtherSnapshotsAverageState,
+        std::memory_order_release);
+    performanceOtherSnapshotsPeakLoad.store(
+        performanceOtherSnapshotsPeakState,
+        std::memory_order_release);
+
+    performanceHistorySamples += blockSamples;
+    performanceHistoryMaximum =
+        juce::jmax(performanceHistoryMaximum, load);
+    const auto historyInterval =
+        juce::jmax(1, juce::roundToInt(preparedSampleRate / 10.0));
+    if (performanceHistorySamples >= historyInterval)
+    {
+        const auto writeIndex = performanceHistoryWriteIndex.load(
+            std::memory_order_relaxed);
+        performanceHistory[static_cast<size_t>(writeIndex)].store(
+            performanceHistoryMaximum, std::memory_order_release);
+        performanceHistoryWriteIndex.store(
+            (writeIndex + 1)
+                % PluginPerformanceSnapshot::historySize,
+            std::memory_order_release);
+        const auto count = performanceHistoryCount.load(
+            std::memory_order_relaxed);
+        performanceHistoryCount.store(
+            juce::jmin(
+                PluginPerformanceSnapshot::historySize, count + 1),
+            std::memory_order_release);
+        performanceHistorySamples %= historyInterval;
+        performanceHistoryMaximum = 0.0f;
     }
 }
 
@@ -1973,9 +2281,9 @@ void MegaDSPAudioProcessor::processProfiledRack(
     const juce::AudioBuffer<float>* sidechain,
     double bpm)
 {
-    auto* profile = captureRealtimeProfile ? &realtimeProfile : nullptr;
-    const auto start = profile != nullptr
-        ? juce::Time::getHighResolutionTicks() : 0;
+    auto* profile = &realtimeProfile;
+    profile->currentSnapshot = snapshot;
+    const auto start = juce::Time::getHighResolutionTicks();
     snapshotRacks[static_cast<size_t>(snapshot)]->process(
         main, sidechain, bpm, profile, isNonRealtime());
     if (profile != nullptr)

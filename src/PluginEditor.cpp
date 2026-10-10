@@ -1132,11 +1132,324 @@ private:
 };
 } // namespace
 
+class PerformancePanel final : public juce::Component,
+                               private juce::Timer
+{
+public:
+    explicit PerformancePanel(MegaDSPAudioProcessor& processorToUse)
+        : processor(processorToUse)
+    {
+        reset.setButtonText("RESET");
+        reset.setTooltip("Clear DSP load history, peaks, percentiles, and overruns.");
+        reset.onClick = [this]
+        {
+            processor.resetPerformanceMetrics();
+            metrics = processor.performanceSnapshot();
+            repaint();
+        };
+        addAndMakeVisible(reset);
+        setTitle("megaDSP real-time DSP performance");
+        setDescription(
+            "Current and historical audio callback deadline usage.");
+        setSize(620, 450);
+        metrics = processor.performanceSnapshot();
+        startTimerHz(15);
+    }
+
+    ~PerformancePanel() override
+    {
+        reset.onClick = nullptr;
+    }
+
+    void resized() override
+    {
+        reset.setBounds(getWidth() - 78, 10, 66, 24);
+    }
+
+    void paint(juce::Graphics& graphics) override
+    {
+        graphics.fillAll(juce::Colour(0xff111821));
+        graphics.setColour(juce::Colour(0xff2d3947));
+        graphics.drawRoundedRectangle(
+            getLocalBounds().toFloat().reduced(0.5f), 8.0f, 1.0f);
+
+        auto bounds = getLocalBounds().reduced(14, 10);
+        auto heading = bounds.removeFromTop(30);
+        graphics.setFont(juce::FontOptions(16.0f, juce::Font::bold));
+        graphics.setColour(juce::Colours::white);
+        graphics.drawText(
+            "REAL-TIME DSP PERFORMANCE",
+            heading.removeFromLeft(260),
+            juce::Justification::centredLeft);
+        heading.removeFromRight(72);
+        graphics.setFont(juce::FontOptions(11.0f));
+        graphics.setColour(juce::Colour(0xffa8b3c0));
+        const auto operatingPoint = metrics.blockSamples > 0
+            ? juce::String(metrics.sampleRate / 1000.0, 1)
+                + " kHz  |  " + juce::String(metrics.blockSamples)
+                + " samples  |  "
+                + juce::String(metrics.deadlineMilliseconds, 2)
+                + " ms deadline"
+            : "Waiting for audio";
+        graphics.drawText(
+            operatingPoint, heading,
+            juce::Justification::centredRight);
+
+        auto modes = bounds.removeFromTop(22);
+        drawModePill(
+            graphics, modes,
+            metrics.offline ? "OFFLINE" : "REALTIME",
+            metrics.offline ? juce::Colour(0xff8d78d6) : outputColour);
+        if (metrics.liveSafe)
+            drawModePill(
+                graphics, modes, "LIVE SAFE",
+                juce::Colour(0xff62b6cb));
+        if (metrics.hostBypassed)
+            drawModePill(
+                graphics, modes, "HOST BYPASS",
+                juce::Colour(0xff9ba6b5));
+        if (metrics.backgroundActivity)
+            drawModePill(
+                graphics, modes, "BG LOAD",
+                juce::Colour(0xffffa85b));
+
+        auto cards = bounds.removeFromTop(56);
+        constexpr int cardCount = 6;
+        const auto cardWidth = cards.getWidth() / cardCount;
+        drawMetricCard(
+            graphics, cards.removeFromLeft(cardWidth),
+            "CURRENT", percent(metrics.currentLoad),
+            loadColour(metrics.currentLoad));
+        drawMetricCard(
+            graphics, cards.removeFromLeft(cardWidth),
+            "AVERAGE", percent(metrics.averageLoad),
+            loadColour(metrics.averageLoad));
+        drawMetricCard(
+            graphics, cards.removeFromLeft(cardWidth),
+            "PEAK", percent(metrics.peakLoad),
+            loadColour(metrics.peakLoad));
+        drawMetricCard(
+            graphics, cards.removeFromLeft(cardWidth),
+            "P95 / P99",
+            percent(metrics.percentile95) + " / "
+                + percent(metrics.percentile99),
+            loadColour(metrics.percentile99));
+        const auto headroom = juce::jmax(
+            0.0f, 1.0f - metrics.currentLoad);
+        drawMetricCard(
+            graphics, cards.removeFromLeft(cardWidth),
+            "HEADROOM", percent(headroom),
+            headroom < 0.1f ? juce::Colour(0xffff4f55)
+                           : headroom < 0.25f
+                               ? juce::Colour(0xffffa85b)
+                               : outputColour);
+        drawMetricCard(
+            graphics, cards,
+            "OVERRUNS", juce::String(metrics.overrunCount),
+            metrics.overrunCount > 0 ? juce::Colour(0xffff4f55)
+                                     : outputColour);
+
+        auto history = bounds.removeFromTop(112).reduced(2, 6);
+        drawHistory(graphics, history);
+
+        bounds.removeFromTop(3);
+        graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        graphics.setColour(juce::Colour(0xff8f9baa));
+        auto slotHeading = bounds.removeFromTop(17);
+        graphics.drawText(
+            "SELECTED SNAPSHOT MODULES",
+            slotHeading.removeFromLeft(230),
+            juce::Justification::centredLeft);
+        graphics.drawText(
+            "AVG / PEAK     SHARE",
+            slotHeading, juce::Justification::centredRight);
+        const auto activeSlots = processor.getRack().activeSlotCount();
+        for (int slot = 0;
+             slot < activeSlots && bounds.getHeight() >= 18; ++slot)
+        {
+            const auto type = processor.getRack().moduleType(slot);
+            drawSlotRow(
+                graphics, bounds.removeFromTop(20),
+                juce::String(slot + 1) + "  "
+                    + megadsp::moduleDefinition(type).displayName,
+                metrics.slotAverageLoad[static_cast<size_t>(slot)],
+                metrics.slotPeakLoad[static_cast<size_t>(slot)]);
+        }
+        if ((metrics.otherSnapshotsAverageLoad > 0.0001f
+             || metrics.otherSnapshotsPeakLoad > 0.0001f)
+             && bounds.getHeight() >= 18)
+            drawSlotRow(
+                 graphics, bounds.removeFromTop(20),
+                "Other snapshots / spill",
+                metrics.otherSnapshotsAverageLoad,
+                metrics.otherSnapshotsPeakLoad);
+    }
+
+public:
+    static juce::String percent(float load)
+    {
+        return juce::String(100.0f * load, load < 0.1f ? 1 : 0) + "%";
+    }
+
+    static juce::Colour loadColour(float load)
+    {
+        if (load >= 1.0f)
+            return juce::Colour(0xffff4f55);
+        if (load >= 0.75f)
+            return juce::Colour(0xffffa85b);
+        return outputColour;
+    }
+
+private:
+    static void drawModePill(
+        juce::Graphics& graphics, juce::Rectangle<int>& row,
+        const juce::String& text, juce::Colour colour)
+    {
+        const auto width = juce::jmax(
+            62, text.length() * 7 + 18);
+        auto pill = row.removeFromLeft(width).reduced(1, 2);
+        row.removeFromLeft(4);
+        graphics.setColour(colour.withAlpha(0.18f));
+        graphics.fillRoundedRectangle(pill.toFloat(), 5.0f);
+        graphics.setColour(colour);
+        graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+        graphics.drawText(text, pill, juce::Justification::centred);
+    }
+
+    static void drawMetricCard(
+        juce::Graphics& graphics, juce::Rectangle<int> bounds,
+        const juce::String& label, const juce::String& value,
+        juce::Colour colour)
+    {
+        bounds.reduce(2, 3);
+        graphics.setColour(juce::Colour(0xff19232e));
+        graphics.fillRoundedRectangle(bounds.toFloat(), 5.0f);
+        auto labelBounds = bounds.reduced(7, 3);
+        graphics.setColour(juce::Colour(0xff8f9baa));
+        graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+        graphics.drawText(
+            label, labelBounds.removeFromTop(15),
+            juce::Justification::centredLeft);
+        graphics.setColour(colour);
+        graphics.setFont(juce::FontOptions(15.0f, juce::Font::bold));
+        graphics.drawText(
+            value, labelBounds, juce::Justification::centredLeft);
+    }
+
+    void drawHistory(
+        juce::Graphics& graphics, juce::Rectangle<int> bounds) const
+    {
+        graphics.setColour(juce::Colour(0xff151e28));
+        graphics.fillRoundedRectangle(bounds.toFloat(), 5.0f);
+        const auto plot = bounds.reduced(38, 8);
+        graphics.setFont(juce::FontOptions(9.0f));
+        for (const auto load : { 0.5f, 1.0f })
+        {
+            const auto y = plot.getBottom()
+                - juce::roundToInt(
+                    static_cast<float>(plot.getHeight())
+                    * juce::jmin(1.0f, load));
+            graphics.setColour(
+                load >= 1.0f ? juce::Colour(0xffff4f55).withAlpha(0.45f)
+                             : juce::Colour(0xff4a5868));
+            graphics.drawHorizontalLine(
+                y, static_cast<float>(plot.getX()),
+                static_cast<float>(plot.getRight()));
+            graphics.drawText(
+                juce::String(juce::roundToInt(load * 100.0f)) + "%",
+                bounds.getX() + 3, y - 7, 31, 14,
+                juce::Justification::centredRight);
+        }
+        graphics.setColour(juce::Colour(0xff718096));
+        graphics.drawText(
+            "-10s", plot.getX(), plot.getBottom() - 14, 32, 14,
+            juce::Justification::centredLeft);
+        graphics.drawText(
+            "NOW", plot.getRight() - 32, plot.getBottom() - 14, 32, 14,
+            juce::Justification::centredRight);
+        if (metrics.historyCount < 2)
+            return;
+        juce::Path path;
+        for (int index = 0; index < metrics.historyCount; ++index)
+        {
+            const auto x = static_cast<float>(plot.getRight())
+                - static_cast<float>(plot.getWidth())
+                    * static_cast<float>(
+                        metrics.historyCount - 1 - index)
+                    / static_cast<float>(
+                        PluginPerformanceSnapshot::historySize - 1);
+            const auto y = static_cast<float>(plot.getBottom())
+                - static_cast<float>(plot.getHeight())
+                    * juce::jlimit(
+                        0.0f, 1.0f,
+                        metrics.history[static_cast<size_t>(index)]);
+            if (index == 0)
+                path.startNewSubPath(x, y);
+            else
+                path.lineTo(x, y);
+        }
+        graphics.setColour(loadColour(metrics.peakLoad));
+        graphics.strokePath(
+            path, juce::PathStrokeType(
+                      1.8f, juce::PathStrokeType::curved,
+                      juce::PathStrokeType::rounded));
+    }
+
+    void drawSlotRow(
+        juce::Graphics& graphics, juce::Rectangle<int> row,
+        const juce::String& name, float average, float peak) const
+    {
+        const auto readout = row.removeFromRight(158);
+        auto label = row.removeFromLeft(178);
+        auto meter = row.reduced(5, 6);
+        graphics.setColour(juce::Colour(0xffa8b3c0));
+        graphics.setFont(juce::FontOptions(10.5f));
+        graphics.drawText(
+            name, label, juce::Justification::centredLeft, true);
+        graphics.setColour(juce::Colour(0xff273340));
+        graphics.fillRoundedRectangle(meter.toFloat(), 3.0f);
+        graphics.setColour(loadColour(average));
+        graphics.fillRoundedRectangle(
+            meter.withWidth(juce::roundToInt(
+                static_cast<float>(meter.getWidth())
+                * juce::jlimit(0.0f, 1.0f, average))).toFloat(),
+            3.0f);
+        const auto share = metrics.averageLoad > 0.000001f
+            ? juce::jlimit(
+                  0.0f, 9.99f, average / metrics.averageLoad)
+            : 0.0f;
+        graphics.setColour(juce::Colours::white);
+        graphics.setFont(juce::FontOptions(10.0f));
+        graphics.drawText(
+            percent(average) + " / " + percent(peak)
+                + "     " + percent(share),
+            readout, juce::Justification::centredRight);
+    }
+
+    void timerCallback() override
+    {
+        metrics = processor.performanceSnapshot();
+        repaint();
+    }
+
+    MegaDSPAudioProcessor& processor;
+    PluginPerformanceSnapshot metrics;
+    juce::TextButton reset;
+};
+
 class MegaDSPAudioProcessorEditor::HeaderMeter final
     : public juce::Component,
       public juce::SettableTooltipClient
 {
 public:
+    HeaderMeter()
+    {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        setWantsKeyboardFocus(true);
+    }
+
+    std::function<void()> onShowPerformance;
+
     void setLevels(float inputDb, float outputDb)
     {
         updateChannel(0, inputDb);
@@ -1148,7 +1461,27 @@ public:
 
     void mouseDown(const juce::MouseEvent&) override
     {
+        if (onShowPerformance)
+            onShowPerformance();
         clipped = false;
+        repaint();
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        if (key == juce::KeyPress::returnKey
+            || key == juce::KeyPress::spaceKey)
+        {
+            if (onShowPerformance)
+                onShowPerformance();
+            return true;
+        }
+        return false;
+    }
+
+    void setPerformance(const PluginPerformanceSnapshot& next)
+    {
+        performance = next;
         repaint();
     }
 
@@ -1157,9 +1490,18 @@ public:
         graphics.setColour(juce::Colour(0xff151a21));
         graphics.fillRoundedRectangle(getLocalBounds().toFloat(), 5.0f);
         auto bounds = getLocalBounds().reduced(7, 4);
+        if (bounds.getWidth() < 220)
+        {
+            drawPerformance(graphics, bounds);
+            return;
+        }
+        auto dsp = bounds.removeFromRight(
+            juce::jlimit(72, 108, bounds.getWidth() / 3));
+        bounds.removeFromRight(5);
         drawChannel(graphics, bounds.removeFromTop(bounds.getHeight() / 2),
                     "IN", 0);
         drawChannel(graphics, bounds, "OUT", 1);
+        drawPerformance(graphics, dsp);
     }
 
 private:
@@ -1233,9 +1575,35 @@ private:
         graphics.drawText(text, readout, juce::Justification::centredRight);
     }
 
+    void drawPerformance(
+        juce::Graphics& graphics, juce::Rectangle<int> bounds)
+    {
+        graphics.setColour(juce::Colour(0xff303845));
+        graphics.drawVerticalLine(
+            bounds.getX(), static_cast<float>(bounds.getY()),
+            static_cast<float>(bounds.getBottom()));
+        bounds.removeFromLeft(7);
+        auto label = bounds.removeFromTop(bounds.getHeight() / 2);
+        graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+        graphics.setColour(juce::Colour(0xffa8b3c0));
+        graphics.drawText(
+            performance.offline ? "DSP OFFLINE" : "DSP LOAD",
+            label, juce::Justification::centredLeft);
+        graphics.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+        graphics.setColour(PerformancePanel::loadColour(
+            performance.peakLoad));
+        graphics.drawText(
+            juce::String(performance.averageLoad * 100.0f, 0)
+                + "%  P "
+                + juce::String(performance.peakLoad * 100.0f, 0)
+                + "%",
+            bounds, juce::Justification::centredLeft);
+    }
+
     std::array<float, 2> levels { -100.0f, -100.0f };
     std::array<float, 2> peaks { -100.0f, -100.0f };
     std::array<int, 2> holdFrames {};
+    PluginPerformanceSnapshot performance;
     bool clipped = false;
 };
 
@@ -3144,7 +3512,14 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
         juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.parameters, "global.output", outputGain);
     headerMeter = std::make_unique<HeaderMeter>();
-    headerMeter->setTooltip("Input and final output sample peaks. Click to clear CLIP.");
+    headerMeter->setTitle("DSP performance");
+    headerMeter->setDescription(
+        "Shows input and output peaks plus megaDSP audio deadline load.");
+    headerMeter->setTooltip(
+        "Input/output peaks and megaDSP real-time deadline load. "
+        "Click for detailed performance history or to clear CLIP.");
+    headerMeter->onShowPerformance =
+        [this] { showPerformancePanel(); };
     addAndMakeVisible(*headerMeter);
 
     snapshotsLabel.setText("SNAPSHOTS", juce::dontSendNotification);
@@ -3292,6 +3667,7 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
 
 MegaDSPAudioProcessorEditor::~MegaDSPAudioProcessorEditor()
 {
+    headerMeter->onShowPerformance = nullptr;
     fileChooser.reset();
     megadsp::Diagnostics::instance().log(
         "editor", "closed");
@@ -3415,7 +3791,12 @@ void MegaDSPAudioProcessorEditor::resized()
     auto inputArea = headerTop.removeFromLeft(126);
     inputLabel.setBounds(inputArea.removeFromLeft(32));
     inputGain.setBounds(inputArea);
-    headerMeter->setBounds(headerTop.reduced(4, 1));
+    const auto performanceInSnapshotRow =
+        headerTop.getWidth() < 72;
+    headerMeter->setBounds(
+        performanceInSnapshotRow
+            ? juce::Rectangle<int> {}
+            : headerTop.reduced(4, 1));
     status.setBounds({});
 
     snapshotsHost.setBounds(
@@ -3430,6 +3811,15 @@ void MegaDSPAudioProcessorEditor::resized()
         snapshotBounds.removeFromRight(28).reduced(1));
     smallWidgetsButton.setBounds(
         snapshotBounds.removeFromRight(28).reduced(1));
+    if (performanceInSnapshotRow)
+    {
+        const auto performanceBounds =
+            snapshotBounds.removeFromRight(120).reduced(3, 0);
+        headerMeter->setBounds(
+            performanceBounds.translated(
+                snapshotsHost.getX(), snapshotsHost.getY()));
+        headerMeter->toFront(false);
+    }
     const auto snapshotWidth =
         juce::jmax(1, snapshotBounds.getWidth()
                        / megadsp::snapshotCount);
@@ -3479,6 +3869,8 @@ void MegaDSPAudioProcessorEditor::timerCallback()
 {
     headerMeter->setLevels(audioProcessor.getRack().inputMeterDb(),
                            audioProcessor.getRack().outputMeterDb());
+    headerMeter->setPerformance(
+        audioProcessor.performanceSnapshot());
     for (auto& card : cards)
         card->syncBypassState();
     refreshChainNavigator();
@@ -3495,6 +3887,16 @@ void MegaDSPAudioProcessorEditor::timerCallback()
 #if defined(MEGADSP_CAPTURE_SCREENSHOTS)
     advanceScreenshotCapture();
 #endif
+}
+
+void MegaDSPAudioProcessorEditor::showPerformancePanel()
+{
+    auto panel = std::make_unique<PerformancePanel>(audioProcessor);
+    auto& callout = juce::CallOutBox::launchAsynchronously(
+        std::move(panel),
+        getLocalArea(headerMeter.get(), headerMeter->getLocalBounds()),
+        this);
+    callout.setDismissalMouseClicksAreAlwaysConsumed(true);
 }
 
 void MegaDSPAudioProcessorEditor::refreshSnapshots()
@@ -3942,6 +4344,11 @@ bool MegaDSPAudioProcessorEditor::rackOverflowsVerticallyForTesting() const
 bool MegaDSPAudioProcessorEditor::rackOverflowsHorizontallyForTesting() const
 {
     return rackContent.getWidth() > rackViewport.getWidth();
+}
+
+int MegaDSPAudioProcessorEditor::headerMeterWidthForTesting() const
+{
+    return headerMeter->getWidth();
 }
 
 void MegaDSPAudioProcessorEditor::setWidgetSizeForTesting(
