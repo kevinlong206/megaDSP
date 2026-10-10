@@ -454,9 +454,11 @@ discoverImpulseResponsePaths(const juce::File& root)
         discovered.begin(), discovered.end(),
         [](const auto& left, const auto& right)
         {
-            return left.relativePath.compareIgnoreCase(
-                       right.relativePath)
-                < 0;
+            const auto order = left.relativePath.compareIgnoreCase(
+                right.relativePath);
+            return order != 0
+                ? order < 0
+                : left.relativePath < right.relativePath;
         });
     return discovered;
 }
@@ -1253,6 +1255,320 @@ juce::Result persistNamModelLibraryCache(
               "Could not save the NAM model library cache.");
 }
 
+struct LibraryFileStamp
+{
+    juce::String relativePath;
+    juce::int64 size = 0;
+    juce::int64 modified = 0;
+
+    bool operator==(const LibraryFileStamp&) const = default;
+};
+
+std::vector<LibraryFileStamp> scanLibraryFiles(
+    const juce::File& root, bool namFiles,
+    std::vector<juce::File>* supportedFiles = nullptr)
+{
+    std::vector<LibraryFileStamp> stamps;
+    if (!root.isDirectory())
+        return stamps;
+    juce::Array<juce::File> files;
+    root.findChildFiles(files, juce::File::findFiles, true);
+    stamps.reserve(static_cast<size_t>(files.size()));
+    if (supportedFiles != nullptr)
+        supportedFiles->reserve(static_cast<size_t>(files.size()));
+    for (const auto& file : files)
+    {
+        const auto extension = file.getFileExtension().toLowerCase();
+        const auto supported = namFiles
+            ? extension == ".nam"
+            : extension == ".wav" || extension == ".aif"
+                || extension == ".aiff" || extension == ".flac";
+        if (!supported)
+            continue;
+        stamps.push_back({
+            file.getRelativePathFrom(root).replaceCharacter('\\', '/'),
+            file.getSize(),
+            file.getLastModificationTime().toMilliseconds()
+        });
+        if (supportedFiles != nullptr)
+            supportedFiles->push_back(file);
+    }
+    std::sort(
+        stamps.begin(), stamps.end(),
+        [](const auto& left, const auto& right)
+        {
+            return left.relativePath.compareIgnoreCase(
+                       right.relativePath)
+                < 0;
+        });
+    if (supportedFiles != nullptr)
+        std::sort(
+            supportedFiles->begin(), supportedFiles->end(),
+            [&root](const auto& left, const auto& right)
+            {
+                const auto leftPath = left.getRelativePathFrom(root);
+                const auto rightPath = right.getRelativePathFrom(root);
+                const auto order =
+                    leftPath.compareIgnoreCase(rightPath);
+                return order != 0
+                    ? order < 0 : leftPath < rightPath;
+            });
+    return stamps;
+}
+
+class AutomaticLibraryCoordinator final : private juce::Thread
+{
+public:
+    AutomaticLibraryCoordinator()
+        : juce::Thread("megaDSP library monitor")
+    {
+        startThread(juce::Thread::Priority::background);
+    }
+
+    ~AutomaticLibraryCoordinator() override
+    {
+        signalThreadShouldExit();
+        notify();
+        stopThread(30000);
+    }
+
+    void requestScan() noexcept
+    {
+        notify();
+    }
+
+    std::uint64_t requestedNamGeneration() const noexcept
+    {
+        return namRequested.load(std::memory_order_acquire);
+    }
+
+    std::uint64_t completedNamGeneration() const noexcept
+    {
+        return namCompleted.load(std::memory_order_acquire);
+    }
+
+    std::uint64_t requestedImpulseGeneration() const noexcept
+    {
+        return impulseRequested.load(std::memory_order_acquire);
+    }
+
+    std::uint64_t completedImpulseGeneration() const noexcept
+    {
+        return impulseCompleted.load(std::memory_order_acquire);
+    }
+
+    juce::String monitoredNamRoot()
+    {
+        const juce::ScopedLock lock(catalogLock);
+        return namRootPath;
+    }
+
+    juce::String monitoredImpulseRoot()
+    {
+        const juce::ScopedLock lock(catalogLock);
+        return impulseRootPath;
+    }
+
+    bool claimNamRebuild() noexcept
+    {
+        auto expected = false;
+        return namRebuildClaimed.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel);
+    }
+
+    bool claimImpulseRebuild() noexcept
+    {
+        auto expected = false;
+        return impulseRebuildClaimed.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel);
+    }
+
+    void releaseNamRebuild() noexcept
+    {
+        namRebuildClaimed.store(false, std::memory_order_release);
+    }
+
+    void releaseImpulseRebuild() noexcept
+    {
+        impulseRebuildClaimed.store(false, std::memory_order_release);
+    }
+
+    void finishNamRebuild(std::uint64_t generation) noexcept
+    {
+        namCompleted.store(generation, std::memory_order_release);
+        namRebuildClaimed.store(false, std::memory_order_release);
+    }
+
+    void finishImpulseRebuild(std::uint64_t generation) noexcept
+    {
+        impulseCompleted.store(generation, std::memory_order_release);
+        impulseRebuildClaimed.store(false, std::memory_order_release);
+    }
+
+    void publishNam(
+        const juce::File& root,
+        const std::vector<NamModelLibraryEntry>& entries)
+    {
+        const juce::ScopedLock lock(catalogLock);
+        namCatalogRoot = root.getFullPathName();
+        namCatalog =
+            std::make_shared<const std::vector<NamModelLibraryEntry>>(
+                entries);
+        namCatalogGeneration.fetch_add(1, std::memory_order_release);
+    }
+
+    void publishImpulse(
+        const juce::File& root,
+        const std::vector<ImpulseResponseLibraryEntry>& entries)
+    {
+        const juce::ScopedLock lock(catalogLock);
+        impulseCatalogRoot = root.getFullPathName();
+        impulseCatalog = std::make_shared<
+            const std::vector<ImpulseResponseLibraryEntry>>(entries);
+        impulseCatalogGeneration.fetch_add(1, std::memory_order_release);
+    }
+
+    std::shared_ptr<const std::vector<NamModelLibraryEntry>>
+    namCatalogSnapshot(
+        const juce::File& root, std::uint64_t& observedGeneration)
+    {
+        const auto generation =
+            namCatalogGeneration.load(std::memory_order_acquire);
+        if (generation == observedGeneration)
+            return {};
+        const juce::ScopedLock lock(catalogLock);
+        if (namCatalogRoot != root.getFullPathName()
+            || namCatalog == nullptr)
+            return {};
+        observedGeneration = generation;
+        return namCatalog;
+    }
+
+    std::shared_ptr<const std::vector<ImpulseResponseLibraryEntry>>
+    impulseCatalogSnapshot(
+        const juce::File& root, std::uint64_t& observedGeneration)
+    {
+        const auto generation =
+            impulseCatalogGeneration.load(std::memory_order_acquire);
+        if (generation == observedGeneration)
+            return {};
+        const juce::ScopedLock lock(catalogLock);
+        if (impulseCatalogRoot != root.getFullPathName()
+            || impulseCatalog == nullptr)
+            return {};
+        observedGeneration = generation;
+        return impulseCatalog;
+    }
+
+    std::vector<juce::File> cabinetCatalog(const juce::File& root)
+    {
+        const juce::ScopedLock lock(catalogLock);
+        return cabinetCatalogRoot == root.getFullPathName()
+            ? cabinetFiles : std::vector<juce::File> {};
+    }
+
+#if defined(MEGADSP_TESTS)
+    void scanNowForTesting()
+    {
+        scan();
+    }
+#endif
+
+private:
+    void run() override
+    {
+        scan();
+        while (!threadShouldExit())
+        {
+            wait(30000);
+            if (!threadShouldExit())
+                scan();
+        }
+    }
+
+    void scan()
+    {
+        const juce::ScopedLock scanGuard(scanLock);
+        const auto namRoot = juce::File(globalNamModelRoot());
+        const auto impulseRoot = juce::File(globalImpulseResponseRoot());
+        const auto cabinetRoot = juce::File(globalNamCabinetRoot());
+        auto nextNam = scanLibraryFiles(namRoot, true);
+        auto nextImpulse = scanLibraryFiles(impulseRoot, false);
+        std::vector<juce::File> nextCabinetFiles;
+        auto nextCabinet = scanLibraryFiles(
+            cabinetRoot, false, &nextCabinetFiles);
+
+        const juce::ScopedLock lock(catalogLock);
+        updateMonitoredLibrary(
+            namRoot, nextNam, namRootPath, namStamps, namInitialized,
+            namRequested);
+        updateMonitoredLibrary(
+            impulseRoot, nextImpulse, impulseRootPath, impulseStamps,
+            impulseInitialized, impulseRequested);
+        const auto cabinetChanged = updateMonitoredLibrary(
+            cabinetRoot, nextCabinet, cabinetRootPath, cabinetStamps,
+            cabinetInitialized, cabinetGeneration);
+        if (cabinetChanged || cabinetCatalogRoot.isEmpty())
+        {
+            cabinetCatalogRoot = cabinetRoot.getFullPathName();
+            cabinetFiles = std::move(nextCabinetFiles);
+        }
+    }
+
+    static bool updateMonitoredLibrary(
+        const juce::File& root,
+        std::vector<LibraryFileStamp>& next,
+        juce::String& previousRoot,
+        std::vector<LibraryFileStamp>& previous,
+        bool& initialized,
+        std::atomic<std::uint64_t>& generation)
+    {
+        const auto rootPath = root.getFullPathName();
+        const auto changed = initialized
+            && (rootPath != previousRoot || next != previous);
+        previousRoot = rootPath;
+        previous = std::move(next);
+        initialized = true;
+        if (changed)
+            generation.fetch_add(1, std::memory_order_release);
+        return changed;
+    }
+
+    juce::CriticalSection scanLock;
+    juce::CriticalSection catalogLock;
+    juce::String namRootPath;
+    juce::String impulseRootPath;
+    juce::String cabinetRootPath;
+    std::vector<LibraryFileStamp> namStamps;
+    std::vector<LibraryFileStamp> impulseStamps;
+    std::vector<LibraryFileStamp> cabinetStamps;
+    bool namInitialized = false;
+    bool impulseInitialized = false;
+    bool cabinetInitialized = false;
+    std::atomic<std::uint64_t> namRequested { 0 };
+    std::atomic<std::uint64_t> namCompleted { 0 };
+    std::atomic<std::uint64_t> impulseRequested { 0 };
+    std::atomic<std::uint64_t> impulseCompleted { 0 };
+    std::atomic<std::uint64_t> cabinetGeneration { 0 };
+    std::atomic<bool> namRebuildClaimed { false };
+    std::atomic<bool> impulseRebuildClaimed { false };
+    juce::String namCatalogRoot;
+    juce::String impulseCatalogRoot;
+    juce::String cabinetCatalogRoot;
+    std::shared_ptr<const std::vector<NamModelLibraryEntry>> namCatalog;
+    std::shared_ptr<
+        const std::vector<ImpulseResponseLibraryEntry>> impulseCatalog;
+    std::vector<juce::File> cabinetFiles;
+    std::atomic<std::uint64_t> namCatalogGeneration { 0 };
+    std::atomic<std::uint64_t> impulseCatalogGeneration { 0 };
+};
+
+AutomaticLibraryCoordinator& automaticLibraryCoordinator()
+{
+    static AutomaticLibraryCoordinator coordinator;
+    return coordinator;
+}
+
 float smoothSnapshotFade(float position) noexcept
 {
     position = juce::jlimit(0.0f, 1.0f, position);
@@ -1331,6 +1647,7 @@ MegaDSPAudioProcessor::MegaDSPAudioProcessor()
 {
     inheritGlobalImpulseResponseRoot(parameters.state);
     inheritGlobalNamModelRoot(parameters.state);
+    (void) automaticLibraryCoordinator();
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
         pendingBuiltInCabinetLoads[static_cast<size_t>(slot)].store(
@@ -1371,6 +1688,7 @@ MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
 {
     stopTimer();
     libraryIndexPool.removeAllJobs(true, 30000);
+    releaseAutomaticLibraryClaims();
     impulseResponseLoadPool.removeAllJobs(true, 30000);
     namModelLoadPool.removeAllJobs(true, 30000);
     namModelDisposalPool.removeAllJobs(true, 30000);
@@ -4239,6 +4557,7 @@ juce::Result MegaDSPAudioProcessor::setImpulseResponseRootDirectory(
         return juce::Result::fail(
             "Choose an existing impulse response directory.");
     libraryIndexPool.removeAllJobs(true, 30000);
+    releaseAutomaticLibraryClaims();
     impulseResponseIndexInProgress.store(
         false, std::memory_order_release);
     namModelIndexInProgress.store(false, std::memory_order_release);
@@ -4263,6 +4582,7 @@ juce::Result MegaDSPAudioProcessor::setImpulseResponseRootDirectory(
         if (persisted.failed())
             return persisted;
     }
+    automaticLibraryCoordinator().requestScan();
     updateHostDisplay(
         ChangeDetails{}.withNonParameterStateChanged(true));
     return result;
@@ -4329,6 +4649,7 @@ juce::Result MegaDSPAudioProcessor::rebuildImpulseResponseLibrary()
     }
     const auto result =
         persistImpulseResponseLibraryCache(root, cached);
+    automaticLibraryCoordinator().publishImpulse(root, cached);
     libraryGeneration.fetch_add(1, std::memory_order_release);
     return result;
 }
@@ -4361,6 +4682,8 @@ void MegaDSPAudioProcessor::ensureImpulseResponseLibrary()
         impulseResponseLibraryValidated.store(
             true, std::memory_order_release);
         libraryGeneration.fetch_add(1, std::memory_order_release);
+        automaticLibraryCoordinator().publishImpulse(
+            rootDirectory, impulseResponseLibrary);
         return;
     }
     auto discovered = discoverImpulseResponsePaths(rootDirectory);
@@ -4373,6 +4696,162 @@ void MegaDSPAudioProcessor::ensureImpulseResponseLibrary()
     }
     libraryGeneration.fetch_add(1, std::memory_order_release);
     scheduleImpulseResponseLibraryRebuild();
+}
+
+void MegaDSPAudioProcessor::releaseAutomaticLibraryClaims()
+{
+    auto& coordinator = automaticLibraryCoordinator();
+    if (automaticImpulseRebuildOwned.exchange(
+            false, std::memory_order_acq_rel))
+        coordinator.releaseImpulseRebuild();
+    if (automaticNamRebuildOwned.exchange(
+            false, std::memory_order_acq_rel))
+        coordinator.releaseNamRebuild();
+}
+
+void MegaDSPAudioProcessor::pollAutomaticLibraryUpdates()
+{
+    auto& coordinator = automaticLibraryCoordinator();
+    auto impulseRootPath = parameters.state.getProperty(
+        "impulseResponseRootDirectory").toString();
+    if (impulseRootPath.isEmpty())
+        impulseRootPath = coordinator.monitoredImpulseRoot();
+    const auto impulseRoot = juce::File(impulseRootPath);
+    auto namRootPath = parameters.state.getProperty(
+        "namModelRootDirectory").toString();
+    if (namRootPath.isEmpty())
+        namRootPath = coordinator.monitoredNamRoot();
+    const auto namRoot = juce::File(namRootPath);
+
+    if (!impulseResponseIndexInProgress.load(std::memory_order_acquire))
+    {
+        const auto shared = coordinator.impulseCatalogSnapshot(
+            impulseRoot, observedSharedImpulseResponseGeneration);
+        if (shared != nullptr)
+        {
+            auto expected = false;
+            if (impulseResponseIndexInProgress.compare_exchange_strong(
+                    expected, true, std::memory_order_acq_rel))
+                libraryIndexPool.addJob(std::function<void()> {
+                    [this, impulseRoot, shared]
+                    {
+                        {
+                            const juce::ScopedLock lock(
+                                impulseResponseLibraryLock);
+                            impulseResponseLibrary = *shared;
+                            indexedImpulseResponseRoot =
+                                impulseRoot.getFullPathName();
+                            impulseResponseLibraryValidated.store(
+                                true, std::memory_order_release);
+                        }
+                        libraryGeneration.fetch_add(
+                            1, std::memory_order_release);
+                        impulseResponseIndexInProgress.store(
+                            false, std::memory_order_release);
+                    } });
+        }
+    }
+    if (!namModelIndexInProgress.load(std::memory_order_acquire))
+    {
+        const auto shared = coordinator.namCatalogSnapshot(
+            namRoot, observedSharedNamModelGeneration);
+        if (shared != nullptr)
+        {
+            auto expected = false;
+            if (namModelIndexInProgress.compare_exchange_strong(
+                    expected, true, std::memory_order_acq_rel))
+                libraryIndexPool.addJob(std::function<void()> {
+                    [this, namRoot, shared]
+                    {
+                        {
+                            const juce::ScopedLock lock(namModelLibraryLock);
+                            namModelLibrary = *shared;
+                            indexedNamModelRoot =
+                                namRoot.getFullPathName();
+                            namModelLibraryValidated.store(
+                                true, std::memory_order_release);
+                        }
+                        libraryGeneration.fetch_add(
+                            1, std::memory_order_release);
+                        namModelIndexInProgress.store(
+                            false, std::memory_order_release);
+                    } });
+        }
+    }
+
+    const auto globalImpulseRoot = coordinator.monitoredImpulseRoot();
+    const auto impulseRequest = coordinator.requestedImpulseGeneration();
+    if (impulseRoot.getFullPathName() == globalImpulseRoot
+        && impulseRequest > coordinator.completedImpulseGeneration())
+    {
+        auto expected = false;
+        if (impulseResponseIndexInProgress.compare_exchange_strong(
+                expected, true, std::memory_order_acq_rel))
+        {
+            if (coordinator.claimImpulseRebuild())
+            {
+                automaticImpulseRebuildOwned.store(
+                    true, std::memory_order_release);
+                libraryIndexPool.addJob(std::function<void()> {
+                    [this, impulseRequest]
+                    {
+                        const auto result = rebuildImpulseResponseLibrary();
+                        if (result.failed())
+                            megadsp::Diagnostics::instance().log(
+                                "ir-auto-index-failed",
+                                result.getErrorMessage());
+                        automaticImpulseRebuildOwned.store(
+                            false, std::memory_order_release);
+                        automaticLibraryCoordinator()
+                            .finishImpulseRebuild(impulseRequest);
+                        impulseResponseIndexInProgress.store(
+                            false, std::memory_order_release);
+                    } });
+            }
+            else
+            {
+                impulseResponseIndexInProgress.store(
+                    false, std::memory_order_release);
+            }
+        }
+    }
+
+    const auto globalNamRoot = coordinator.monitoredNamRoot();
+    const auto namRequest = coordinator.requestedNamGeneration();
+    if (namRoot.getFullPathName() == globalNamRoot
+        && namRequest > coordinator.completedNamGeneration())
+    {
+        auto expected = false;
+        if (namModelIndexInProgress.compare_exchange_strong(
+                expected, true, std::memory_order_acq_rel))
+        {
+            if (coordinator.claimNamRebuild())
+            {
+                automaticNamRebuildOwned.store(
+                    true, std::memory_order_release);
+                libraryIndexPool.addJob(std::function<void()> {
+                    [this, namRequest]
+                    {
+                        const auto result = rebuildNamModelLibrary();
+                        if (result.failed())
+                            megadsp::Diagnostics::instance().log(
+                                "nam-auto-index-failed",
+                                result.getErrorMessage());
+                        automaticNamRebuildOwned.store(
+                            false, std::memory_order_release);
+                        automaticLibraryCoordinator()
+                            .finishNamRebuild(namRequest);
+                        namModelIndexInProgress.store(
+                            false, std::memory_order_release);
+                    } });
+            }
+            else
+            {
+                namModelIndexInProgress.store(
+                    false, std::memory_order_release);
+            }
+        }
+    }
 }
 
 void MegaDSPAudioProcessor::scheduleImpulseResponseLibraryRebuild()
@@ -4576,7 +5055,10 @@ juce::Result MegaDSPAudioProcessor::setNamCabinetRootDirectory(
     if (!directory.isDirectory())
         return juce::Result::fail(
             "Choose an existing speaker impulse directory.");
-    return persistGlobalNamCabinetRoot(directory);
+    const auto result = persistGlobalNamCabinetRoot(directory);
+    if (result.wasOk())
+        automaticLibraryCoordinator().requestScan();
+    return result;
 }
 
 juce::Result MegaDSPAudioProcessor::setNamModelRootDirectory(
@@ -4586,6 +5068,7 @@ juce::Result MegaDSPAudioProcessor::setNamModelRootDirectory(
         return juce::Result::fail(
             "Choose an existing NAM model directory.");
     libraryIndexPool.removeAllJobs(true, 30000);
+    releaseAutomaticLibraryClaims();
     impulseResponseIndexInProgress.store(
         false, std::memory_order_release);
     namModelIndexInProgress.store(false, std::memory_order_release);
@@ -4605,6 +5088,7 @@ juce::Result MegaDSPAudioProcessor::setNamModelRootDirectory(
     const auto persisted = persistGlobalNamModelRoot(directory);
     if (persisted.failed())
         return persisted;
+    automaticLibraryCoordinator().requestScan();
     updateHostDisplay(
         ChangeDetails{}.withNonParameterStateChanged(true));
     return juce::Result::ok();
@@ -4652,6 +5136,7 @@ juce::Result MegaDSPAudioProcessor::rebuildNamModelLibrary()
         cached = namModelLibrary;
     }
     const auto result = persistNamModelLibraryCache(root, cached);
+    automaticLibraryCoordinator().publishNam(root, cached);
     libraryGeneration.fetch_add(1, std::memory_order_release);
     return result;
 }
@@ -4683,6 +5168,8 @@ void MegaDSPAudioProcessor::ensureNamModelLibrary()
         namModelLibraryValidated.store(
             true, std::memory_order_release);
         libraryGeneration.fetch_add(1, std::memory_order_release);
+        automaticLibraryCoordinator().publishNam(
+            rootDirectory, namModelLibrary);
         return;
     }
     auto discovered = discoverNamModelPaths(rootDirectory);
@@ -5305,23 +5792,27 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentNamCabinetAsync(
             completed->cabinetEnabled = true;
             completed->preferenceModelPath = modelPath;
 
-            juce::Array<juce::File> discovered;
-            root.findChildFiles(
-                discovered, juce::File::findFiles, true);
-            std::vector<juce::File> files;
-            files.reserve(static_cast<size_t>(discovered.size()));
-            for (const auto& candidate : discovered)
-                if (candidate.hasFileExtension("wav;aif;aiff;flac"))
-                    files.push_back(candidate);
-            std::sort(
-                files.begin(), files.end(),
-                [&root](const auto& left, const auto& right)
-                {
-                    return left.getRelativePathFrom(root)
-                               .compareIgnoreCase(
-                                   right.getRelativePathFrom(root))
-                        < 0;
-                });
+            auto files =
+                automaticLibraryCoordinator().cabinetCatalog(root);
+            if (files.empty())
+            {
+                juce::Array<juce::File> discovered;
+                root.findChildFiles(
+                    discovered, juce::File::findFiles, true);
+                files.reserve(static_cast<size_t>(discovered.size()));
+                for (const auto& candidate : discovered)
+                    if (candidate.hasFileExtension("wav;aif;aiff;flac"))
+                        files.push_back(candidate);
+                std::sort(
+                    files.begin(), files.end(),
+                    [&root](const auto& left, const auto& right)
+                    {
+                        return left.getRelativePathFrom(root)
+                                   .compareIgnoreCase(
+                                       right.getRelativePathFrom(root))
+                            < 0;
+                    });
+            }
 
             completed->result = juce::Result::fail(
                 "The speaker impulse root contains no supported audio files.");
@@ -5698,6 +6189,11 @@ void MegaDSPAudioProcessor::timerCallback()
 {
     finishPendingImpulseResponseLoad();
     finishPendingNamModelLoad();
+    if (++automaticLibraryPollCounter >= 30)
+    {
+        automaticLibraryPollCounter = 0;
+        pollAutomaticLibraryUpdates();
+    }
 
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
@@ -5788,6 +6284,16 @@ void MegaDSPAudioProcessor::finishLibraryIndexForTesting()
     while (libraryIndexPool.getNumJobs() > 0
            && juce::Time::getMillisecondCounterHiRes() < deadline)
         juce::Thread::sleep(1);
+}
+
+void MegaDSPAudioProcessor::refreshAssetLibrariesForTesting()
+{
+    automaticLibraryCoordinator().scanNowForTesting();
+    for (int pass = 0; pass < 3; ++pass)
+    {
+        pollAutomaticLibraryUpdates();
+        finishLibraryIndexForTesting();
+    }
 }
 
 void MegaDSPAudioProcessor::finishImpulseResponseLoadForTesting()

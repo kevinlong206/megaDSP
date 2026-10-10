@@ -2048,6 +2048,19 @@ public:
             expect(irBrowser.setImpulseResponseRootDirectory(
                 irDirectory).wasOk());
             expectEquals(irBrowser.impulseResponseLibrarySize(), 3);
+            irBrowser.refreshAssetLibrariesForTesting();
+            const auto automaticallyAdded =
+                irDirectory.getChildFile("automatic-room.wav");
+            writeImpulse(automaticallyAdded);
+            irBrowser.refreshAssetLibrariesForTesting();
+            expectEquals(irBrowser.impulseResponseLibrarySize(), 4);
+            MegaDSPAudioProcessor sharedIrCatalogBrowser;
+            sharedIrCatalogBrowser.refreshAssetLibrariesForTesting();
+            expectEquals(
+                sharedIrCatalogBrowser.impulseResponseLibrarySize(), 4);
+            expect(automaticallyAdded.deleteFile());
+            irBrowser.refreshAssetLibrariesForTesting();
+            expectEquals(irBrowser.impulseResponseLibrarySize(), 3);
             MegaDSPAudioProcessor freshIrBrowser;
             expectEquals(
                 freshIrBrowser.impulseResponseRootDirectory()

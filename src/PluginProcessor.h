@@ -437,6 +437,8 @@ private:
     void ensureNamModelLibrary();
     void scheduleImpulseResponseLibraryRebuild();
     void scheduleNamModelLibraryRebuild();
+    void pollAutomaticLibraryUpdates();
+    void releaseAutomaticLibraryClaims();
     void finishPendingImpulseResponseLoad();
     void finishPendingNamModelLoad();
     void disposeNamModelAsync(megadsp::PreparedNamModelPtr);
@@ -527,12 +529,20 @@ private:
     std::unique_ptr<PendingImpulseResponseLoad>
         pendingImpulseResponseLoad;
     juce::ThreadPool impulseResponseLoadPool { 1 };
-    juce::ThreadPool libraryIndexPool { 1 };
+    juce::ThreadPool libraryIndexPool {
+        1, juce::Thread::osDefaultStackSize,
+        juce::Thread::Priority::background
+    };
     std::atomic<bool> impulseResponseIndexInProgress { false };
     std::atomic<bool> namModelIndexInProgress { false };
     std::atomic<bool> impulseResponseLibraryValidated { false };
     std::atomic<bool> namModelLibraryValidated { false };
     std::atomic<std::uint64_t> libraryGeneration { 0 };
+    std::uint64_t observedSharedImpulseResponseGeneration = 0;
+    std::uint64_t observedSharedNamModelGeneration = 0;
+    std::atomic<bool> automaticImpulseRebuildOwned { false };
+    std::atomic<bool> automaticNamRebuildOwned { false };
+    int automaticLibraryPollCounter = 0;
     juce::CriticalSection namModelLibraryLock;
     std::vector<NamModelLibraryEntry> namModelLibrary;
     juce::String indexedNamModelRoot;
@@ -624,6 +634,7 @@ private:
 #if defined(MEGADSP_TESTS)
 public:
     void finishLibraryIndexForTesting();
+    void refreshAssetLibrariesForTesting();
     void finishNamModelLoadForTesting();
     void finishImpulseResponseLoadForTesting();
 #endif

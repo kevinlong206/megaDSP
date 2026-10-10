@@ -338,6 +338,10 @@ names and relative folder paths; direct filter pills select mono, stereo, under
 1 second, 1-3 seconds, or over 3 seconds. Text queries also accept exact
 sample-rate filters such as `sr:48000`. The inline result list shows channel
 layout, sample rate, and duration.
+One process-wide background-priority monitor detects additions, removals, and
+replacements under the shared IR root within 30 seconds. Metadata validation
+and cache replacement remain off the message and audio threads, and every open
+megaDSP instance adopts the completed catalog.
 **< IR** and **IR >** browse the same validated recursive index in
 case-insensitive path order and wrap at either end.
 
@@ -907,6 +911,9 @@ Clicking a row once schedules that model for immediate background preparation
 and swaps it in when ready. The recursive
 model library uses one root directory, and megaDSP persists it in both project
 state and user settings so new instances inherit it across DAW restarts. The
+process-wide background-priority library monitor also tracks the NAM model and
+NAM cabinet IR roots, coalesces filesystem changes, and publishes completed
+catalog updates to every open instance without interrupting the current model.
 catalog accepts structurally valid supported `.nam` files and ignores malformed
 or unsupported entries. The compact list filters model names, relative paths,
 amp/capture metadata, authors, and architectures; queries also accept

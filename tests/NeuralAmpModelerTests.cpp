@@ -946,6 +946,18 @@ public:
             expectEquals(
                 source.namCabinetPath(0), first.getFullPathName());
             expect(source.isNamCabinetEnabled(0));
+            source.refreshAssetLibrariesForTesting();
+            const auto automaticallyAdded = writeImpulse(
+                root.getChildFile("C.wav"), 16);
+            expect(automaticallyAdded.existsAsFile());
+            source.refreshAssetLibrariesForTesting();
+            expect(source.loadAdjacentNamCabinetAsync(0, -1).wasOk());
+            source.finishNamModelLoadForTesting();
+            expectEquals(
+                source.namCabinetPath(0),
+                automaticallyAdded.getFullPathName());
+            expect(source.loadNamCabinetAsync(0, first).wasOk());
+            source.finishNamModelLoadForTesting();
 
             const auto modelRoot =
                 juce::File::getSpecialLocation(
@@ -1216,6 +1228,18 @@ public:
             expectSearchCount("cab:no", 2);
             expectSearchCount("direct", 2);
             expect(browser.searchNamModels("a2").empty());
+            browser.refreshAssetLibrariesForTesting();
+            const auto automaticallyAdded =
+                root.getChildFile("automatic-update.nam");
+            expect(automaticallyAdded.replaceWithText(linearNamJson()));
+            browser.refreshAssetLibrariesForTesting();
+            expectEquals(browser.namModelLibrarySize(), 4);
+            MegaDSPAudioProcessor sharedCatalogBrowser;
+            sharedCatalogBrowser.refreshAssetLibrariesForTesting();
+            expectEquals(sharedCatalogBrowser.namModelLibrarySize(), 4);
+            expect(automaticallyAdded.deleteFile());
+            browser.refreshAssetLibrariesForTesting();
+            expectEquals(browser.namModelLibrarySize(), 3);
             expect(browser.setNamModelFavorite(
                        pedalModel, true).wasOk());
             const auto favorites =
