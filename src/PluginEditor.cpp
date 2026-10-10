@@ -1576,6 +1576,70 @@ public:
                 graph->repaint();
             };
             addAndMakeVisible(clearNam);
+
+            namCabinetEnabled.setButtonText("IR OFF");
+            namCabinetEnabled.setTooltip(
+                "Enable or disable the speaker impulse for this NAM model.");
+            namCabinetEnabled.onClick = [this]
+            {
+                const auto result = processor.setNamCabinetEnabled(
+                    slot, !processor.isNamCabinetEnabled(slot));
+                if (result.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not change NAM cabinet",
+                        result.getErrorMessage());
+                syncAssetName();
+            };
+            addAndMakeVisible(namCabinetEnabled);
+            loadNamCabinet.setButtonText("LOAD IR");
+            loadNamCabinet.setTooltip(
+                "Load a speaker cabinet WAV, AIFF, or FLAC file.");
+            loadNamCabinet.onClick = [this]
+            {
+                namCabinetChooser = std::make_unique<juce::FileChooser>(
+                    "Load NAM speaker impulse",
+                    processor.namCabinetRootDirectory(),
+                    "*.wav;*.aif;*.aiff;*.flac");
+                const auto flags =
+                    juce::FileBrowserComponent::openMode
+                    | juce::FileBrowserComponent::canSelectFiles;
+                juce::Component::SafePointer<ModuleCard> safeThis(this);
+                namCabinetChooser->launchAsync(
+                    flags, [safeThis](const juce::FileChooser& chooser)
+                    {
+                        if (safeThis == nullptr)
+                            return;
+                        const auto file = chooser.getResult();
+                        if (file != juce::File())
+                            safeThis->loadNamCabinetFile(file);
+                    });
+            };
+            addAndMakeVisible(loadNamCabinet);
+            previousNamCabinet.setButtonText("<");
+            previousNamCabinet.setTooltip(
+                "Load the previous speaker impulse under the IR root.");
+            previousNamCabinet.onClick =
+                [this] { loadAdjacentNamCabinet(-1); };
+            addAndMakeVisible(previousNamCabinet);
+            nextNamCabinet.setButtonText(">");
+            nextNamCabinet.setTooltip(
+                "Load the next speaker impulse under the IR root.");
+            nextNamCabinet.onClick =
+                [this] { loadAdjacentNamCabinet(1); };
+            addAndMakeVisible(nextNamCabinet);
+            namCabinetRoot.setButtonText("ROOT");
+            namCabinetRoot.setTooltip(
+                "Choose the recursive speaker impulse root directory.");
+            namCabinetRoot.onClick = [this] { chooseNamCabinetRoot(); };
+            addAndMakeVisible(namCabinetRoot);
+            namCabinetName.setColour(
+                juce::Label::textColourId,
+                juce::Colours::white.withAlpha(0.72f));
+            namCabinetName.setFont(juce::FontOptions(10.0f));
+            namCabinetName.setJustificationType(
+                juce::Justification::centredLeft);
+            addAndMakeVisible(namCabinetName);
         }
 
         graph = std::make_unique<megadsp::ui::EffectGraph>(
@@ -1746,6 +1810,18 @@ public:
                     assetRow.removeFromRight(44).reduced(1));
                 loadNam.setBounds(
                     assetRow.removeFromRight(58).reduced(1));
+                auto cabinetRow = bounds.removeFromTop(28);
+                namCabinetEnabled.setBounds(
+                    cabinetRow.removeFromRight(54).reduced(1));
+                nextNamCabinet.setBounds(
+                    cabinetRow.removeFromRight(34).reduced(1));
+                previousNamCabinet.setBounds(
+                    cabinetRow.removeFromRight(34).reduced(1));
+                namCabinetRoot.setBounds(
+                    cabinetRow.removeFromRight(48).reduced(1));
+                loadNamCabinet.setBounds(
+                    cabinetRow.removeFromRight(62).reduced(1));
+                namCabinetName.setBounds(cabinetRow.reduced(4, 1));
             }
             else if (isWormhole)
             {
@@ -2042,6 +2118,27 @@ public:
                           + juce::File(path)
                                 .getFileNameWithoutExtension(),
                 juce::dontSendNotification);
+            const auto cabinetPath = processor.namCabinetPath(slot);
+            namCabinetName.setText(
+                cabinetPath.isEmpty()
+                    ? "CAB  No speaker impulse selected"
+                    : "CAB  "
+                          + juce::File(cabinetPath)
+                                .getFileNameWithoutExtension(),
+                juce::dontSendNotification);
+            const auto enabled =
+                processor.isNamCabinetEnabled(slot);
+            namCabinetEnabled.setButtonText(
+                enabled ? "IR ON" : "IR OFF");
+            namCabinetEnabled.setToggleState(
+                enabled, juce::dontSendNotification);
+            const auto hasModel = path.isNotEmpty();
+            loadNamCabinet.setEnabled(hasModel && !namCabinetLoadPending);
+            previousNamCabinet.setEnabled(
+                hasModel && !namCabinetLoadPending);
+            nextNamCabinet.setEnabled(
+                hasModel && !namCabinetLoadPending);
+            namCabinetEnabled.setEnabled(hasModel);
         }
         else if (supportsImpulseResponse)
         {
@@ -2404,6 +2501,94 @@ private:
                 "Could not browse NAM models",
                 result.getErrorMessage());
         }
+    }
+
+    void loadNamCabinetFile(const juce::File& file)
+    {
+        if (namCabinetLoadPending)
+            return;
+        namCabinetLoadPending = true;
+        const juce::Component::SafePointer<ModuleCard> safeThis(this);
+        const auto result = processor.loadNamCabinetAsync(
+            slot, file,
+            [safeThis](const juce::Result& completed)
+            {
+                if (safeThis == nullptr)
+                    return;
+                safeThis->namCabinetLoadPending = false;
+                if (completed.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not load NAM cabinet",
+                        completed.getErrorMessage());
+                safeThis->syncAssetName();
+            });
+        if (result.failed())
+        {
+            namCabinetLoadPending = false;
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                "Could not load NAM cabinet",
+                result.getErrorMessage());
+        }
+    }
+
+    void loadAdjacentNamCabinet(int direction)
+    {
+        if (namCabinetLoadPending)
+            return;
+        namCabinetLoadPending = true;
+        const juce::Component::SafePointer<ModuleCard> safeThis(this);
+        const auto result = processor.loadAdjacentNamCabinetAsync(
+            slot, direction,
+            [safeThis](const juce::Result& completed)
+            {
+                if (safeThis == nullptr)
+                    return;
+                safeThis->namCabinetLoadPending = false;
+                if (completed.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not browse NAM cabinets",
+                        completed.getErrorMessage());
+                safeThis->syncAssetName();
+            });
+        if (result.failed())
+        {
+            namCabinetLoadPending = false;
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                "Could not browse NAM cabinets",
+                result.getErrorMessage());
+        }
+    }
+
+    void chooseNamCabinetRoot()
+    {
+        namCabinetRootChooser = std::make_unique<juce::FileChooser>(
+            "Choose speaker impulse root directory",
+            processor.namCabinetRootDirectory());
+        const auto flags =
+            juce::FileBrowserComponent::openMode
+            | juce::FileBrowserComponent::canSelectDirectories;
+        juce::Component::SafePointer<ModuleCard> safeThis(this);
+        namCabinetRootChooser->launchAsync(
+            flags, [safeThis](const juce::FileChooser& chooser)
+            {
+                if (safeThis == nullptr)
+                    return;
+                const auto directory = chooser.getResult();
+                if (!directory.isDirectory())
+                    return;
+                const auto result =
+                    safeThis->processor.setNamCabinetRootDirectory(
+                        directory);
+                if (result.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not set speaker impulse root",
+                        result.getErrorMessage());
+            });
     }
 
     void showAssetLibrarySearch(
@@ -2778,6 +2963,7 @@ private:
     bool isWormhole = false;
     bool supportsNamModel = false;
     bool namModelLoadPending = false;
+    bool namCabinetLoadPending = false;
     bool impulseResponseLoadPending = false;
     juce::Label name;
     WidgetActionButton bypass { WidgetActionButton::Icon::power };
@@ -2802,6 +2988,14 @@ private:
     juce::TextButton clearNam;
     std::unique_ptr<juce::FileChooser> namChooser;
     std::unique_ptr<juce::FileChooser> namRootChooser;
+    juce::Label namCabinetName;
+    juce::TextButton loadNamCabinet;
+    juce::TextButton previousNamCabinet;
+    juce::TextButton nextNamCabinet;
+    juce::TextButton namCabinetRoot;
+    juce::TextButton namCabinetEnabled;
+    std::unique_ptr<juce::FileChooser> namCabinetChooser;
+    std::unique_ptr<juce::FileChooser> namCabinetRootChooser;
     std::unique_ptr<megadsp::ui::EffectGraph> graph;
     ControlsOverlay controlsOverlay;
     std::array<MeteredSlider, megadsp::controlsPerSlot> sliders;

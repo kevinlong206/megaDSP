@@ -77,6 +77,14 @@ public:
     virtual bool isNamModelReady() const noexcept = 0;
     virtual NamModelInfo namModelInfo() const = 0;
     virtual int namLatencySamples() const noexcept = 0;
+    virtual juce::Result prepareNamCabinet(
+        const juce::File&, PreparedNamModelPtr&) = 0;
+    virtual bool commitPreparedNamCabinet(PreparedNamModelPtr&) = 0;
+    virtual void clearNamCabinet() = 0;
+    virtual void setNamCabinetEnabled(bool) noexcept = 0;
+    virtual bool isNamCabinetEnabled() const noexcept = 0;
+    virtual bool hasNamCabinet() const noexcept = 0;
+    virtual juce::String namCabinetPath() const = 0;
 };
 
 class NeuralAmpModelerModule final : public DspModule,
@@ -109,6 +117,14 @@ public:
     bool isNamModelReady() const noexcept override;
     NamModelInfo namModelInfo() const override;
     int namLatencySamples() const noexcept override;
+    juce::Result prepareNamCabinet(
+        const juce::File&, PreparedNamModelPtr&) override;
+    bool commitPreparedNamCabinet(PreparedNamModelPtr&) override;
+    void clearNamCabinet() override;
+    void setNamCabinetEnabled(bool) noexcept override;
+    bool isNamCabinetEnabled() const noexcept override;
+    bool hasNamCabinet() const noexcept override;
+    juce::String namCabinetPath() const override;
 
 private:
     struct Biquad
@@ -130,12 +146,16 @@ private:
     struct ModelVariant;
     struct ChannelState;
     struct PreparedLoad;
+    struct CabinetEngine;
+    struct PreparedCabinet;
 
     static constexpr int maxChannels = 2;
 
     // Each channel owns the full-quality model selected during non-RT loading.
     std::unique_ptr<ChannelState> channels[maxChannels];
+    std::unique_ptr<CabinetEngine> cabinet;
     juce::AudioBuffer<float> wetBuffer;
+    juce::AudioBuffer<float> cabinetDryBuffer;
     std::array<std::array<Biquad, 3>, maxChannels> toneFilters {};
     std::array<juce::SmoothedValue<float>, 5> controlSmoothers {};
     std::array<std::vector<float>, 5> controlFrames;
@@ -144,10 +164,16 @@ private:
     int preparedBlock = 512;
     int preparedChans = 2;
     std::atomic<bool> modelReady { false };
+    std::atomic<bool> cabinetReady { false };
+    std::atomic<bool> cabinetEnabled { false };
     std::atomic<int> reportedLatency { 0 };
+    int modelLatency = 0;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>
+        cabinetMix;
 
     mutable juce::CriticalSection infoLock;
     NamModelInfo currentInfo;
+    juce::String currentCabinetPath;
 
     void updateToneStack(float bassDb, float midDb, float trebleDb) noexcept;
 };

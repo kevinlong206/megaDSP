@@ -227,6 +227,99 @@ juce::String globalNamModelRoot()
     return settings.getValue("namModelRootDirectory");
 }
 
+juce::String globalNamCabinetRoot()
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    juce::PropertiesFile settings(
+        globalSettingsFile(), globalSettingsOptions());
+    return settings.getValue("namCabinetRootDirectory");
+}
+
+struct NamCabinetPreference
+{
+    juce::String impulsePath;
+    bool enabled = false;
+    bool exists = false;
+};
+
+bool defaultNamCabinetEnabled(const juce::File& model)
+{
+    const auto name = model.getFileNameWithoutExtension();
+    if (name.containsIgnoreCase("Cab"))
+        return false;
+    return name.contains("DI");
+}
+
+NamCabinetPreference namCabinetPreference(const juce::String& modelPath)
+{
+    NamCabinetPreference preference;
+    preference.enabled =
+        defaultNamCabinetEnabled(juce::File(modelPath));
+    if (modelPath.isEmpty())
+        return preference;
+
+    const juce::ScopedLock lock(globalSettingsLock());
+    juce::PropertiesFile settings(
+        globalSettingsFile(), globalSettingsOptions());
+    const auto xml = juce::XmlDocument::parse(
+        settings.getValue("namCabinetPreferences"));
+    if (xml == nullptr || !xml->hasTagName("NAM_CABINETS"))
+        return preference;
+    for (auto* child : xml->getChildWithTagNameIterator("MODEL"))
+        if (child->getStringAttribute("path") == modelPath)
+        {
+            preference.impulsePath =
+                child->getStringAttribute("impulse");
+            preference.enabled =
+                child->getBoolAttribute("enabled");
+            preference.exists = true;
+            break;
+        }
+    return preference;
+}
+
+juce::Result persistNamCabinetPreference(
+    const juce::String& modelPath, const juce::String& impulsePath,
+    bool enabled)
+{
+    if (modelPath.isEmpty())
+        return juce::Result::fail(
+            "Load a NAM model before choosing a cabinet impulse.");
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto file = globalSettingsFile();
+    const auto directoryResult =
+        file.getParentDirectory().createDirectory();
+    if (directoryResult.failed())
+        return directoryResult;
+    juce::PropertiesFile settings(file, globalSettingsOptions());
+    auto xml = juce::XmlDocument::parse(
+        settings.getValue("namCabinetPreferences"));
+    if (xml == nullptr || !xml->hasTagName("NAM_CABINETS"))
+        xml = std::make_unique<juce::XmlElement>("NAM_CABINETS");
+
+    juce::XmlElement* target = nullptr;
+    for (auto* child : xml->getChildWithTagNameIterator("MODEL"))
+        if (child->getStringAttribute("path") == modelPath)
+        {
+            target = child;
+            break;
+        }
+    if (target == nullptr)
+    {
+        target = new juce::XmlElement("MODEL");
+        xml->addChildElement(target);
+    }
+    target->setAttribute("path", modelPath);
+    target->setAttribute("impulse", impulsePath);
+    target->setAttribute("enabled", enabled);
+    settings.setValue(
+        "namCabinetPreferences", xml->toString());
+    return settings.saveIfNeeded()
+        ? juce::Result::ok()
+        : juce::Result::fail(
+              "Could not save the NAM cabinet preference.");
+}
+
 juce::String globalWidgetSizePreference()
 {
     const juce::ScopedLock lock(globalSettingsLock());
@@ -320,6 +413,23 @@ juce::Result persistGlobalNamModelRoot(const juce::File& root)
         ? juce::Result::ok()
         : juce::Result::fail(
               "Could not save the global NAM library root.");
+}
+
+juce::Result persistGlobalNamCabinetRoot(const juce::File& root)
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto file = globalSettingsFile();
+    const auto directoryResult =
+        file.getParentDirectory().createDirectory();
+    if (directoryResult.failed())
+        return directoryResult;
+    juce::PropertiesFile settings(file, globalSettingsOptions());
+    settings.setValue(
+        "namCabinetRootDirectory", root.getFullPathName());
+    return settings.saveIfNeeded()
+        ? juce::Result::ok()
+        : juce::Result::fail(
+              "Could not save the global NAM cabinet IR root.");
 }
 
 juce::Result seedGlobalImpulseResponseRoot(
@@ -1759,7 +1869,34 @@ void MegaDSPAudioProcessor::restoreSnapshotAssets(int index)
             state.slots[static_cast<size_t>(slot)].namModelPath;
         if (nam.isNotEmpty())
         {
-            const auto result = rack.loadNamModel(slot, juce::File(nam));
+            megadsp::EffectRack::PreparedNamModelLoad modelLoad;
+            megadsp::EffectRack::PreparedNamModelLoad cabinetLoad;
+            auto result = rack.prepareNamModel(
+                slot, juce::File(nam), modelLoad);
+            const auto preference = namCabinetPreference(nam);
+            const auto impulse = juce::File(preference.impulsePath);
+            if (result.wasOk() && impulse.existsAsFile())
+                result = rack.prepareNamCabinet(
+                    slot, impulse, cabinetLoad);
+            else if (result.wasOk()
+                     && preference.impulsePath.isNotEmpty())
+                result = juce::Result::fail(
+                    "NAM cabinet impulse not found: "
+                    + preference.impulsePath);
+            if (result.wasOk())
+            {
+                auto committed = rack.commitNamModel(modelLoad);
+                if (committed && cabinetLoad.prepared != nullptr)
+                    committed = rack.commitNamCabinet(cabinetLoad);
+                else if (committed)
+                    rack.clearNamCabinet(slot);
+                if (committed)
+                    rack.setNamCabinetEnabled(
+                        slot, preference.enabled);
+                else
+                    result = juce::Result::fail(
+                        "The NAM model was superseded.");
+            }
             if (result.failed())
                 state.error += "NAM slot " + juce::String(slot + 1)
                                + ": " + result.getErrorMessage() + " ";
@@ -3606,6 +3743,21 @@ juce::File MegaDSPAudioProcessor::namModelRootDirectory() const
     return root.isDirectory() ? root : juce::File();
 }
 
+juce::File MegaDSPAudioProcessor::namCabinetRootDirectory() const
+{
+    const auto root = juce::File(globalNamCabinetRoot());
+    return root.isDirectory() ? root : juce::File();
+}
+
+juce::Result MegaDSPAudioProcessor::setNamCabinetRootDirectory(
+    const juce::File& directory)
+{
+    if (!directory.isDirectory())
+        return juce::Result::fail(
+            "Choose an existing speaker impulse directory.");
+    return persistGlobalNamCabinetRoot(directory);
+}
+
 juce::Result MegaDSPAudioProcessor::setNamModelRootDirectory(
     const juce::File& directory)
 {
@@ -4008,6 +4160,31 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentNamModelAsync(
                     slot, resolved, completed->load);
                 prepared = preparationResult.wasOk();
             }
+            if (prepared)
+            {
+                const auto preference = namCabinetPreference(
+                    resolved.getFullPathName());
+                completed->cabinetEnabled = preference.enabled;
+                completed->clearCabinet = true;
+                const auto impulse = juce::File(preference.impulsePath);
+                if (preference.impulsePath.isNotEmpty()
+                    && !impulse.existsAsFile())
+                {
+                    preparationResult = juce::Result::fail(
+                        "NAM cabinet impulse not found: "
+                        + preference.impulsePath);
+                    prepared = false;
+                }
+                else if (impulse.existsAsFile())
+                {
+                    preparationResult = rack->prepareNamCabinet(
+                        slot, impulse, completed->cabinetLoad);
+                    if (preparationResult.failed())
+                        prepared = false;
+                    else
+                        completed->clearCabinet = false;
+                }
+            }
             completed->result = prepared
                 ? juce::Result::ok() : preparationResult;
             {
@@ -4039,6 +4216,26 @@ juce::Result MegaDSPAudioProcessor::loadNamModelAsync(
             completed->callback = std::move(completionCallback);
             completed->result =
                 rack->prepareNamModel(slot, file, completed->load);
+            if (completed->result.wasOk())
+            {
+                const auto preference = namCabinetPreference(
+                    file.getFullPathName());
+                completed->cabinetEnabled = preference.enabled;
+                completed->clearCabinet = true;
+                const auto impulse = juce::File(preference.impulsePath);
+                if (preference.impulsePath.isNotEmpty()
+                    && !impulse.existsAsFile())
+                    completed->result = juce::Result::fail(
+                        "NAM cabinet impulse not found: "
+                        + preference.impulsePath);
+                else if (impulse.existsAsFile())
+                {
+                    completed->result = rack->prepareNamCabinet(
+                        slot, impulse, completed->cabinetLoad);
+                    if (completed->result.wasOk())
+                        completed->clearCabinet = false;
+                }
+            }
             {
                 const juce::ScopedLock lock(pendingNamModelLoadLock);
                 pendingNamModelLoad = std::move(completed);
@@ -4060,22 +4257,56 @@ void MegaDSPAudioProcessor::finishPendingNamModelLoad()
     auto result = completed->result;
     if (result.wasOk())
     {
-        ScopedProcessorUndoTransaction undo(*this, "Load NAM model");
+        ScopedProcessorUndoTransaction undo(
+            *this,
+            completed->cabinetOnly
+                ? "Load NAM cabinet" : "Load NAM model");
         suspendProcessing(true);
-        const auto committed =
-            completed->rack->commitNamModel(completed->load);
+        auto committed = completed->cabinetOnly
+            ? completed->rack->commitNamCabinet(completed->cabinetLoad)
+            : completed->rack->commitNamModel(completed->load);
+        if (committed && !completed->cabinetOnly)
+        {
+            if (completed->clearCabinet)
+                completed->rack->clearNamCabinet(
+                    completed->load.slot);
+            else
+                committed = completed->rack->commitNamCabinet(
+                    completed->cabinetLoad);
+        }
+        if (committed)
+        {
+            const auto slot = completed->cabinetOnly
+                ? completed->cabinetLoad.slot : completed->load.slot;
+            completed->rack->setNamCabinetEnabled(
+                slot, completed->cabinetEnabled);
+        }
         refreshLatency();
         suspendProcessing(false);
         if (!committed)
         {
             completed->rack->cancelNamModel(completed->load);
+            completed->rack->cancelNamModel(completed->cabinetLoad);
             result = juce::Result::fail(
-                "NAM model commit superseded.");
+                completed->cabinetOnly
+                    ? "NAM cabinet commit superseded."
+                    : "NAM model commit superseded.");
         }
         else
         {
             disposeNamModelAsync(
                 std::move(completed->load.prepared));
+            disposeNamModelAsync(
+                std::move(completed->cabinetLoad.prepared));
+            if (completed->cabinetOnly)
+            {
+                const auto persisted = persistNamCabinetPreference(
+                    completed->preferenceModelPath,
+                    completed->preferenceImpulsePath,
+                    completed->cabinetEnabled);
+                if (persisted.failed())
+                    result = persisted;
+            }
             if (completed->snapshot == getSelectedSnapshot())
                 publishSnapshotToParameters(completed->snapshot);
             updateHostDisplay(
@@ -4087,6 +4318,145 @@ void MegaDSPAudioProcessor::finishPendingNamModelLoad()
         triggerAsyncUpdate();
     if (completed->callback)
         completed->callback(result);
+}
+
+juce::Result MegaDSPAudioProcessor::loadNamCabinetAsync(
+    int slot, const juce::File& file, NamModelLoadCallback callback)
+{
+    const auto modelPath = namModelPath(slot);
+    if (modelPath.isEmpty())
+        return juce::Result::fail(
+            "Load a NAM model before choosing a cabinet impulse.");
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "A model or topology update is already in progress.");
+
+    const auto snapshot = getSelectedSnapshot();
+    auto* rack = snapshotRacks[static_cast<size_t>(snapshot)].get();
+    namModelLoadPool.addJob(std::function<void()> {
+        [this, rack, snapshot, slot, file, modelPath,
+         completionCallback = std::move(callback)]() mutable
+        {
+            auto completed = std::make_unique<PendingNamModelLoad>();
+            completed->rack = rack;
+            completed->snapshot = snapshot;
+            completed->callback = std::move(completionCallback);
+            completed->cabinetOnly = true;
+            completed->cabinetEnabled = true;
+            completed->preferenceModelPath = modelPath;
+            completed->preferenceImpulsePath =
+                file.getFullPathName();
+            completed->result = rack->prepareNamCabinet(
+                slot, file, completed->cabinetLoad);
+            {
+                const juce::ScopedLock lock(pendingNamModelLoadLock);
+                pendingNamModelLoad = std::move(completed);
+            }
+        } });
+    return juce::Result::ok();
+}
+
+juce::Result MegaDSPAudioProcessor::loadAdjacentNamCabinetAsync(
+    int slot, int direction, NamModelLoadCallback callback)
+{
+    if (direction == 0)
+        return juce::Result::fail(
+            "Choose either the previous or next cabinet impulse.");
+    const auto root = namCabinetRootDirectory();
+    if (!root.isDirectory())
+        return juce::Result::fail(
+            "Choose a speaker impulse root directory first.");
+    const auto modelPath = namModelPath(slot);
+    if (modelPath.isEmpty())
+        return juce::Result::fail(
+            "Load a NAM model before choosing a cabinet impulse.");
+    auto expected = false;
+    if (!topologyMutationInProgress.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "A model or topology update is already in progress.");
+
+    const auto snapshot = getSelectedSnapshot();
+    auto* rack = snapshotRacks[static_cast<size_t>(snapshot)].get();
+    const auto currentFile = juce::File(namCabinetPath(slot));
+    namModelLoadPool.addJob(std::function<void()> {
+        [this, rack, snapshot, slot, direction, root, currentFile,
+         modelPath, completionCallback = std::move(callback)]() mutable
+        {
+            auto completed = std::make_unique<PendingNamModelLoad>();
+            completed->rack = rack;
+            completed->snapshot = snapshot;
+            completed->callback = std::move(completionCallback);
+            completed->cabinetOnly = true;
+            completed->cabinetEnabled = true;
+            completed->preferenceModelPath = modelPath;
+
+            juce::Array<juce::File> discovered;
+            root.findChildFiles(
+                discovered, juce::File::findFiles, true);
+            std::vector<juce::File> files;
+            files.reserve(static_cast<size_t>(discovered.size()));
+            for (const auto& candidate : discovered)
+                if (candidate.hasFileExtension("wav;aif;aiff;flac"))
+                    files.push_back(candidate);
+            std::sort(
+                files.begin(), files.end(),
+                [&root](const auto& left, const auto& right)
+                {
+                    return left.getRelativePathFrom(root)
+                               .compareIgnoreCase(
+                                   right.getRelativePathFrom(root))
+                        < 0;
+                });
+
+            completed->result = juce::Result::fail(
+                "The speaker impulse root contains no supported audio files.");
+            if (!files.empty())
+            {
+                const auto current =
+                    std::find(files.begin(), files.end(), currentFile);
+                auto target = direction > 0
+                    ? 0 : static_cast<int>(files.size()) - 1;
+                if (current != files.end())
+                {
+                    const auto currentIndex = static_cast<int>(
+                        std::distance(files.begin(), current));
+                    const auto count = static_cast<int>(files.size());
+                    target = (currentIndex
+                              + (direction > 0 ? 1 : count - 1))
+                        % count;
+                }
+                const auto file =
+                    files[static_cast<size_t>(target)];
+                completed->preferenceImpulsePath =
+                    file.getFullPathName();
+                completed->result = rack->prepareNamCabinet(
+                    slot, file, completed->cabinetLoad);
+            }
+            {
+                const juce::ScopedLock lock(pendingNamModelLoadLock);
+                pendingNamModelLoad = std::move(completed);
+            }
+        } });
+    return juce::Result::ok();
+}
+
+juce::Result MegaDSPAudioProcessor::setNamCabinetEnabled(
+    int slot, bool enabled)
+{
+    const auto modelPath = namModelPath(slot);
+    if (modelPath.isEmpty())
+        return juce::Result::fail(
+            "Load a NAM model before changing its cabinet preference.");
+    getRack().setNamCabinetEnabled(slot, enabled);
+    const auto result = persistNamCabinetPreference(
+        modelPath, namCabinetPath(slot), enabled);
+    if (result.wasOk())
+        updateHostDisplay(
+            ChangeDetails{}.withNonParameterStateChanged(true));
+    return result;
 }
 
 void MegaDSPAudioProcessor::disposeNamModelAsync(
@@ -4122,6 +4492,7 @@ juce::Result MegaDSPAudioProcessor::loadNamModel(
     };
 
     megadsp::EffectRack::PreparedNamModelLoad load;
+    megadsp::EffectRack::PreparedNamModelLoad cabinetLoad;
     auto result = getRack().prepareNamModel(slot, file, load);
     if (result.failed())
     {
@@ -4129,13 +4500,44 @@ juce::Result MegaDSPAudioProcessor::loadNamModel(
         return result;
     }
 
+    const auto preference = namCabinetPreference(file.getFullPathName());
+    const auto impulse = juce::File(preference.impulsePath);
+    if (preference.impulsePath.isNotEmpty()
+        && !impulse.existsAsFile())
+    {
+        getRack().cancelNamModel(load);
+        finishDataMutation();
+        return juce::Result::fail(
+            "NAM cabinet impulse not found: "
+            + preference.impulsePath);
+    }
+    if (impulse.existsAsFile())
+    {
+        result = getRack().prepareNamCabinet(slot, impulse, cabinetLoad);
+        if (result.failed())
+        {
+            getRack().cancelNamModel(load);
+            finishDataMutation();
+            return result;
+        }
+    }
+
     suspendProcessing(true);
-    const auto committed = getRack().commitNamModel(load);
+    auto committed = getRack().commitNamModel(load);
+    if (committed)
+    {
+        if (cabinetLoad.prepared != nullptr)
+            committed = getRack().commitNamCabinet(cabinetLoad);
+        else
+            getRack().clearNamCabinet(slot);
+        getRack().setNamCabinetEnabled(slot, preference.enabled);
+    }
     refreshLatency();
     suspendProcessing(false);
     if (!committed)
     {
         getRack().cancelNamModel(load);
+        getRack().cancelNamModel(cabinetLoad);
         finishDataMutation();
         return juce::Result::fail("NAM model commit superseded.");
     }

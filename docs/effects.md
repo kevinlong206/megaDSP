@@ -883,6 +883,14 @@ The widget keeps model loading and clearing beside the current model name. The
 adjacent **<** and **>** buttons step through the validated recursive library
 and wrap at either end. Its compact visualization is a continuously scrollable
 list of the indexed library with a case-insensitive filter directly above it;
+the second asset row loads an optional speaker-cabinet WAV, AIFF, or FLAC after
+the NAM model. **ROOT** selects a separate recursive speaker-IR directory and
+the adjacent **<** and **>** buttons browse those files directly without search
+indexing. A case-insensitive `Cab` in the NAM filename defaults the cabinet IR
+off; exact-case `DI` defaults it on, with `Cab` taking precedence when both are
+present. **IR ON/OFF** is a per-model manual override. The selected speaker IR
+and override are global preferences keyed by the NAM path, so they are restored
+for that model across plug-in and DAW restarts without saving a preset.
 clicking a row once schedules that model for immediate background preparation
 and swaps it in when ready. The recursive
 model library uses one root directory, and megaDSP persists it in both project

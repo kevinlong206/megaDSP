@@ -200,6 +200,21 @@ public:
     }
     juce::Result loadAdjacentNamModel(int slot, int direction);
     juce::File namModelRootDirectory() const;
+    juce::File namCabinetRootDirectory() const;
+    juce::Result setNamCabinetRootDirectory(const juce::File&);
+    juce::Result loadNamCabinetAsync(
+        int slot, const juce::File&, NamModelLoadCallback = {});
+    juce::Result loadAdjacentNamCabinetAsync(
+        int slot, int direction, NamModelLoadCallback = {});
+    juce::Result setNamCabinetEnabled(int slot, bool);
+    bool isNamCabinetEnabled(int slot) const
+    {
+        return getRack().isNamCabinetEnabled(slot);
+    }
+    juce::String namCabinetPath(int slot) const
+    {
+        return getRack().namCabinetPath(slot);
+    }
     juce::Result clearNamModel(int slot);
     juce::String namModelPath(int slot) const
     {
@@ -482,9 +497,15 @@ private:
     {
         megadsp::EffectRack* rack = nullptr;
         megadsp::EffectRack::PreparedNamModelLoad load;
+        megadsp::EffectRack::PreparedNamModelLoad cabinetLoad;
         juce::Result result = juce::Result::ok();
         NamModelLoadCallback callback;
         int snapshot = -1;
+        bool cabinetOnly = false;
+        bool cabinetEnabled = false;
+        bool clearCabinet = false;
+        juce::String preferenceModelPath;
+        juce::String preferenceImpulsePath;
     };
     juce::CriticalSection pendingNamModelLoadLock;
     std::unique_ptr<PendingNamModelLoad> pendingNamModelLoad;

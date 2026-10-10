@@ -1,4 +1,5 @@
 #include "NeuralAmpModeler.h"
+#include "DspHelpers.h"
 
 #include <NAM/get_dsp.h>
 #include <NAM/container.h>
@@ -15,9 +16,12 @@
 namespace iplug { constexpr double PI = 3.14159265358979323846; }
 #include <ResamplingContainer/ResamplingContainer.h>
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <mutex>
 
 namespace megadsp
@@ -230,9 +234,28 @@ struct NeuralAmpModelerModule::PreparedLoad : public PreparedNamModel
     int latency = 0;
 };
 
+struct NeuralAmpModelerModule::CabinetEngine
+{
+    CabinetEngine()
+        : processor(
+              juce::dsp::Convolution::NonUniform { 256 },
+              detail::convolutionMessageQueue())
+    {
+    }
+
+    juce::dsp::Convolution processor;
+};
+
+struct NeuralAmpModelerModule::PreparedCabinet : public PreparedNamModel
+{
+    std::unique_ptr<CabinetEngine> engine;
+    juce::String path;
+};
+
 NeuralAmpModelerModule::NeuralAmpModelerModule()
 {
     for (auto& c : channels) c = std::make_unique<ChannelState>();
+    cabinet = std::make_unique<CabinetEngine>();
 }
 
 NeuralAmpModelerModule::~NeuralAmpModelerModule() = default;
@@ -296,6 +319,9 @@ void NeuralAmpModelerModule::prepare(const juce::dsp::ProcessSpec& spec)
         smoother.reset(hostRate, 0.025);
     for (auto& frames : controlFrames)
         frames.resize(static_cast<size_t>(preparedBlock));
+    cabinet->processor.prepare(spec);
+    cabinetDryBuffer.setSize(preparedChans, preparedBlock);
+    cabinetMix.reset(hostRate, 0.02);
     reset();
 }
 
@@ -308,6 +334,12 @@ void NeuralAmpModelerModule::reset()
         channels[ch]->clearBufs();
     }
     wetBuffer.clear();
+    cabinetDryBuffer.clear();
+    cabinet->processor.reset();
+    cabinetMix.setCurrentAndTargetValue(
+        cabinetReady.load(std::memory_order_acquire)
+                && cabinetEnabled.load(std::memory_order_acquire)
+            ? 1.0f : 0.0f);
     const std::array<float, 5> defaults { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f };
     for (size_t index = 0; index < controlSmoothers.size(); ++index)
         controlSmoothers[index].setCurrentAndTargetValue(defaults[index]);
@@ -387,6 +419,36 @@ void NeuralAmpModelerModule::process(
     {
         wetBuffer.clear(0, ns);
     }
+
+    const auto cabinetAvailable =
+        cabinetReady.load(std::memory_order_acquire);
+    cabinetMix.setTargetValue(
+        cabinetAvailable
+                && cabinetEnabled.load(std::memory_order_acquire)
+            ? 1.0f : 0.0f);
+    if (cabinetAvailable)
+    {
+        for (int ch = 0; ch < nc; ++ch)
+            cabinetDryBuffer.copyFrom(ch, 0, wetBuffer, ch, 0, ns);
+        juce::dsp::AudioBlock<float> fullWetBlock(wetBuffer);
+        auto wetBlock = fullWetBlock.getSubBlock(
+            0, static_cast<size_t>(ns));
+        juce::dsp::ProcessContextReplacing<float> context(wetBlock);
+        cabinet->processor.process(context);
+        for (int sample = 0; sample < ns; ++sample)
+        {
+            const auto mix = cabinetMix.getNextValue();
+            for (int ch = 0; ch < nc; ++ch)
+            {
+                const auto dry = cabinetDryBuffer.getSample(ch, sample);
+                const auto convolved = wetBuffer.getSample(ch, sample);
+                wetBuffer.setSample(
+                    ch, sample, dry + (convolved - dry) * mix);
+            }
+        }
+    }
+    else
+        cabinetMix.skip(ns);
 
     auto outputIsSafe = true;
     for (int ch = 0; ch < nc && outputIsSafe; ++ch)
@@ -600,6 +662,7 @@ bool NeuralAmpModelerModule::commitPreparedNamModel(PreparedNamModelPtr& p)
         channels[ch] = std::move(ld->ch[ch]);
     }
     reportedLatency.store(ld->latency, std::memory_order_relaxed);
+    modelLatency = ld->latency;
     { const juce::ScopedLock sl(infoLock); currentInfo = ld->info; }
     modelReady.store(true, std::memory_order_release);
     // Return the displaced graphs to the caller so asynchronous hosts can
@@ -621,6 +684,7 @@ void NeuralAmpModelerModule::clearNamModel()
         c->allocate(juce::jmax(1, preparedBlock));
     }
     reportedLatency.store(0, std::memory_order_relaxed);
+    modelLatency = 0;
     { const juce::ScopedLock sl(infoLock); currentInfo = {}; }
 }
 
@@ -635,4 +699,105 @@ NamModelInfo NeuralAmpModelerModule::namModelInfo() const
 
 int NeuralAmpModelerModule::namLatencySamples() const noexcept
 { return reportedLatency.load(std::memory_order_relaxed); }
+
+juce::Result NeuralAmpModelerModule::prepareNamCabinet(
+    const juce::File& file, PreparedNamModelPtr& destination)
+{
+    destination.reset();
+    if (!file.existsAsFile())
+        return juce::Result::fail(
+            "Cabinet impulse response file does not exist.");
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    auto reader = std::unique_ptr<juce::AudioFormatReader>(
+        formats.createReaderFor(file));
+    if (reader == nullptr || reader->lengthInSamples <= 0
+        || reader->sampleRate <= 0.0
+        || reader->lengthInSamples
+               > static_cast<juce::int64>(std::numeric_limits<int>::max()))
+        return juce::Result::fail(
+            "Unsupported, empty, or excessively long cabinet impulse.");
+
+    const auto samples = static_cast<int>(reader->lengthInSamples);
+    const auto channels = juce::jlimit(
+        1, 2, static_cast<int>(reader->numChannels));
+    juce::AudioBuffer<float> decoded(channels, samples);
+    if (!reader->read(
+            &decoded, 0, samples, 0, true, channels > 1))
+        return juce::Result::fail(
+            "Could not decode the cabinet impulse response.");
+
+    auto peak = decoded.getMagnitude(0, 0, samples);
+    for (int channel = 1; channel < channels; ++channel)
+        peak = juce::jmax(
+            peak, decoded.getMagnitude(channel, 0, samples));
+    if (peak > 1.0f)
+        decoded.applyGain(1.0f / peak);
+
+    auto prepared = std::make_unique<PreparedCabinet>();
+    prepared->engine = std::make_unique<CabinetEngine>();
+    prepared->engine->processor.loadImpulseResponse(
+        std::move(decoded), reader->sampleRate,
+        juce::dsp::Convolution::Stereo::yes,
+        juce::dsp::Convolution::Trim::yes,
+        juce::dsp::Convolution::Normalise::yes);
+    prepared->engine->processor.prepare({
+        hostRate,
+        static_cast<juce::uint32>(preparedBlock),
+        static_cast<juce::uint32>(preparedChans)
+    });
+    prepared->path = file.getFullPathName();
+    destination = std::move(prepared);
+    return juce::Result::ok();
+}
+
+bool NeuralAmpModelerModule::commitPreparedNamCabinet(
+    PreparedNamModelPtr& preparedBase)
+{
+    auto* prepared = dynamic_cast<PreparedCabinet*>(preparedBase.get());
+    if (prepared == nullptr || prepared->engine == nullptr)
+        return false;
+    std::swap(cabinet, prepared->engine);
+    cabinet->processor.reset();
+    cabinetReady.store(true, std::memory_order_release);
+    {
+        const juce::ScopedLock lock(infoLock);
+        currentCabinetPath = prepared->path;
+    }
+    reportedLatency.store(
+        modelLatency + static_cast<int>(cabinet->processor.getLatency()),
+        std::memory_order_relaxed);
+    return true;
+}
+
+void NeuralAmpModelerModule::clearNamCabinet()
+{
+    cabinetReady.store(false, std::memory_order_release);
+    cabinetEnabled.store(false, std::memory_order_release);
+    reportedLatency.store(modelLatency, std::memory_order_relaxed);
+    const juce::ScopedLock lock(infoLock);
+    currentCabinetPath.clear();
+}
+
+void NeuralAmpModelerModule::setNamCabinetEnabled(bool enabled) noexcept
+{
+    cabinetEnabled.store(enabled, std::memory_order_release);
+}
+
+bool NeuralAmpModelerModule::isNamCabinetEnabled() const noexcept
+{
+    return cabinetEnabled.load(std::memory_order_acquire);
+}
+
+bool NeuralAmpModelerModule::hasNamCabinet() const noexcept
+{
+    return cabinetReady.load(std::memory_order_acquire);
+}
+
+juce::String NeuralAmpModelerModule::namCabinetPath() const
+{
+    const juce::ScopedLock lock(infoLock);
+    return currentCabinetPath;
+}
 } // namespace megadsp

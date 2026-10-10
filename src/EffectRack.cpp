@@ -1592,6 +1592,105 @@ bool EffectRack::commitNamModel(PreparedNamModelLoad& load)
     return true;
 }
 
+juce::Result EffectRack::prepareNamCabinet(
+    int slot, const juce::File& file, PreparedNamModelLoad& load)
+{
+    load = {};
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return juce::Result::fail("Invalid NAM slot.");
+    auto& rackSlot = slots[static_cast<size_t>(slot)];
+    auto* module = selectedModule(rackSlot);
+    if (module == nullptr)
+        return juce::Result::fail("No synchronized module in slot.");
+    auto* namCap = module->namModelCapability();
+    if (namCap == nullptr)
+        return juce::Result::fail("Slot does not support NAM cabinets.");
+    load.slot = slot;
+    load.type = rackSlot.activeType;
+    load.module = module;
+    load.path = file.getFullPathName();
+    auto result = namCap->prepareNamCabinet(file, load.prepared);
+    if (result.failed())
+        load = {};
+    return result;
+}
+
+bool EffectRack::commitNamCabinet(PreparedNamModelLoad& load)
+{
+    if (!juce::isPositiveAndBelow(load.slot, slotCount)
+        || load.prepared == nullptr)
+        return false;
+    auto& rackSlot = slots[static_cast<size_t>(load.slot)];
+    auto* module = selectedModule(rackSlot);
+    if (module == nullptr || module != load.module
+        || rackSlot.activeType != load.type)
+        return false;
+    auto* namCap = module->namModelCapability();
+    if (namCap == nullptr
+        || !namCap->commitPreparedNamCabinet(load.prepared))
+        return false;
+    const auto latencyCapacity = static_cast<size_t>(
+        juce::jmax(0, module->latencySamples()));
+    for (auto& channel : rackSlot.latencyBuffer)
+        channel.assign(latencyCapacity, 0.0f);
+    rackSlot.latencyWritePosition = 0;
+    rackSlot.previousLatency = module->latencySamples();
+    return true;
+}
+
+void EffectRack::clearNamCabinet(int slot)
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return;
+    auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (auto* module = selectedModule(rackSlot))
+        if (auto* capability = module->namModelCapability())
+            capability->clearNamCabinet();
+}
+
+void EffectRack::setNamCabinetEnabled(int slot, bool enabled)
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return;
+    auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (auto* module = selectedModule(rackSlot))
+        if (auto* capability = module->namModelCapability())
+            capability->setNamCabinetEnabled(enabled);
+}
+
+bool EffectRack::isNamCabinetEnabled(int slot) const
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return false;
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (const auto* module = selectedModule(rackSlot))
+        if (const auto* capability = module->namModelCapability())
+            return capability->isNamCabinetEnabled();
+    return false;
+}
+
+bool EffectRack::hasNamCabinet(int slot) const
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return false;
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (const auto* module = selectedModule(rackSlot))
+        if (const auto* capability = module->namModelCapability())
+            return capability->hasNamCabinet();
+    return false;
+}
+
+juce::String EffectRack::namCabinetPath(int slot) const
+{
+    if (!juce::isPositiveAndBelow(slot, slotCount))
+        return {};
+    const auto& rackSlot = slots[static_cast<size_t>(slot)];
+    if (const auto* module = selectedModule(rackSlot))
+        if (const auto* capability = module->namModelCapability())
+            return capability->namCabinetPath();
+    return {};
+}
+
 void EffectRack::cancelNamModel(PreparedNamModelLoad& load) noexcept
 {
     if (juce::isPositiveAndBelow(load.slot, slotCount))
@@ -1614,7 +1713,10 @@ juce::Result EffectRack::clearNamModel(int slot)
     auto* module = selectedModule(rackSlot);
     if (module != nullptr)
         if (auto* namCap = module->namModelCapability())
+        {
+            namCap->clearNamCabinet();
             namCap->clearNamModel();
+        }
     rackSlot.synchronizedNamPath.clear();
     rackSlot.observedNamPath.clear();
     rackSlot.namRestorePending = false;

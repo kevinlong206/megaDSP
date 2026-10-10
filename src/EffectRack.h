@@ -125,6 +125,14 @@ public:
     juce::Result prepareNamModel(
         int slot, const juce::File&, PreparedNamModelLoad&);
     bool commitNamModel(PreparedNamModelLoad&);
+    juce::Result prepareNamCabinet(
+        int slot, const juce::File&, PreparedNamModelLoad&);
+    bool commitNamCabinet(PreparedNamModelLoad&);
+    void clearNamCabinet(int slot);
+    void setNamCabinetEnabled(int slot, bool);
+    bool isNamCabinetEnabled(int slot) const;
+    bool hasNamCabinet(int slot) const;
+    juce::String namCabinetPath(int slot) const;
     void cancelNamModel(PreparedNamModelLoad&) noexcept;
     juce::Result clearNamModel(int slot);
     juce::String namModelPath(int slot) const;

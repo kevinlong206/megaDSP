@@ -97,6 +97,33 @@ juce::File writeNam(const juce::String& content, const juce::String& name)
     return f;
 }
 
+juce::File writeImpulse(
+    const juce::File& file, int delaySamples = 0)
+{
+    juce::WavAudioFormat format;
+    std::unique_ptr<juce::OutputStream> stream =
+        file.createOutputStream();
+    if (stream == nullptr)
+        return {};
+    auto writer = format.createWriterFor(
+        stream,
+        juce::AudioFormatWriterOptions {}
+            .withSampleRate(48000.0)
+            .withNumChannels(1)
+            .withBitsPerSample(24));
+    if (writer == nullptr)
+        return {};
+    juce::AudioBuffer<float> impulse(
+        1, juce::jmax(128, delaySamples + 1));
+    impulse.clear();
+    if (delaySamples > 0)
+        impulse.setSample(0, 0, 0.25f);
+    impulse.setSample(0, delaySamples, 1.0f);
+    writer->writeFromAudioSampleBuffer(
+        impulse, 0, impulse.getNumSamples());
+    return file;
+}
+
 // A2 standard shape: single layer-array with exact upstream shape signature
 nlohmann::json a2StandardConfig()
 {
@@ -379,6 +406,59 @@ public:
             expect(buf.getSample(0, 4095) > 0.5f,
                    "Samples beyond the prepared block must receive Pre Gain");
             f.deleteFile();
+        }
+
+        beginTest("Cabinet impulse processes after the NAM model");
+        {
+            auto module =
+                createDspModule(ModuleType::neuralAmpModeler);
+            module->prepare({ 48000.0, 256, 1 });
+            auto* capability = module->namModelCapability();
+            auto model = writeNam(
+                linearNamJson(48000.0), "nam-cabinet-signal-path");
+            auto impulse = writeImpulse(
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getNonexistentChildFile(
+                        "nam-cabinet-signal-path", ".wav"),
+                24);
+            PreparedNamModelPtr preparedModel;
+            PreparedNamModelPtr preparedCabinet;
+            expect(capability->prepareNamModel(
+                       model, preparedModel).wasOk());
+            expect(capability->commitPreparedNamModel(preparedModel));
+            expect(capability->prepareNamCabinet(
+                       impulse, preparedCabinet).wasOk());
+            expect(capability->commitPreparedNamCabinet(
+                preparedCabinet));
+            capability->setNamCabinetEnabled(true);
+
+            const auto controls =
+                moduleDefaults(ModuleType::neuralAmpModeler);
+            juce::AudioBuffer<float> buffer(1, 256);
+            for (int block = 0; block < 8; ++block)
+            {
+                buffer.clear();
+                module->process(buffer, controls, {});
+            }
+            buffer.clear();
+            buffer.setSample(0, 0, 0.5f);
+            module->process(buffer, controls, {});
+            auto peakSample = 0;
+            auto peak = 0.0f;
+            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+                if (const auto magnitude =
+                        std::abs(buffer.getSample(0, sample));
+                    magnitude > peak)
+                {
+                    peak = magnitude;
+                    peakSample = sample;
+                }
+            expect(peak > 0.0001f);
+            expect(peakSample >= 20,
+                   "The post-NAM cabinet must apply the delayed IR.");
+            model.deleteFile();
+            impulse.deleteFile();
         }
 
         beginTest("SlimmableContainer parser is explicitly available");
@@ -738,6 +818,91 @@ public:
                        && module->namModelCapability()->hasNamModel(),
                    "Serialized processor state must restore the NAM model");
             f.deleteFile();
+        }
+
+        beginTest("Cab and DI filename defaults use Cab precedence");
+        {
+            const auto unique = juce::String::toHexString(
+                juce::Time::getHighResolutionTicks());
+            auto di = writeNam(
+                linearNamJson(), "speaker-default-" + unique + "-DI");
+            auto cabDi = writeNam(
+                linearNamJson(), "speaker-Cab-" + unique + "-DI");
+            auto neutral = writeNam(
+                linearNamJson(), "speaker-default-" + unique);
+            MegaDSPAudioProcessor processor;
+            processor.prepareToPlay(48000.0, 64);
+            processor.addModule(ModuleType::neuralAmpModeler);
+            expect(processor.loadNamModel(0, di).wasOk());
+            expect(processor.isNamCabinetEnabled(0),
+                   "Case-sensitive DI must enable the cabinet by default.");
+            expect(processor.loadNamModel(0, cabDi).wasOk());
+            expect(!processor.isNamCabinetEnabled(0),
+                   "Case-insensitive Cab must override DI.");
+            expect(processor.loadNamModel(0, neutral).wasOk());
+            expect(!processor.isNamCabinetEnabled(0),
+                   "Unmarked models must default to cabinet disabled.");
+            di.deleteFile();
+            cabDi.deleteFile();
+            neutral.deleteFile();
+        }
+
+        beginTest("Per-model cabinet choice and override persist globally");
+        {
+            const auto root =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getNonexistentChildFile(
+                        "megaDSP-nam-cabinet", {}, true);
+            expect(root.createDirectory().wasOk());
+            const auto unique = juce::String::toHexString(
+                juce::Time::getHighResolutionTicks());
+            auto model = writeNam(
+                linearNamJson(), "persist-cabinet-" + unique);
+            const auto first = writeImpulse(
+                root.getChildFile("A.wav"));
+            const auto second = writeImpulse(
+                root.getChildFile("B.wav"), 8);
+            expect(first.existsAsFile());
+            expect(second.existsAsFile());
+
+            MegaDSPAudioProcessor source;
+            source.prepareToPlay(48000.0, 64);
+            source.addModule(ModuleType::neuralAmpModeler);
+            expect(source.loadNamModel(0, model).wasOk());
+            expect(source.setNamCabinetRootDirectory(root).wasOk());
+            expect(source.loadNamCabinetAsync(0, first).wasOk());
+            source.finishNamModelLoadForTesting();
+            expectEquals(
+                source.namCabinetPath(0), first.getFullPathName());
+            expect(source.isNamCabinetEnabled(0));
+
+            expect(source.loadAdjacentNamCabinetAsync(0, 1).wasOk());
+            source.finishNamModelLoadForTesting();
+            expectEquals(
+                source.namCabinetPath(0), second.getFullPathName());
+            expect(source.setNamCabinetEnabled(0, false).wasOk());
+
+            MegaDSPAudioProcessor restored;
+            restored.prepareToPlay(48000.0, 64);
+            restored.addModule(ModuleType::neuralAmpModeler);
+            expect(restored.loadNamModel(0, model).wasOk());
+            expectEquals(
+                restored.namCabinetPath(0), second.getFullPathName());
+            expect(!restored.isNamCabinetEnabled(0),
+                   "The manual cabinet override must survive restart.");
+
+            expect(second.deleteFile());
+            MegaDSPAudioProcessor missing;
+            missing.prepareToPlay(48000.0, 64);
+            missing.addModule(ModuleType::neuralAmpModeler);
+            const auto missingResult =
+                missing.loadNamModel(0, model);
+            expect(missingResult.failed(),
+                   "A missing persisted cabinet IR must fail explicitly.");
+
+            model.deleteFile();
+            root.deleteRecursively();
         }
 
         beginTest("Recursive NAM library validates, searches, and persists");
