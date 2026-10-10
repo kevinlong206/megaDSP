@@ -16,6 +16,7 @@ struct ImpulseResponseLibraryEntry
     double sampleRate = 0.0;
     double durationSeconds = 0.0;
     int channelCount = 0;
+    bool favorite = false;
 };
 
 struct NamModelLibraryEntry
@@ -153,6 +154,8 @@ public:
     std::vector<ImpulseResponseLibraryEntry> searchImpulseResponses(
         const juce::String& query, int maximumResults = 200);
     int impulseResponseLibrarySize();
+    bool isImpulseResponseFavorite(const juce::File&) const;
+    juce::Result setImpulseResponseFavorite(const juce::File&, bool);
     bool isImpulseResponseLibraryIndexing() const noexcept
     {
         return impulseResponseIndexInProgress.load(

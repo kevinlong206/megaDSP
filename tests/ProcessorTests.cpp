@@ -2118,6 +2118,29 @@ public:
                     hallMatches.front().file.getFullPathName(),
                     nestedIr.getFullPathName());
             expect(irBrowser.searchImpulseResponses("mono").empty());
+            expectEquals(
+                static_cast<int>(
+                    irBrowser.searchImpulseResponses("hall bright").size()),
+                1);
+            expectEquals(
+                static_cast<int>(
+                    irBrowser.searchImpulseResponses("brigt").size()),
+                1);
+            expect(
+                irBrowser.searchImpulseResponses("hall -bright").empty());
+            expect(irBrowser.setImpulseResponseFavorite(
+                nestedIr, true).wasOk());
+            const auto favoriteIrs =
+                irBrowser.searchImpulseResponses("favorite");
+            expectEquals(static_cast<int>(favoriteIrs.size()), 1);
+            if (!favoriteIrs.empty())
+                expectEquals(
+                    favoriteIrs.front().file.getFullPathName(),
+                    nestedIr.getFullPathName());
+            MegaDSPAudioProcessor favoriteIrRestored;
+            expect(
+                favoriteIrRestored.isImpulseResponseFavorite(nestedIr),
+                "IR favorites must persist across processor instances.");
 
             beginTest(
                 "Convolution and Guitar Cabinet widgets filter IR libraries");
@@ -2138,6 +2161,24 @@ public:
                     convolutionGraph
                         .compactImpulseResponseCountForTesting(),
                     3);
+                convolutionGraph
+                    .setCompactImpulseFavoritesOnlyForTesting(true);
+                expectEquals(
+                    convolutionGraph
+                        .compactImpulseResponseCountForTesting(),
+                    1);
+                convolutionGraph
+                    .toggleCompactImpulseFavoriteForTesting(0);
+                expectEquals(
+                    convolutionGraph
+                        .compactImpulseResponseCountForTesting(),
+                    0);
+                expect(!convolutionBrowser.isImpulseResponseFavorite(
+                    nestedIr));
+                expect(convolutionBrowser.setImpulseResponseFavorite(
+                    nestedIr, true).wasOk());
+                convolutionGraph
+                    .setCompactImpulseFavoritesOnlyForTesting(false);
                 convolutionGraph.setCompactAssetFilterForTesting(
                     "BRIGHT-HALL");
                 expectEquals(
@@ -2176,6 +2217,8 @@ public:
                     cabinetBrowser.impulseResponsePath(0),
                     secondIr.getFullPathName());
             }
+            expect(irBrowser.setImpulseResponseFavorite(
+                nestedIr, false).wasOk());
 
             bool asyncIrCompleted = false;
             juce::Result asyncIrResult = juce::Result::fail(

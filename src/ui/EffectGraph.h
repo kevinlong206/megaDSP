@@ -66,6 +66,8 @@ public:
     void setCompactAssetFilterForTesting(const juce::String&);
     void setCompactNamFavoritesOnlyForTesting(bool);
     void toggleCompactNamFavoriteForTesting(int index);
+    void setCompactImpulseFavoritesOnlyForTesting(bool);
+    void toggleCompactImpulseFavoriteForTesting(int index);
     void activateCompactImpulseResponseForTesting(int index);
 #endif
 
@@ -100,7 +102,7 @@ private:
         juce::Graphics&, juce::Rectangle<float>);
     void refreshCompactAssetLibrary(bool resetScroll = false);
     void activateCompactAsset(int index);
-    void toggleCompactNamFavorite(int index);
+    void toggleCompactAssetFavorite(int index);
     int compactAssetCount() const;
     int compactAssetVisibleRowCount() const;
     int compactAssetAt(juce::Point<float>) const;

@@ -112,7 +112,8 @@ private:
     void choosePreset(bool save);
     void commitInstanceName();
     void showThemePalette();
-    void showDiagnosticsMenu();
+    void showSettingsMenu();
+    void chooseLibraryRoot(int library);
     void refreshIdentityPresentation();
     void refreshSnapshots();
     void showResult(const juce::Result&);
@@ -130,7 +131,7 @@ private:
     juce::Label instanceLabel;
     juce::TextEditor instanceName;
     juce::TextButton themeButton { "COLOR" };
-    juce::TextButton diagnosticsButton { "DIAG" };
+    juce::TextButton settingsButton { "SETTINGS" };
     juce::Label status;
     juce::TextButton saveButton { "Save" };
     juce::TextButton loadButton { "Load" };
@@ -161,6 +162,7 @@ private:
     std::vector<std::unique_ptr<ModuleCard>> cards;
     juce::TextButton addButton { "+ ADD MODULE" };
     std::unique_ptr<juce::FileChooser> fileChooser;
+    std::unique_ptr<juce::FileChooser> settingsFileChooser;
     megadsp::ui::WidgetSize widgetSize;
     int selectedSlot = 0;
     int focusedSlot = -1;

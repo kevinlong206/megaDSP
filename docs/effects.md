@@ -318,10 +318,15 @@ the complete IR. This raises typically quiet captures by up to 18 dB while
 preserving stereo balance and limiting coefficient peaks; silent or invalid
 IRs are rejected instead of producing a misleading loaded state.
 
-The widget shows the indexed IR library as a scrollable list with a
-case-insensitive filter directly above it. Clicking a match schedules
-asynchronous preparation while the current IR keeps processing. The **LIB**
-action manages the IR library root and validated index.
+The widget shows the indexed IR library as a scrollable list with a smart
+filter directly above it. Exact path matches rank above bounded typo matches,
+unordered terms may be combined, quoted phrases stay together, and `-term`
+excludes a match. `mono`, `stereo`, `short`, `medium`, `long`, and
+`sr:48000` provide structured metadata filters after validation. Each row has
+a persistent favorite star, and **FAVORITES** limits the list to starred IRs.
+Clicking a match schedules asynchronous preparation while the current IR keeps
+processing. The header **SETTINGS > Libraries** menu manages the global IR root
+and validated index.
 The library sets a root
 directory that is saved both with plugin state and in megaDSP's user-level
 settings. Project instances retain their own root, while new instances inherit
@@ -884,9 +889,10 @@ adjacent **<** and **>** buttons step through the validated recursive library
 and wrap at either end. Its compact visualization is a continuously scrollable
 list of the indexed library with a case-insensitive filter directly above it;
 the second asset row loads an optional speaker-cabinet WAV, AIFF, or FLAC after
-the NAM model. **ROOT** selects a separate recursive speaker-IR directory and
-the adjacent **<** and **>** buttons browse those files directly without search
-indexing. NAM `with_cab` and gear metadata determine the default cabinet state
+the NAM model. The header **SETTINGS > Libraries** menu selects a separate
+recursive speaker-IR directory, while the adjacent **<** and **>** buttons
+browse those files directly without search indexing. NAM `with_cab` and gear
+metadata determine the default cabinet state
 when available. Otherwise, the model's full root-relative path is matched:
 case-insensitive `Cab` defaults the cabinet IR off, while exact-case `DI` or
 case-insensitive `Direct` defaults it on; `Cab` takes precedence. **IR ON/OFF**
@@ -906,9 +912,10 @@ amp/capture metadata, authors, and architectures; queries also accept
 order, quoted phrases stay together, `-term` excludes matches, common gain and
 DI aliases are recognized, and small typos are ranked below exact matches.
 Each row has a clickable star, and the
-**FAVORITES** toggle filters the list to starred models. **ROOT** changes the
-recursive directory and **REBUILD** rescans and validates it. Favorites persist
-globally and sort above other matches. The card's **FAVORITE** button also
+**FAVORITES** toggle filters the list to starred models. The header
+**SETTINGS > Libraries** menu changes the recursive directory and rebuilds its
+validated index. Favorites persist globally and sort above other matches. The
+card's **FAVORITE** button also
 toggles the loaded model, while **DELETE** requires confirmation before
 permanently removing the `.nam` file, its library entry, cabinet preference,
 and favorite. The **A1**, **A2**, **CAB**, and **AMP** pills filter

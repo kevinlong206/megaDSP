@@ -384,6 +384,52 @@ int namSearchTermScore(
         !term.phrase && !term.excluded);
 }
 
+int impulseSearchTermScore(
+    const ImpulseResponseLibraryEntry& entry, bool favorite,
+    const NamSearchTerm& term, bool metadataAvailable)
+{
+    const auto& token = term.text;
+    if (token == "favorite" || token == "fav")
+        return favorite ? 140 : 0;
+    if (!metadataAvailable)
+        return textMatchScore(
+            entry.searchableText, token,
+            !term.phrase && !term.excluded);
+    if (token == "mono")
+        return entry.channelCount == 1 ? 130 : 0;
+    if (token == "stereo")
+        return entry.channelCount >= 2 ? 130 : 0;
+    if (token == "short")
+        return entry.durationSeconds < 1.0 ? 130 : 0;
+    if (token == "medium")
+        return entry.durationSeconds >= 1.0
+                && entry.durationSeconds <= 3.0
+            ? 130 : 0;
+    if (token == "long")
+        return entry.durationSeconds > 3.0 ? 130 : 0;
+    if (token.startsWith("sr:") || token.startsWith("rate:"))
+    {
+        const auto requested = token.fromFirstOccurrenceOf(
+            ":", false, false).getDoubleValue();
+        return requested > 0.0
+                && std::abs(entry.sampleRate - requested) < 1.0
+            ? 130 : 0;
+    }
+    const auto fieldSeparator = token.indexOfChar(':');
+    if (fieldSeparator > 0)
+    {
+        const auto field = token.substring(0, fieldSeparator);
+        const auto value = token.substring(fieldSeparator + 1);
+        if (field == "name" || field == "path")
+            return textMatchScore(
+                entry.searchableText, value,
+                !term.phrase && !term.excluded);
+    }
+    return textMatchScore(
+        entry.searchableText, token,
+        !term.phrase && !term.excluded);
+}
+
 std::vector<ImpulseResponseLibraryEntry>
 discoverImpulseResponsePaths(const juce::File& root)
 {
@@ -647,6 +693,67 @@ juce::Result persistNamFavorite(
         ? juce::Result::ok()
         : juce::Result::fail(
               "Could not save the NAM favorite.");
+}
+
+juce::StringArray globalImpulseResponseFavorites()
+{
+    const juce::ScopedLock lock(globalSettingsLock());
+    juce::PropertiesFile settings(
+        globalSettingsFile(), globalSettingsOptions());
+    const auto xml = juce::XmlDocument::parse(
+        settings.getValue("impulseResponseFavorites"));
+    juce::StringArray favorites;
+    if (xml == nullptr || !xml->hasTagName("IR_FAVORITES"))
+        return favorites;
+    for (auto* child : xml->getChildWithTagNameIterator("IR"))
+    {
+        const auto path = child->getStringAttribute("path");
+        if (path.isNotEmpty())
+            favorites.addIfNotAlreadyThere(path);
+    }
+    return favorites;
+}
+
+juce::Result persistImpulseResponseFavorite(
+    const juce::String& impulsePath, bool favorite)
+{
+    if (impulsePath.isEmpty())
+        return juce::Result::fail(
+            "Choose an impulse response to favorite.");
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto file = globalSettingsFile();
+    const auto directoryResult = file.getParentDirectory().createDirectory();
+    if (directoryResult.failed())
+        return directoryResult;
+    juce::PropertiesFile settings(file, globalSettingsOptions());
+    auto xml = juce::XmlDocument::parse(
+        settings.getValue("impulseResponseFavorites"));
+    if (xml == nullptr || !xml->hasTagName("IR_FAVORITES"))
+        xml = std::make_unique<juce::XmlElement>("IR_FAVORITES");
+    for (auto* child : xml->getChildWithTagNameIterator("IR"))
+        if (child->getStringAttribute("path") == impulsePath)
+        {
+            if (!favorite)
+                xml->removeChildElement(child, true);
+            settings.setValue(
+                "impulseResponseFavorites", xml->toString());
+            return settings.saveIfNeeded()
+                ? juce::Result::ok()
+                : juce::Result::fail(
+                    "Could not save the impulse-response favorite.");
+        }
+    if (favorite)
+    {
+        auto child = std::make_unique<juce::XmlElement>("IR");
+        child->setAttribute("path", impulsePath);
+        xml->addChildElement(child.release());
+    }
+    settings.setValue(
+        "impulseResponseFavorites", xml->toString());
+    return settings.saveIfNeeded()
+        ? juce::Result::ok()
+        : juce::Result::fail(
+            "Could not save the impulse-response favorite.");
 }
 
 juce::Result removeGlobalNamPreferences(
@@ -3971,54 +4078,61 @@ MegaDSPAudioProcessor::searchImpulseResponses(
     maximumResults = juce::jmax(0, maximumResults);
     if (maximumResults == 0)
         return {};
-    const auto tokens = juce::StringArray::fromTokens(
-        query.toLowerCase(), " \t\r\n", "\"");
-    std::vector<ImpulseResponseLibraryEntry> matches;
+    const auto terms = parseNamSearchQuery(query);
+    struct ScoredEntry
+    {
+        ImpulseResponseLibraryEntry entry;
+        int score = 0;
+    };
+    std::vector<ScoredEntry> scoredMatches;
+    const auto favoritePaths = globalImpulseResponseFavorites();
     const auto metadataAvailable =
         impulseResponseLibraryValidated.load(std::memory_order_acquire);
-    const juce::ScopedLock lock(impulseResponseLibraryLock);
-    matches.reserve(juce::jmin(
-        static_cast<size_t>(maximumResults),
-        impulseResponseLibrary.size()));
-    for (const auto& entry : impulseResponseLibrary)
     {
-        auto matched = true;
-        for (const auto& token : tokens)
+        const juce::ScopedLock lock(impulseResponseLibraryLock);
+        scoredMatches.reserve(impulseResponseLibrary.size());
+        for (const auto& entry : impulseResponseLibrary)
         {
-            if (token.isEmpty())
-                continue;
-            if (!metadataAvailable)
-                matched = entry.searchableText.contains(token);
-            else if (token == "mono")
-                matched = entry.channelCount == 1;
-            else if (token == "stereo")
-                matched = entry.channelCount >= 2;
-            else if (token == "short")
-                matched = entry.durationSeconds < 1.0;
-            else if (token == "medium")
-                matched = entry.durationSeconds >= 1.0
-                    && entry.durationSeconds <= 3.0;
-            else if (token == "long")
-                matched = entry.durationSeconds > 3.0;
-            else if (token.startsWith("sr:")
-                     || token.startsWith("rate:"))
+            const auto favorite = favoritePaths.contains(
+                entry.file.getFullPathName());
+            auto matched = true;
+            auto score = favorite ? 10 : 0;
+            for (const auto& term : terms)
             {
-                const auto requested = token.fromFirstOccurrenceOf(
-                    ":", false, false).getDoubleValue();
-                matched = requested > 0.0
-                    && std::abs(entry.sampleRate - requested) < 1.0;
+                if (term.text.isEmpty())
+                    continue;
+                const auto termScore = impulseSearchTermScore(
+                    entry, favorite, term, metadataAvailable);
+                matched = term.excluded
+                    ? termScore == 0 : termScore > 0;
+                if (!matched)
+                    break;
+                if (!term.excluded)
+                    score += termScore;
             }
-            else
-                matched = entry.searchableText.contains(token);
             if (!matched)
-                break;
+                continue;
+            scoredMatches.push_back({ entry, score });
+            scoredMatches.back().entry.favorite = favorite;
         }
-        if (!matched)
-            continue;
-        matches.push_back(entry);
-        if (static_cast<int>(matches.size()) >= maximumResults)
-            break;
     }
+    std::stable_sort(
+        scoredMatches.begin(), scoredMatches.end(),
+        [](const auto& left, const auto& right)
+        {
+            if (left.score != right.score)
+                return left.score > right.score;
+            if (left.entry.favorite != right.entry.favorite)
+                return left.entry.favorite;
+            return left.entry.relativePath.compareIgnoreCase(
+                       right.entry.relativePath) < 0;
+        });
+    if (static_cast<int>(scoredMatches.size()) > maximumResults)
+        scoredMatches.resize(static_cast<size_t>(maximumResults));
+    std::vector<ImpulseResponseLibraryEntry> matches;
+    matches.reserve(scoredMatches.size());
+    for (auto& match : scoredMatches)
+        matches.push_back(std::move(match.entry));
     return matches;
 }
 
@@ -4027,6 +4141,30 @@ int MegaDSPAudioProcessor::impulseResponseLibrarySize()
     ensureImpulseResponseLibrary();
     const juce::ScopedLock lock(impulseResponseLibraryLock);
     return static_cast<int>(impulseResponseLibrary.size());
+}
+
+bool MegaDSPAudioProcessor::isImpulseResponseFavorite(
+    const juce::File& file) const
+{
+    return file.existsAsFile()
+        && globalImpulseResponseFavorites().contains(
+            file.getFullPathName());
+}
+
+juce::Result MegaDSPAudioProcessor::setImpulseResponseFavorite(
+    const juce::File& file, bool favorite)
+{
+    const auto extension = file.getFileExtension().toLowerCase();
+    if (!file.existsAsFile()
+        || (extension != ".wav" && extension != ".aif"
+            && extension != ".aiff" && extension != ".flac"))
+        return juce::Result::fail(
+            "Choose an existing impulse response to favorite.");
+    const auto result = persistImpulseResponseFavorite(
+        file.getFullPathName(), favorite);
+    if (result.wasOk())
+        libraryGeneration.fetch_add(1, std::memory_order_release);
+    return result;
 }
 
 juce::Result MegaDSPAudioProcessor::loadAdjacentImpulseResponse(

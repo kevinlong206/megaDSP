@@ -127,16 +127,15 @@ EffectGraph::EffectGraph(
                 activateCompactAsset(compactAssetSelected);
             };
         addAndMakeVisible(compactAssetSearch);
-        if (isCompactNamLibrary())
-        {
-            compactNamFavoriteFilter.setButtonText("FAVORITES");
-            compactNamFavoriteFilter.setClickingTogglesState(true);
-            compactNamFavoriteFilter.setTooltip(
-                "Show only favorited NAM models.");
-            compactNamFavoriteFilter.onClick =
-                [this] { refreshCompactAssetLibrary(true); };
-            addAndMakeVisible(compactNamFavoriteFilter);
-        }
+        compactNamFavoriteFilter.setButtonText("FAVORITES");
+        compactNamFavoriteFilter.setClickingTogglesState(true);
+        compactNamFavoriteFilter.setTooltip(
+            isCompactNamLibrary()
+                ? "Show only favorited NAM models."
+                : "Show only favorited impulse responses.");
+        compactNamFavoriteFilter.onClick =
+            [this] { refreshCompactAssetLibrary(true); };
+        addAndMakeVisible(compactNamFavoriteFilter);
     }
     inputSpectrum.fill(-100.0f);
     outputSpectrum.fill(-100.0f);
@@ -164,9 +163,8 @@ void EffectGraph::resized()
         auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
         area.removeFromTop(compactAssetHeaderHeight);
         auto searchRow = area.removeFromTop(compactAssetSearchHeight);
-        if (isCompactNamLibrary())
-            compactNamFavoriteFilter.setBounds(
-                searchRow.removeFromRight(72.0f).toNearestInt());
+        compactNamFavoriteFilter.setBounds(
+            searchRow.removeFromRight(72.0f).toNearestInt());
         compactAssetSearch.setBounds(
             searchRow.toNearestInt());
     }
@@ -227,6 +225,10 @@ void EffectGraph::refreshCompactAssetLibrary(bool resetScroll)
     {
         compactImpulseResponses = processor.searchImpulseResponses(
             query, std::numeric_limits<int>::max());
+        if (compactNamFavoriteFilter.getToggleState())
+            std::erase_if(
+                compactImpulseResponses,
+                [](const auto& entry) { return !entry.favorite; });
         compactNamModels.clear();
     }
 
@@ -321,20 +323,24 @@ void EffectGraph::activateCompactAsset(int index)
     repaint();
 }
 
-void EffectGraph::toggleCompactNamFavorite(int index)
+void EffectGraph::toggleCompactAssetFavorite(int index)
 {
-    if (!isCompactNamLibrary()
-        || !juce::isPositiveAndBelow(
-            index, static_cast<int>(compactNamModels.size())))
+    if (!juce::isPositiveAndBelow(index, compactAssetCount()))
         return;
-    const auto& entry = compactNamModels[static_cast<size_t>(index)];
-    const auto result =
-        processor.setNamModelFavorite(entry.file, !entry.favorite);
+    const auto result = isCompactNamLibrary()
+        ? processor.setNamModelFavorite(
+              compactNamModels[static_cast<size_t>(index)].file,
+              !compactNamModels[static_cast<size_t>(index)].favorite)
+        : processor.setImpulseResponseFavorite(
+              compactImpulseResponses[static_cast<size_t>(index)].file,
+              !compactImpulseResponses[static_cast<size_t>(index)].favorite);
     if (result.failed())
     {
         juce::AlertWindow::showMessageBoxAsync(
             juce::MessageBoxIconType::WarningIcon,
-            "Could not update NAM favorite",
+            isCompactNamLibrary()
+                ? "Could not update NAM favorite"
+                : "Could not update impulse-response favorite",
             result.getErrorMessage());
         return;
     }
@@ -382,10 +388,9 @@ void EffectGraph::paintCompactAssetLibrary(
     const auto status = indexing
         ? "INDEXING..."
         : juce::String(compactAssetCount())
-            + (isCompactNamLibrary()
-                   ? compactNamFavoriteFilter.getToggleState()
-                       ? " FAVORITES" : " MODELS"
-                   : " IRS");
+            + (compactNamFavoriteFilter.getToggleState()
+                   ? " FAVORITES"
+                   : isCompactNamLibrary() ? " MODELS" : " IRS");
     graphics.drawText(
         isCompactNamLibrary() ? "NAM LIBRARY" : "IR LIBRARY",
         header.toNearestInt(),
@@ -406,9 +411,7 @@ void EffectGraph::paintCompactAssetLibrary(
                 ? "No library items match this filter."
                 : hasRoot
                     ? "Indexing the asset library..."
-                    : isCompactNamLibrary()
-                        ? "Choose ROOT above to select a NAM library."
-                        : "Choose FIND, then ROOT, to select a library.",
+                    : "Choose a library root in SETTINGS.",
             area.reduced(8.0f).toNearestInt(),
             juce::Justification::centred, 2, 0.8f);
         return;
@@ -466,20 +469,18 @@ void EffectGraph::paintCompactAssetLibrary(
             text.toNearestInt(),
             juce::Justification::centredLeft, 1, 0.72f);
         const auto favorite = isCompactNamLibrary()
-            && compactNamModels[static_cast<size_t>(index)].favorite;
-        if (isCompactNamLibrary())
-        {
-            const auto star = starPath(starBounds.reduced(3.0f));
-            graphics.setColour(
-                favorite
-                    ? accent
-                    : juce::Colours::white.withAlpha(0.28f));
-            if (favorite)
-                graphics.fillPath(star);
-            else
-                graphics.strokePath(
-                    star, juce::PathStrokeType(1.0f));
-        }
+            ? compactNamModels[static_cast<size_t>(index)].favorite
+            : compactImpulseResponses[static_cast<size_t>(index)].favorite;
+        const auto star = starPath(starBounds.reduced(3.0f));
+        graphics.setColour(
+            favorite
+                ? accent
+                : juce::Colours::white.withAlpha(0.28f));
+        if (favorite)
+            graphics.fillPath(star);
+        else
+            graphics.strokePath(
+                star, juce::PathStrokeType(1.0f));
         if (loaded || (selected && compactAssetLoadPending))
         {
             graphics.setColour(accent.withAlpha(0.9f));
@@ -2377,11 +2378,10 @@ void EffectGraph::mouseDown(const juce::MouseEvent& event)
         const auto index = compactAssetAt(event.position);
         if (index >= 0)
         {
-            if (isCompactNamLibrary()
-                && event.position.x
+            if (event.position.x
                        >= static_cast<float>(getWidth() - 40))
             {
-                toggleCompactNamFavorite(index);
+                toggleCompactAssetFavorite(index);
             }
             else
                 activateCompactAsset(index);
@@ -2858,7 +2858,19 @@ void EffectGraph::setCompactNamFavoritesOnlyForTesting(bool favoritesOnly)
 
 void EffectGraph::toggleCompactNamFavoriteForTesting(int index)
 {
-    toggleCompactNamFavorite(index);
+    toggleCompactAssetFavorite(index);
+}
+
+void EffectGraph::setCompactImpulseFavoritesOnlyForTesting(bool favoritesOnly)
+{
+    compactNamFavoriteFilter.setToggleState(
+        favoritesOnly, juce::dontSendNotification);
+    refreshCompactAssetLibrary(true);
+}
+
+void EffectGraph::toggleCompactImpulseFavoriteForTesting(int index)
+{
+    toggleCompactAssetFavorite(index);
 }
 
 void EffectGraph::activateCompactImpulseResponseForTesting(int index)

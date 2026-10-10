@@ -245,20 +245,14 @@ public:
         std::function<std::vector<AssetSearchRow>(const juce::String&)>
             searchFunction,
         std::function<void(const juce::File&)> chooseFunction,
-        std::function<juce::File()> rootFunction,
-        std::function<void()> chooseRootFunction,
-        std::function<void()> rebuildFunction,
         std::function<bool()> indexingFunction,
         std::function<std::uint64_t()> generationFunction)
         : searchRows(std::move(searchFunction)),
           choose(std::move(chooseFunction)),
-          currentRoot(std::move(rootFunction)),
-          chooseRoot(std::move(chooseRootFunction)),
-          rebuild(std::move(rebuildFunction)),
           isIndexing(std::move(indexingFunction)),
           generation(std::move(generationFunction))
     {
-        setSize(540, 420);
+        setSize(540, 360);
         setWantsKeyboardFocus(true);
         addKeyListener(this);
 
@@ -266,29 +260,6 @@ public:
         heading.setFont(juce::FontOptions(17.0f, juce::Font::bold));
         heading.setColour(juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible(heading);
-
-        root.setColour(
-            juce::Label::textColourId,
-            juce::Colours::white.withAlpha(0.62f));
-        root.setFont(juce::FontOptions(10.0f));
-        root.setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(root);
-
-        rootButton.setButtonText("ROOT...");
-        rootButton.onClick = [this]
-        {
-            if (chooseRoot)
-                chooseRoot();
-        };
-        addAndMakeVisible(rootButton);
-        rebuildButton.setButtonText("REBUILD");
-        rebuildButton.onClick = [this]
-        {
-            if (rebuild)
-                rebuild();
-            refresh();
-        };
-        addAndMakeVisible(rebuildButton);
 
         search.setTextToShowWhenEmpty(
             std::move(placeholder), juce::Colour(0xff7f8b99));
@@ -355,10 +326,6 @@ public:
     {
         auto bounds = getLocalBounds().reduced(10);
         heading.setBounds(bounds.removeFromTop(28));
-        auto rootRow = bounds.removeFromTop(28);
-        rebuildButton.setBounds(rootRow.removeFromRight(76).reduced(1));
-        rootButton.setBounds(rootRow.removeFromRight(64).reduced(1));
-        root.setBounds(rootRow.reduced(4, 1));
         bounds.removeFromTop(5);
         search.setBounds(bounds.removeFromTop(34));
         bounds.removeFromTop(6);
@@ -451,7 +418,7 @@ private:
             observedGeneration = nextGeneration;
             refresh();
         }
-        updateRootAndStatus();
+        updateStatus();
     }
 
     void refresh()
@@ -478,19 +445,12 @@ private:
                     static_cast<int>(std::distance(rows.begin(), found));
         }
         list.selectRow(selection);
-        updateRootAndStatus();
+        updateStatus();
         list.repaint();
     }
 
-    void updateRootAndStatus()
+    void updateStatus()
     {
-        const auto directory =
-            currentRoot ? currentRoot() : juce::File();
-        root.setText(
-            directory.isDirectory()
-                ? directory.getFullPathName()
-                : "No library root selected",
-            juce::dontSendNotification);
         status.setText(
             isIndexing && isIndexing()
                 ? juce::String(rows.size())
@@ -522,15 +482,9 @@ private:
     std::function<std::vector<AssetSearchRow>(const juce::String&)>
         searchRows;
     std::function<void(const juce::File&)> choose;
-    std::function<juce::File()> currentRoot;
-    std::function<void()> chooseRoot;
-    std::function<void()> rebuild;
     std::function<bool()> isIndexing;
     std::function<std::uint64_t()> generation;
     juce::Label heading;
-    juce::Label root;
-    juce::TextButton rootButton;
-    juce::TextButton rebuildButton;
     juce::TextEditor search;
     juce::ListBox list;
     juce::Label status;
@@ -1361,8 +1315,6 @@ public:
           supportsImpulseResponse(
               processor.getRack().activeModuleHasCapability(
                   slot, megadsp::ModuleCapability::impulseResponse)),
-          isConvolution(
-              type == megadsp::ModuleType::convolutionReverb),
           isWormhole(type == megadsp::ModuleType::wormholeConvolution),
           supportsNamModel(
               processor.getRack().activeModuleHasCapability(
@@ -1560,23 +1512,6 @@ public:
                 "Load the next model in the validated NAM library.");
             nextNam.onClick = [this] { loadAdjacentNamModel(1); };
             addAndMakeVisible(nextNam);
-            namRoot.setButtonText("ROOT");
-            namRoot.setTooltip("Choose the recursive NAM model directory.");
-            namRoot.onClick = [this] { chooseNamModelRoot(); };
-            addAndMakeVisible(namRoot);
-            namRebuild.setButtonText("REBUILD");
-            namRebuild.setTooltip(
-                "Rescan and validate the recursive NAM model library.");
-            namRebuild.onClick = [this]
-            {
-                const auto result = processor.rebuildNamModelLibrary();
-                if (result.failed())
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon,
-                        "Could not rebuild NAM library",
-                        result.getErrorMessage());
-            };
-            addAndMakeVisible(namRebuild);
             clearNam.setButtonText("Clear NAM");
             clearNam.setTooltip("Unload the current neural amp model.");
             clearNam.onClick = [this]
@@ -1697,11 +1632,6 @@ public:
             nextNamCabinet.onClick =
                 [this] { loadAdjacentNamCabinet(1); };
             addAndMakeVisible(nextNamCabinet);
-            namCabinetRoot.setButtonText("ROOT");
-            namCabinetRoot.setTooltip(
-                "Choose the recursive speaker impulse root directory.");
-            namCabinetRoot.onClick = [this] { chooseNamCabinetRoot(); };
-            addAndMakeVisible(namCabinetRoot);
             namCabinetName.setColour(
                 juce::Label::textColourId,
                 juce::Colours::white.withAlpha(0.72f));
@@ -1875,10 +1805,6 @@ public:
                     assetRow.removeFromRight(38).reduced(1));
                 previousNam.setBounds(
                     assetRow.removeFromRight(38).reduced(1));
-                namRebuild.setBounds(
-                    assetRow.removeFromRight(58).reduced(1));
-                namRoot.setBounds(
-                    assetRow.removeFromRight(44).reduced(1));
                 loadNam.setBounds(
                     assetRow.removeFromRight(58).reduced(1));
                 auto modelActionRow = bounds.removeFromTop(28);
@@ -1895,8 +1821,6 @@ public:
                     cabinetRow.removeFromRight(34).reduced(1));
                 previousNamCabinet.setBounds(
                     cabinetRow.removeFromRight(34).reduced(1));
-                namCabinetRoot.setBounds(
-                    cabinetRow.removeFromRight(48).reduced(1));
                 loadNamCabinet.setBounds(
                     cabinetRow.removeFromRight(62).reduced(1));
                 namCabinetName.setBounds(cabinetRow.reduced(4, 1));
@@ -2333,10 +2257,9 @@ public:
     bool hasAssetSearchForTesting() const
     {
         if (supportsNamModel)
-            return namRoot.isVisible()
-                && !namRoot.getBounds().isEmpty()
-                && namRebuild.isVisible()
-                && !namRebuild.getBounds().isEmpty();
+            return graph != nullptr
+                && graph->isVisible()
+                && !graph->getBounds().isEmpty();
         if (!supportsImpulseResponse)
             return false;
         return impulseLibrary.isVisible()
@@ -2659,34 +2582,6 @@ private:
         }
     }
 
-    void chooseNamCabinetRoot()
-    {
-        namCabinetRootChooser = std::make_unique<juce::FileChooser>(
-            "Choose speaker impulse root directory",
-            processor.namCabinetRootDirectory());
-        const auto flags =
-            juce::FileBrowserComponent::openMode
-            | juce::FileBrowserComponent::canSelectDirectories;
-        juce::Component::SafePointer<ModuleCard> safeThis(this);
-        namCabinetRootChooser->launchAsync(
-            flags, [safeThis](const juce::FileChooser& chooser)
-            {
-                if (safeThis == nullptr)
-                    return;
-                const auto directory = chooser.getResult();
-                if (!directory.isDirectory())
-                    return;
-                const auto result =
-                    safeThis->processor.setNamCabinetRootDirectory(
-                        directory);
-                if (result.failed())
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon,
-                        "Could not set speaker impulse root",
-                        result.getErrorMessage());
-            });
-    }
-
     void showImpulseLibrarySearch(
         int impulseLane, juce::Component& target)
     {
@@ -2727,33 +2622,6 @@ private:
                 if (safeThis != nullptr)
                     safeThis->loadAssetFile(file, impulseLane);
             };
-        auto rootFunction =
-            [safeThis]
-            {
-                if (safeThis == nullptr)
-                    return juce::File();
-                return safeThis->processor.impulseResponseRootDirectory();
-            };
-        auto chooseRootFunction =
-            [safeThis]
-            {
-                if (safeThis == nullptr)
-                    return;
-                safeThis->chooseImpulseResponseRoot();
-            };
-        auto rebuildFunction =
-            [safeThis]
-            {
-                if (safeThis == nullptr)
-                    return;
-                const auto result =
-                    safeThis->processor.rebuildImpulseResponseLibrary();
-                if (result.failed())
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon,
-                        "Could not rebuild asset library",
-                        result.getErrorMessage());
-            };
         auto indexingFunction =
             [safeThis]
             {
@@ -2775,8 +2643,7 @@ private:
                 : "Search Impulse Responses",
             "Search filename or path...",
             std::move(searchFunction), std::move(chooseFunction),
-            std::move(rootFunction), std::move(chooseRootFunction),
-            std::move(rebuildFunction), std::move(indexingFunction),
+            std::move(indexingFunction),
             std::move(generationFunction));
         auto* browserPointer = browser.get();
         auto& callout = juce::CallOutBox::launchAsynchronously(
@@ -2785,62 +2652,6 @@ private:
             &editor);
         callout.setDismissalMouseClicksAreAlwaysConsumed(true);
         browserPointer->focusSearch();
-    }
-
-    void chooseNamModelRoot()
-    {
-        namRootChooser = std::make_unique<juce::FileChooser>(
-            "Choose NAM model root directory",
-            processor.namModelRootDirectory());
-        const auto flags =
-            juce::FileBrowserComponent::openMode
-            | juce::FileBrowserComponent::canSelectDirectories;
-        juce::Component::SafePointer<ModuleCard> safeThis(this);
-        namRootChooser->launchAsync(
-            flags, [safeThis](const juce::FileChooser& chooser)
-            {
-                if (safeThis == nullptr)
-                    return;
-                const auto directory = chooser.getResult();
-                if (!directory.isDirectory())
-                    return;
-                const auto result =
-                    safeThis->processor.setNamModelRootDirectory(
-                        directory);
-                if (result.failed())
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon,
-                        "Could not index NAM library",
-                        result.getErrorMessage());
-            });
-    }
-
-    void chooseImpulseResponseRoot()
-    {
-        impulseRootChooser = std::make_unique<juce::FileChooser>(
-            "Choose impulse response root directory",
-            processor.impulseResponseDirectory(slot));
-        const auto flags =
-            juce::FileBrowserComponent::openMode
-            | juce::FileBrowserComponent::canSelectDirectories;
-        juce::Component::SafePointer<ModuleCard> safeThis(this);
-        impulseRootChooser->launchAsync(
-            flags, [safeThis](const juce::FileChooser& chooser)
-            {
-                if (safeThis == nullptr)
-                    return;
-                const auto directory = chooser.getResult();
-                if (directory == juce::File())
-                    return;
-                const auto result =
-                    safeThis->processor.setImpulseResponseRootDirectory(
-                        directory);
-                if (result.failed())
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon,
-                        "Could not index IR library",
-                        result.getErrorMessage());
-            });
     }
 
     void updateToggle(int control, bool state)
@@ -3021,7 +2832,6 @@ private:
     megadsp::ModuleType type;
     juce::String moduleName;
     bool supportsImpulseResponse = false;
-    bool isConvolution = false;
     bool isWormhole = false;
     bool supportsNamModel = false;
     bool namModelLoadPending = false;
@@ -3039,29 +2849,23 @@ private:
     juce::TextButton impulseLibrary2;
     juce::TextButton clearImpulse;
     std::unique_ptr<juce::FileChooser> impulseChooser;
-    std::unique_ptr<juce::FileChooser> impulseRootChooser;
     juce::TextButton loadImpulse2;
     juce::TextButton clearImpulse2;
     std::unique_ptr<juce::FileChooser> impulseChooser2;
     juce::TextButton loadNam;
     juce::TextButton previousNam;
     juce::TextButton nextNam;
-    juce::TextButton namRoot;
-    juce::TextButton namRebuild;
     juce::TextButton clearNam;
     juce::TextButton favoriteNam;
     juce::TextButton deleteNam;
     juce::Label namMatchStatus;
     std::unique_ptr<juce::FileChooser> namChooser;
-    std::unique_ptr<juce::FileChooser> namRootChooser;
     juce::Label namCabinetName;
     juce::TextButton loadNamCabinet;
     juce::TextButton previousNamCabinet;
     juce::TextButton nextNamCabinet;
-    juce::TextButton namCabinetRoot;
     juce::TextButton namCabinetEnabled;
     std::unique_ptr<juce::FileChooser> namCabinetChooser;
-    std::unique_ptr<juce::FileChooser> namCabinetRootChooser;
     std::unique_ptr<megadsp::ui::EffectGraph> graph;
     ControlsOverlay controlsOverlay;
     std::array<MeteredSlider, megadsp::controlsPerSlot> sliders;
@@ -3377,11 +3181,11 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     themeButton.onClick = [this] { showThemePalette(); };
     addAndMakeVisible(themeButton);
 
-    diagnosticsButton.setTitle("Diagnostics");
-    diagnosticsButton.setDescription(
-        "Configure diagnostic logging or open the diagnostics folder.");
-    diagnosticsButton.onClick = [this] { showDiagnosticsMenu(); };
-    addAndMakeVisible(diagnosticsButton);
+    settingsButton.setTitle("Settings");
+    settingsButton.setDescription(
+        "Configure global libraries and diagnostic logging.");
+    settingsButton.onClick = [this] { showSettingsMenu(); };
+    addAndMakeVisible(settingsButton);
 
     status.setJustificationType(juce::Justification::centredRight);
     status.setColour(juce::Label::textColourId, juce::Colour(0xff9ba6b5));
@@ -3698,8 +3502,8 @@ void MegaDSPAudioProcessorEditor::resized()
         headerTop.removeFromLeft(identityLayout.saveWidth).reduced(2));
     loadButton.setBounds(
         headerTop.removeFromLeft(identityLayout.loadWidth).reduced(2));
-    diagnosticsButton.setBounds(
-        headerTop.removeFromRight(70).reduced(2));
+    settingsButton.setBounds(
+        headerTop.removeFromRight(82).reduced(2));
     auto outputArea = headerTop.removeFromRight(134);
     outputLabel.setBounds(outputArea.removeFromLeft(44));
     outputGain.setBounds(outputArea);
@@ -4442,31 +4246,93 @@ void MegaDSPAudioProcessorEditor::showThemePalette()
     callout.setDismissalMouseClicksAreAlwaysConsumed(true);
 }
 
-void MegaDSPAudioProcessorEditor::showDiagnosticsMenu()
+void MegaDSPAudioProcessorEditor::showSettingsMenu()
 {
-    constexpr int toggleCommand = 1;
-    constexpr int openCommand = 2;
+    constexpr int chooseNamRootCommand = 101;
+    constexpr int rebuildNamCommand = 102;
+    constexpr int chooseNamCabinetRootCommand = 103;
+    constexpr int chooseImpulseRootCommand = 104;
+    constexpr int rebuildImpulseCommand = 105;
+    constexpr int toggleDiagnosticsCommand = 201;
+    constexpr int openDiagnosticsCommand = 202;
     auto& diagnostics = megadsp::Diagnostics::instance();
+
+    const auto pathLabel = [](const juce::File& directory)
+    {
+        return directory.isDirectory()
+            ? directory.getFullPathName()
+            : juce::String("Not selected");
+    };
+
+    juce::PopupMenu libraries;
+    libraries.addSectionHeader("NAM Models");
+    libraries.addItem(
+        1001, pathLabel(audioProcessor.namModelRootDirectory()), false);
+    libraries.addItem(chooseNamRootCommand, "Choose Model Root...");
+    libraries.addItem(rebuildNamCommand, "Rebuild Model Index");
+    libraries.addSeparator();
+    libraries.addSectionHeader("NAM Cabinet IRs");
+    libraries.addItem(
+        1002, pathLabel(audioProcessor.namCabinetRootDirectory()), false);
+    libraries.addItem(
+        chooseNamCabinetRootCommand, "Choose Cabinet IR Root...");
+    libraries.addSeparator();
+    libraries.addSectionHeader("Impulse Responses");
+    libraries.addItem(
+        1003, pathLabel(audioProcessor.impulseResponseRootDirectory()), false);
+    libraries.addItem(chooseImpulseRootCommand, "Choose IR Root...");
+    libraries.addItem(rebuildImpulseCommand, "Rebuild IR Index");
+
     juce::PopupMenu menu;
+    menu.addSubMenu("Libraries", libraries);
+    menu.addSeparator();
     menu.addItem(
-        toggleCommand, "Enable Diagnostics", true,
+        toggleDiagnosticsCommand, "Enable Diagnostics", true,
         diagnostics.isEnabled());
-    menu.addItem(openCommand, "Open Diagnostics Folder");
+    menu.addItem(openDiagnosticsCommand, "Open Diagnostics Folder");
 
     juce::Component::SafePointer<MegaDSPAudioProcessorEditor> safeThis(this);
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(&diagnosticsButton),
+        juce::PopupMenu::Options().withTargetComponent(&settingsButton),
         [safeThis](int result)
         {
             if (safeThis == nullptr || result == 0)
                 return;
+            if (result == chooseNamRootCommand)
+            {
+                safeThis->chooseLibraryRoot(0);
+                return;
+            }
+            if (result == chooseNamCabinetRootCommand)
+            {
+                safeThis->chooseLibraryRoot(1);
+                return;
+            }
+            if (result == chooseImpulseRootCommand)
+            {
+                safeThis->chooseLibraryRoot(2);
+                return;
+            }
+            if (result == rebuildNamCommand
+                || result == rebuildImpulseCommand)
+            {
+                const auto rebuildResult = result == rebuildNamCommand
+                    ? safeThis->audioProcessor.rebuildNamModelLibrary()
+                    : safeThis->audioProcessor.rebuildImpulseResponseLibrary();
+                if (rebuildResult.failed())
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not rebuild library",
+                        rebuildResult.getErrorMessage());
+                return;
+            }
             auto& service = megadsp::Diagnostics::instance();
-            if (result == openCommand)
+            if (result == openDiagnosticsCommand)
             {
                 service.openFolder();
                 return;
             }
-            if (result != toggleCommand)
+            if (result != toggleDiagnosticsCommand)
                 return;
             if (service.isEnabled())
             {
@@ -4499,6 +4365,47 @@ void MegaDSPAudioProcessorEditor::showDiagnosticsMenu()
         });
 }
 
+void MegaDSPAudioProcessorEditor::chooseLibraryRoot(int library)
+{
+    const auto initialDirectory = library == 0
+        ? audioProcessor.namModelRootDirectory()
+        : library == 1
+            ? audioProcessor.namCabinetRootDirectory()
+            : audioProcessor.impulseResponseRootDirectory();
+    const auto chooserTitle = library == 0
+        ? "Choose NAM model root directory"
+        : library == 1
+            ? "Choose NAM cabinet IR root directory"
+            : "Choose impulse response root directory";
+    settingsFileChooser = std::make_unique<juce::FileChooser>(
+        chooserTitle, initialDirectory);
+    const auto flags =
+        juce::FileBrowserComponent::openMode
+        | juce::FileBrowserComponent::canSelectDirectories;
+    juce::Component::SafePointer<MegaDSPAudioProcessorEditor> safeThis(this);
+    settingsFileChooser->launchAsync(
+        flags, [safeThis, library](const juce::FileChooser& chooser)
+        {
+            if (safeThis == nullptr)
+                return;
+            const auto directory = chooser.getResult();
+            if (!directory.isDirectory())
+                return;
+            const auto result = library == 0
+                ? safeThis->audioProcessor.setNamModelRootDirectory(directory)
+                : library == 1
+                    ? safeThis->audioProcessor.setNamCabinetRootDirectory(
+                          directory)
+                    : safeThis->audioProcessor
+                          .setImpulseResponseRootDirectory(directory);
+            if (result.failed())
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Could not set library root",
+                    result.getErrorMessage());
+        });
+}
+
 void MegaDSPAudioProcessorEditor::refreshIdentityPresentation()
 {
     if (!instanceName.hasKeyboardFocus(true))
@@ -4520,13 +4427,13 @@ void MegaDSPAudioProcessorEditor::refreshIdentityPresentation()
     themeButton.repaint();
     const auto diagnosticsEnabled =
         megadsp::Diagnostics::instance().isEnabled();
-    diagnosticsButton.setButtonText(
-        diagnosticsEnabled ? "DIAG ON" : "DIAG");
-    diagnosticsButton.setTooltip(
+    settingsButton.setButtonText(
+        diagnosticsEnabled ? "SETTINGS *" : "SETTINGS");
+    settingsButton.setTooltip(
         diagnosticsEnabled
-            ? "Diagnostics are enabled. Click to disable or open the log folder."
-            : "Diagnostics are off. Click to configure diagnostic logging.");
-    diagnosticsButton.setColour(
+            ? "Global settings. Diagnostics are currently enabled."
+            : "Configure global libraries and diagnostic logging.");
+    settingsButton.setColour(
         juce::TextButton::buttonColourId,
         diagnosticsEnabled ? juce::Colour(0xff8b4b45)
                            : juce::Colour(0xff27313d));
