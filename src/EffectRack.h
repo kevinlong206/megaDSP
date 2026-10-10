@@ -205,5 +205,8 @@ private:
         int slot, int bank, const juce::String&);
     juce::String namPath(int slot) const;
     void setNamPath(int slot, const juce::String&);
+    void setStoredNamCabinetPath(int slot, const juce::String&);
+    void setStoredNamCabinetEnabled(int slot, bool);
+    void clearStoredNamCabinetState(int slot);
 };
 } // namespace megadsp

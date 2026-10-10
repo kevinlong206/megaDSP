@@ -22,6 +22,9 @@ struct RackSlotState
     int convolutionActiveBank = 0;
     int convolutionWetBufferSamples = 2048;
     juce::String namModelPath;
+    juce::String namCabinetPath;
+    bool namCabinetEnabled = false;
+    bool namCabinetStateStored = false;
 
     RackSlotState();
     void copyFrom(const RackSlotState&);

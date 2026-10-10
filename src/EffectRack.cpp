@@ -185,6 +185,35 @@ void EffectRack::setNamPath(int slot, const juce::String& path)
     state->slots[static_cast<size_t>(slot)].namModelPath = path;
 }
 
+void EffectRack::setStoredNamCabinetPath(
+    int slot, const juce::String& path)
+{
+    if (state == nullptr)
+        return;
+    auto& slotState = state->slots[static_cast<size_t>(slot)];
+    slotState.namCabinetPath = path;
+    slotState.namCabinetStateStored = true;
+}
+
+void EffectRack::setStoredNamCabinetEnabled(int slot, bool enabled)
+{
+    if (state == nullptr)
+        return;
+    auto& slotState = state->slots[static_cast<size_t>(slot)];
+    slotState.namCabinetEnabled = enabled;
+    slotState.namCabinetStateStored = true;
+}
+
+void EffectRack::clearStoredNamCabinetState(int slot)
+{
+    if (state == nullptr)
+        return;
+    auto& slotState = state->slots[static_cast<size_t>(slot)];
+    slotState.namCabinetPath.clear();
+    slotState.namCabinetEnabled = false;
+    slotState.namCabinetStateStored = false;
+}
+
 ModuleType EffectRack::requestedType(const Slot& slot) const
 {
     if (slot.type == nullptr)
@@ -800,6 +829,14 @@ void EffectRack::moveSlot(int source, int destination)
         : ConvolutionReverbModule::
               defaultWetProcessingLatencySamples;
     const auto movingNam = readNam(source);
+    const auto movingNamCabinetPath = state != nullptr
+        ? state->slots[static_cast<size_t>(source)].namCabinetPath
+        : juce::String {};
+    const auto movingNamCabinetEnabled = state != nullptr
+        && state->slots[static_cast<size_t>(source)].namCabinetEnabled;
+    const auto movingNamCabinetStateStored = state != nullptr
+        && state->slots[static_cast<size_t>(source)]
+               .namCabinetStateStored;
     if (source < destination)
         for (int index = source; index < destination; ++index)
         {
@@ -820,6 +857,18 @@ void EffectRack::moveSlot(int source, int destination)
                     .convolutionWetBufferSamples =
                         state->slots[static_cast<size_t>(index + 1)]
                             .convolutionWetBufferSamples;
+                state->slots[static_cast<size_t>(index)]
+                    .namCabinetPath =
+                        state->slots[static_cast<size_t>(index + 1)]
+                            .namCabinetPath;
+                state->slots[static_cast<size_t>(index)]
+                    .namCabinetEnabled =
+                        state->slots[static_cast<size_t>(index + 1)]
+                            .namCabinetEnabled;
+                state->slots[static_cast<size_t>(index)]
+                    .namCabinetStateStored =
+                        state->slots[static_cast<size_t>(index + 1)]
+                            .namCabinetStateStored;
             }
             writeNam(index, readNam(index + 1));
         }
@@ -843,6 +892,18 @@ void EffectRack::moveSlot(int source, int destination)
                     .convolutionWetBufferSamples =
                         state->slots[static_cast<size_t>(index - 1)]
                             .convolutionWetBufferSamples;
+                state->slots[static_cast<size_t>(index)]
+                    .namCabinetPath =
+                        state->slots[static_cast<size_t>(index - 1)]
+                            .namCabinetPath;
+                state->slots[static_cast<size_t>(index)]
+                    .namCabinetEnabled =
+                        state->slots[static_cast<size_t>(index - 1)]
+                            .namCabinetEnabled;
+                state->slots[static_cast<size_t>(index)]
+                    .namCabinetStateStored =
+                        state->slots[static_cast<size_t>(index - 1)]
+                            .namCabinetStateStored;
             }
             writeNam(index, readNam(index - 1));
         }
@@ -858,6 +919,12 @@ void EffectRack::moveSlot(int source, int destination)
         state->slots[static_cast<size_t>(destination)]
             .convolutionWetBufferSamples =
                 movingConvolutionWetBuffer;
+        state->slots[static_cast<size_t>(destination)]
+            .namCabinetPath = movingNamCabinetPath;
+        state->slots[static_cast<size_t>(destination)]
+            .namCabinetEnabled = movingNamCabinetEnabled;
+        state->slots[static_cast<size_t>(destination)]
+            .namCabinetStateStored = movingNamCabinetStateStored;
     }
     writeNam(destination, movingNam);
 }
@@ -935,6 +1002,7 @@ void EffectRack::clearModuleDataState()
                         defaultWetProcessingLatencySamples;
         }
         setNamPath(slot, {});
+        clearStoredNamCabinetState(slot);
     }
 }
 
@@ -1635,6 +1703,7 @@ bool EffectRack::commitNamCabinet(PreparedNamModelLoad& load)
         channel.assign(latencyCapacity, 0.0f);
     rackSlot.latencyWritePosition = 0;
     rackSlot.previousLatency = module->latencySamples();
+    setStoredNamCabinetPath(load.slot, load.path);
     return true;
 }
 
@@ -1646,6 +1715,8 @@ void EffectRack::clearNamCabinet(int slot)
     if (auto* module = selectedModule(rackSlot))
         if (auto* capability = module->namModelCapability())
             capability->clearNamCabinet();
+    setStoredNamCabinetPath(slot, {});
+    setStoredNamCabinetEnabled(slot, false);
 }
 
 void EffectRack::setNamCabinetEnabled(int slot, bool enabled)
@@ -1656,6 +1727,7 @@ void EffectRack::setNamCabinetEnabled(int slot, bool enabled)
     if (auto* module = selectedModule(rackSlot))
         if (auto* capability = module->namModelCapability())
             capability->setNamCabinetEnabled(enabled);
+    setStoredNamCabinetEnabled(slot, enabled);
 }
 
 bool EffectRack::isNamCabinetEnabled(int slot) const
@@ -1733,6 +1805,7 @@ juce::Result EffectRack::clearNamModel(int slot)
     rackSlot.observedNamPath.clear();
     rackSlot.namRestorePending = false;
     setNamPath(slot, {});
+    clearStoredNamCabinetState(slot);
     return juce::Result::ok();
 }
 

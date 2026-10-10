@@ -2336,13 +2336,20 @@ void MegaDSPAudioProcessor::restoreSnapshotAssets(int index)
             state.slots[static_cast<size_t>(slot)].namModelPath;
         if (nam.isNotEmpty())
         {
+            const auto& slotState =
+                state.slots[static_cast<size_t>(slot)];
             megadsp::EffectRack::PreparedNamModelLoad modelLoad;
             megadsp::EffectRack::PreparedNamModelLoad cabinetLoad;
             auto result = rack.prepareNamModel(
                 slot, juce::File(nam), modelLoad);
-            const auto preference = namCabinetPreference(
-                nam, namModelRootDirectory());
-            const auto impulse = juce::File(preference.impulsePath);
+            const auto preference = slotState.namCabinetStateStored
+                ? NamCabinetPreference {
+                      slotState.namCabinetPath,
+                      slotState.namCabinetEnabled }
+                : namCabinetPreference(
+                      nam, namModelRootDirectory());
+            const auto impulse =
+                juce::File(preference.impulsePath);
             if (result.wasOk() && impulse.existsAsFile())
                 result = rack.prepareNamCabinet(
                     slot, impulse, cabinetLoad);

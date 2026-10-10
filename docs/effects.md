@@ -896,12 +896,13 @@ browse those files directly without search indexing. NAM `with_cab` and gear
 metadata determine the default cabinet state when the path is inconclusive.
 The model's full root-relative path is checked first: case-insensitive `Cab`
 defaults the cabinet IR off and case-insensitive `Direct` defaults it on, with
-`Cab` taking precedence. Exact-case `DI` is the final fallback. **IR ON/OFF**
-is a per-model manual override. The selected speaker IR
-and override are global preferences keyed by the NAM path, so they are restored
-for that model across plug-in and DAW restarts without saving a preset. A model
-without its own speaker IR automatically uses the last successfully loaded NAM
-speaker IR.
+`Cab` taking precedence. Exact-case `DI` is the final fallback. Each NAM module
+instance independently saves its selected speaker IR and **IR ON/OFF** state in
+project, snapshot, preset, and undo state, even when multiple slots load the
+same model. The global preference keyed by NAM path supplies only the initial
+speaker IR and enabled state when that model is loaded into a new slot. A model
+without its own global speaker IR automatically uses the last successfully
+loaded NAM speaker IR.
 Clicking a row once schedules that model for immediate background preparation
 and swaps it in when ready. The recursive
 model library uses one root directory, and megaDSP persists it in both project

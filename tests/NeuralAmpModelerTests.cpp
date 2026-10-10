@@ -1039,6 +1039,75 @@ public:
             root.deleteRecursively();
         }
 
+        beginTest("Multiple NAM slots preserve independent state");
+        {
+            const auto root =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getNonexistentChildFile(
+                        "megaDSP-independent-nam-slots", {}, true);
+            expect(root.createDirectory().wasOk());
+            const auto unique = juce::String::toHexString(
+                juce::Time::getHighResolutionTicks());
+            auto model = writeNam(
+                linearNamJson(), "independent-slots-" + unique);
+            const auto first = writeImpulse(
+                root.getChildFile("First.wav"));
+            const auto second = writeImpulse(
+                root.getChildFile("Second.wav"), 12);
+
+            MegaDSPAudioProcessor source;
+            source.prepareToPlay(48000.0, 64);
+            source.addModule(ModuleType::neuralAmpModeler);
+            source.addModule(ModuleType::neuralAmpModeler);
+            expect(source.loadNamModel(0, model).wasOk());
+            expect(source.loadNamModel(1, model).wasOk());
+            expect(source.loadNamCabinetAsync(0, first).wasOk());
+            source.finishNamModelLoadForTesting();
+            expect(source.loadNamCabinetAsync(1, second).wasOk());
+            source.finishNamModelLoadForTesting();
+            expect(source.setNamCabinetEnabled(0, false).wasOk());
+
+            auto* firstGain = source.parameters.getParameter(
+                controlParameterId(0, 0));
+            auto* secondGain = source.parameters.getParameter(
+                controlParameterId(1, 0));
+            firstGain->setValueNotifyingHost(0.2f);
+            secondGain->setValueNotifyingHost(0.8f);
+
+            expectEquals(
+                source.namCabinetPath(0), first.getFullPathName());
+            expectEquals(
+                source.namCabinetPath(1), second.getFullPathName());
+            expect(!source.isNamCabinetEnabled(0));
+            expect(source.isNamCabinetEnabled(1));
+
+            juce::MemoryBlock saved;
+            source.getStateInformation(saved);
+            MegaDSPAudioProcessor restored;
+            restored.prepareToPlay(48000.0, 64);
+            restored.setStateInformation(
+                saved.getData(), static_cast<int>(saved.getSize()));
+
+            expectEquals(
+                restored.namCabinetPath(0), first.getFullPathName());
+            expectEquals(
+                restored.namCabinetPath(1), second.getFullPathName());
+            expect(!restored.isNamCabinetEnabled(0));
+            expect(restored.isNamCabinetEnabled(1));
+            expectWithinAbsoluteError(
+                restored.parameters.getParameter(
+                    controlParameterId(0, 0))->getValue(),
+                0.2f, 0.0001f);
+            expectWithinAbsoluteError(
+                restored.parameters.getParameter(
+                    controlParameterId(1, 0))->getValue(),
+                0.8f, 0.0001f);
+
+            model.deleteFile();
+            root.deleteRecursively();
+        }
+
         beginTest("Recursive NAM library validates, searches, and persists");
         {
             const auto root =

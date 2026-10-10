@@ -24,6 +24,9 @@ void RackSlotState::copyFrom(const RackSlotState& source)
     convolutionActiveBank = source.convolutionActiveBank;
     convolutionWetBufferSamples = source.convolutionWetBufferSamples;
     namModelPath = source.namModelPath;
+    namCabinetPath = source.namCabinetPath;
+    namCabinetEnabled = source.namCabinetEnabled;
+    namCabinetStateStored = source.namCabinetStateStored;
 }
 
 void RackState::copyFrom(const RackState& source)
@@ -54,6 +57,9 @@ void RackState::clear()
         slot.convolutionActiveBank = 0;
         slot.convolutionWetBufferSamples = 2048;
         slot.namModelPath.clear();
+        slot.namCabinetPath.clear();
+        slot.namCabinetEnabled = false;
+        slot.namCabinetStateStored = false;
     }
     inputGainDb.store(0.0f, std::memory_order_relaxed);
     outputGainDb.store(0.0f, std::memory_order_relaxed);
@@ -110,6 +116,14 @@ juce::ValueTree RackState::toValueTree(int index) const
             source.convolutionWetBufferSamples, nullptr);
         if (source.namModelPath.isNotEmpty())
             slot.setProperty("namModel", source.namModelPath, nullptr);
+        if (source.namCabinetStateStored)
+        {
+            slot.setProperty(
+                "namCabinetEnabled", source.namCabinetEnabled, nullptr);
+            if (source.namCabinetPath.isNotEmpty())
+                slot.setProperty(
+                    "namCabinet", source.namCabinetPath, nullptr);
+        }
         snapshot.addChild(slot, -1, nullptr);
     }
     return snapshot;
@@ -172,6 +186,13 @@ void RackState::fromValueTree(const juce::ValueTree& snapshot)
                 destination.impulseResponsePath;
         destination.namModelPath =
             child.getProperty("namModel").toString();
+        destination.namCabinetStateStored =
+            child.hasProperty("namCabinet")
+            || child.hasProperty("namCabinetEnabled");
+        destination.namCabinetPath =
+            child.getProperty("namCabinet").toString();
+        destination.namCabinetEnabled = static_cast<bool>(
+            child.getProperty("namCabinetEnabled", false));
     }
 }
 } // namespace megadsp
