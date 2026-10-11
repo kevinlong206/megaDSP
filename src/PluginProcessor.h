@@ -98,10 +98,10 @@ public:
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override;
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram(int) override {}
-    const juce::String getProgramName(int) override { return {}; }
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram(int) override;
+    const juce::String getProgramName(int) override;
     void changeProgramName(int, const juce::String&) override {}
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
@@ -475,6 +475,7 @@ private:
     std::array<std::unique_ptr<megadsp::EffectRack>,
                megadsp::snapshotCount> snapshotRacks;
     std::atomic<int> selectedSnapshot { 0 };
+    std::atomic<int> currentProgram { 0 };
     std::atomic<int> activeAudioSnapshot { 0 };
     std::atomic<int> pendingSnapshotRecall { -1 };
     std::atomic<bool> snapshotUiDirty { false };

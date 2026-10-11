@@ -73,9 +73,12 @@ public:
     {
         if (details.nonParameterStateChanged)
             ++nonParameterChanges;
+        if (details.programChanged)
+            ++programChanges;
     }
 
     int nonParameterChanges = 0;
+    int programChanges = 0;
 };
 
 class EmbeddedBitmap final : public reaper::REAPER_FXEMBED_IBitmap
@@ -1489,6 +1492,22 @@ public:
             "Factory presets publish each parameter's final value exactly once");
         MegaDSPAudioProcessor presetProcessor;
         presetProcessor.prepareToPlay(48000.0, 512);
+        ProcessorChangeRecorder presetChanges;
+        presetProcessor.addListener(&presetChanges);
+        expectEquals(presetProcessor.getNumPrograms(), 5);
+        expectEquals(presetProcessor.getCurrentProgram(), 0);
+        expectEquals(
+            presetProcessor.getProgramName(0), juce::String("Init"));
+        expectEquals(
+            presetProcessor.getProgramName(1), juce::String("Vocal Polish"));
+        expectEquals(
+            presetProcessor.getProgramName(2), juce::String("Drum Smash"));
+        expectEquals(
+            presetProcessor.getProgramName(3), juce::String("Wide Delay"));
+        expectEquals(
+            presetProcessor.getProgramName(4), juce::String("Ambient Hall"));
+        expect(presetProcessor.getProgramName(-1).isEmpty());
+        expect(presetProcessor.getProgramName(5).isEmpty());
         ParameterEventRecorder recorder(
             presetProcessor.getParameters().size());
         for (int slot = 0; slot < megadsp::slotCount; ++slot)
@@ -1534,8 +1553,10 @@ public:
                     * (2 + megadsp::controlsPerSlot));
         };
 
-        presetProcessor.loadFactoryPreset(1);
+        presetProcessor.setCurrentProgram(1);
         verifyFinalEvents();
+        expectEquals(presetProcessor.getCurrentProgram(), 1);
+        expectEquals(presetChanges.programChanges, 1);
         expect(presetProcessor.getRack().activeModuleType(0)
                == megadsp::ModuleType::equalizer);
         expect(presetProcessor.getRack().activeModuleType(1)
@@ -1554,6 +1575,8 @@ public:
         recorder.clear();
         presetProcessor.loadFactoryPreset(0);
         verifyFinalEvents();
+        expectEquals(presetProcessor.getCurrentProgram(), 0);
+        expectEquals(presetChanges.programChanges, 3);
         expectEquals(presetProcessor.getRack().activeSlotCount(), 0);
         for (int slot = 0; slot < megadsp::slotCount; ++slot)
         {
@@ -1565,6 +1588,13 @@ public:
                         megadsp::controlParameterId(slot, control))->load(),
                     0.5f, 0.000001f);
         }
+        recorder.clear();
+        presetProcessor.setCurrentProgram(5);
+        expectEquals(presetProcessor.getCurrentProgram(), 0);
+        expectEquals(presetChanges.programChanges, 3);
+        for (const auto& values : recorder.values)
+            expect(values.empty());
+        presetProcessor.removeListener(&presetChanges);
 
         beginTest("Snapshots store isolated live rack states");
         MegaDSPAudioProcessor snapshotProcessor;

@@ -3468,8 +3468,10 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     addAndMakeVisible(saveButton);
     addAndMakeVisible(loadButton);
 
-    factoryPresets.addItemList(
-        { "Init", "Vocal Polish", "Drum Smash", "Wide Delay", "Ambient Hall" }, 1);
+    juce::StringArray factoryProgramNames;
+    for (int program = 0; program < audioProcessor.getNumPrograms(); ++program)
+        factoryProgramNames.add(audioProcessor.getProgramName(program));
+    factoryPresets.addItemList(factoryProgramNames, 1);
     factoryPresets.setScrollWheelEnabled(false);
     factoryPresets.setTextWhenNothingSelected("Factory Racks");
     factoryPresets.onChange = [this]

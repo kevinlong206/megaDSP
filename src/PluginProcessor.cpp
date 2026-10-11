@@ -11,6 +11,7 @@
 
 #include <cstring>
 #include <optional>
+#include <string_view>
 
 thread_local bool
     MegaDSPAudioProcessor::publishingSnapshotParameters = false;
@@ -1688,6 +1689,14 @@ int programChangeNumber(
         return -1;
     return metadata.data[1] & 0x7f;
 }
+
+constexpr std::array<std::string_view, 5> factoryProgramNames {
+    "Init",
+    "Vocal Polish",
+    "Drum Smash",
+    "Wide Delay",
+    "Ambient Hall"
+};
 
 void applySnapshotTransitionWeight(
     juce::AudioBuffer<float>& buffer, float start, float end,
@@ -6176,8 +6185,32 @@ void MegaDSPAudioProcessor::topologyChanged()
     finishTopologyMutation(true, false, false);
 }
 
+int MegaDSPAudioProcessor::getNumPrograms()
+{
+    return static_cast<int>(factoryProgramNames.size());
+}
+
+int MegaDSPAudioProcessor::getCurrentProgram()
+{
+    return currentProgram.load(std::memory_order_acquire);
+}
+
+void MegaDSPAudioProcessor::setCurrentProgram(int program)
+{
+    loadFactoryPreset(program);
+}
+
+const juce::String MegaDSPAudioProcessor::getProgramName(int program)
+{
+    if (!juce::isPositiveAndBelow(program, getNumPrograms()))
+        return {};
+    return factoryProgramNames[static_cast<size_t>(program)].data();
+}
+
 void MegaDSPAudioProcessor::loadFactoryPreset(int presetIndex)
 {
+    if (!juce::isPositiveAndBelow(presetIndex, getNumPrograms()))
+        return;
     ScopedProcessorUndoTransaction undo(*this, "Load factory preset");
     struct PresetSlot
     {
@@ -6274,6 +6307,10 @@ void MegaDSPAudioProcessor::loadFactoryPreset(int presetIndex)
                 source.controls[static_cast<size_t>(control)]);
     }
     finishTopologyMutation(true, true, true);
+    currentProgram.store(presetIndex, std::memory_order_release);
+    updateHostDisplay(
+        juce::AudioProcessorListener::ChangeDetails()
+            .withProgramChanged(true));
 }
 
 juce::Result MegaDSPAudioProcessor::savePreset(const juce::File& file)
