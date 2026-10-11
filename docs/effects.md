@@ -904,10 +904,14 @@ defaults the cabinet IR off and case-insensitive `Direct` defaults it on, with
 `Cab` taking precedence. Exact-case `DI` is the final fallback. Each NAM module
 instance independently saves its selected speaker IR and **IR ON/OFF** state in
 project, snapshot, preset, and undo state, even when multiple slots load the
-same model. The global preference keyed by NAM path supplies only the initial
-speaker IR and enabled state when that model is loaded into a new slot. A model
-without its own global speaker IR automatically uses the last successfully
-loaded NAM speaker IR.
+same model. After a completed user gesture, megaDSP remembers that model's
+Pre Gain, Bass, Mid, Treble, and Post Gain values on a background-priority
+worker. The global preference keyed by NAM path supplies these five controls,
+the initial speaker IR, and its enabled state whenever the model is explicitly
+selected in any instance. Project, snapshot, preset, and undo restoration
+remain authoritative and never substitute global model memory for their saved
+slot values. A model without its own global speaker IR automatically uses the
+last successfully loaded NAM speaker IR.
 Clicking a row once schedules that model for immediate background preparation
 and swaps it in when ready. The recursive
 model library uses one root directory, and megaDSP persists it in both project

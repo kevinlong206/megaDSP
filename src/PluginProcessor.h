@@ -441,6 +441,10 @@ private:
     void releaseAutomaticLibraryClaims();
     void finishPendingImpulseResponseLoad();
     void finishPendingNamModelLoad();
+    void scheduleNamControlPreference(int parameterIndex);
+    void flushPendingNamControlPreferences(bool force);
+    void applyNamControlPreference(
+        int snapshot, int slot, const std::array<float, 5>&);
     void disposeNamModelAsync(megadsp::PreparedNamModelPtr);
     void serializeSnapshots(juce::ValueTree&) const;
     void restoreSnapshots(const juce::ValueTree&, int sourceSchema);
@@ -557,6 +561,10 @@ private:
         bool cabinetOnly = false;
         bool cabinetEnabled = false;
         bool clearCabinet = false;
+        bool controlsStored = false;
+        std::array<float, 5> controls {
+            0.5f, 0.5f, 0.5f, 0.5f, 0.5f
+        };
         juce::String preferenceModelPath;
         juce::String preferenceImpulsePath;
     };
@@ -564,6 +572,20 @@ private:
     std::unique_ptr<PendingNamModelLoad> pendingNamModelLoad;
     juce::ThreadPool namModelLoadPool { 1 };
     juce::ThreadPool namModelDisposalPool { 1 };
+    struct PendingNamControlPreference
+    {
+        juce::String modelPath;
+        std::array<float, 5> controls {
+            0.5f, 0.5f, 0.5f, 0.5f, 0.5f
+        };
+        int countdown = 0;
+    };
+    std::array<PendingNamControlPreference, megadsp::slotCount>
+        pendingNamControlPreferences;
+    juce::ThreadPool namPreferencePool {
+        1, juce::Thread::osDefaultStackSize,
+        juce::Thread::Priority::background
+    };
     int hostBypassWritePosition = 0;
     int lastHostBypassLatency = 0;
     std::atomic<bool> topologyMutationInProgress { false };
@@ -635,6 +657,7 @@ private:
 public:
     void finishLibraryIndexForTesting();
     void refreshAssetLibrariesForTesting();
+    void finishNamPreferenceSaveForTesting();
     void finishNamModelLoadForTesting();
     void finishImpulseResponseLoadForTesting();
 #endif

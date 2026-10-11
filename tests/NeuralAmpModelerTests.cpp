@@ -1051,6 +1051,104 @@ public:
             root.deleteRecursively();
         }
 
+        beginTest("Per-model controls and cabinet persist without overriding project state");
+        {
+            const auto root =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getNonexistentChildFile(
+                        "megaDSP-nam-control-memory", {}, true);
+            expect(root.createDirectory().wasOk());
+            const auto unique = juce::String::toHexString(
+                juce::Time::getHighResolutionTicks());
+            auto model = writeNam(
+                linearNamJson(), "control-memory-" + unique);
+            auto unrelatedModel = writeNam(
+                linearNamJson(), "control-memory-other-" + unique);
+            const auto cabinet = writeImpulse(
+                root.getChildFile("remembered.wav"));
+            const std::array<float, 5> remembered {
+                0.13f, 0.27f, 0.41f, 0.68f, 0.84f
+            };
+            const std::array<float, 5> projectValues {
+                0.91f, 0.76f, 0.59f, 0.34f, 0.18f
+            };
+
+            MegaDSPAudioProcessor source;
+            source.prepareToPlay(48000.0, 64);
+            source.addModule(ModuleType::neuralAmpModeler);
+            expect(source.loadNamModel(0, model).wasOk());
+            expect(source.setNamCabinetRootDirectory(root).wasOk());
+            expect(source.loadNamCabinetAsync(0, cabinet).wasOk());
+            source.finishNamModelLoadForTesting();
+            for (int control = 0; control < 5; ++control)
+            {
+                auto* parameter = source.parameters.getParameter(
+                    controlParameterId(0, control));
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost(
+                    remembered[static_cast<size_t>(control)]);
+                parameter->endChangeGesture();
+            }
+            source.finishNamPreferenceSaveForTesting();
+
+            MegaDSPAudioProcessor recalled;
+            recalled.prepareToPlay(48000.0, 64);
+            recalled.addModule(ModuleType::neuralAmpModeler);
+            expect(recalled.loadNamModelAsync(0, model).wasOk());
+            recalled.finishNamModelLoadForTesting();
+            for (int control = 0; control < 5; ++control)
+                expectWithinAbsoluteError(
+                    recalled.parameters.getParameter(
+                        controlParameterId(0, control))->getValue(),
+                    remembered[static_cast<size_t>(control)], 0.0001f);
+            expectEquals(
+                recalled.namCabinetPath(0),
+                cabinet.getFullPathName(),
+                "Saving controls must retain the model cabinet preference.");
+            expect(recalled.isNamCabinetEnabled(0));
+
+            MegaDSPAudioProcessor unrelated;
+            unrelated.prepareToPlay(48000.0, 64);
+            unrelated.addModule(ModuleType::neuralAmpModeler);
+            expect(unrelated.loadNamModel(0, unrelatedModel).wasOk());
+            for (int control = 0; control < 5; ++control)
+                expectWithinAbsoluteError(
+                    unrelated.parameters.getParameter(
+                        controlParameterId(0, control))->getValue(),
+                    0.5f, 0.0001f,
+                    "Remembered controls must be isolated by model.");
+
+            MegaDSPAudioProcessor project;
+            project.prepareToPlay(48000.0, 64);
+            project.addModule(ModuleType::neuralAmpModeler);
+            expect(project.loadNamModel(0, model).wasOk());
+            for (int control = 0; control < 5; ++control)
+                project.parameters.getParameter(
+                    controlParameterId(0, control))
+                    ->setValueNotifyingHost(
+                        projectValues[static_cast<size_t>(control)]);
+            juce::MemoryBlock saved;
+            project.getStateInformation(saved);
+
+            MegaDSPAudioProcessor restored;
+            restored.prepareToPlay(48000.0, 64);
+            restored.setStateInformation(
+                saved.getData(), static_cast<int>(saved.getSize()));
+            for (int control = 0; control < 5; ++control)
+                expectWithinAbsoluteError(
+                    restored.parameters.getParameter(
+                        controlParameterId(0, control))->getValue(),
+                    projectValues[static_cast<size_t>(control)], 0.0001f,
+                    "Project state must override global model memory.");
+            expectEquals(
+                restored.namCabinetPath(0), cabinet.getFullPathName());
+
+            expect(restored.deleteNamModel(model).wasOk());
+            unrelatedModel.deleteFile();
+            root.deleteRecursively();
+        }
+
         beginTest("Multiple NAM slots preserve independent state");
         {
             const auto root =

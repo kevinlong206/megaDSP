@@ -540,6 +540,10 @@ struct NamCabinetPreference
     juce::String impulsePath;
     bool enabled = false;
     bool exists = false;
+    std::array<float, 5> controls {
+        0.5f, 0.5f, 0.5f, 0.5f, 0.5f
+    };
+    bool controlsStored = false;
 };
 
 std::optional<NamModelLibraryEntry> inspectNamModel(
@@ -583,11 +587,32 @@ NamCabinetPreference namCabinetPreference(
         for (auto* child : xml->getChildWithTagNameIterator("MODEL"))
             if (child->getStringAttribute("path") == modelPath)
             {
-                preference.impulsePath =
-                    child->getStringAttribute("impulse");
-                preference.enabled =
-                    child->getBoolAttribute("enabled");
-                preference.exists = true;
+                const auto cabinetStored =
+                    child->hasAttribute("enabled")
+                    || child->hasAttribute("impulse");
+                if (cabinetStored)
+                {
+                    preference.impulsePath =
+                        child->getStringAttribute("impulse");
+                    preference.enabled =
+                        child->getBoolAttribute("enabled");
+                    preference.exists = true;
+                }
+                preference.controlsStored =
+                    child->getBoolAttribute("controlsStored")
+                    || child->hasAttribute("control0");
+                if (preference.controlsStored)
+                    for (int control = 0;
+                         control < static_cast<int>(
+                             preference.controls.size());
+                         ++control)
+                        preference.controls[static_cast<size_t>(control)] =
+                            juce::jlimit(
+                                0.0f, 1.0f,
+                                static_cast<float>(
+                                    child->getDoubleAttribute(
+                                        "control" + juce::String(control),
+                                        0.5)));
                 break;
             }
     if (preference.impulsePath.isEmpty())
@@ -642,6 +667,70 @@ juce::Result persistNamCabinetPreference(
         ? juce::Result::ok()
         : juce::Result::fail(
               "Could not save the NAM cabinet preference.");
+}
+
+juce::Result persistNamControlPreference(
+    const juce::String& modelPath,
+    const std::array<float, 5>& controls)
+{
+    if (modelPath.isEmpty())
+        return juce::Result::fail(
+            "Load a NAM model before saving its controls.");
+    const juce::ScopedLock lock(globalSettingsLock());
+    const auto file = globalSettingsFile();
+    const auto directoryResult =
+        file.getParentDirectory().createDirectory();
+    if (directoryResult.failed())
+        return directoryResult;
+    juce::PropertiesFile settings(file, globalSettingsOptions());
+    auto xml = juce::XmlDocument::parse(
+        settings.getValue("namCabinetPreferences"));
+    if (xml == nullptr || !xml->hasTagName("NAM_CABINETS"))
+        xml = std::make_unique<juce::XmlElement>("NAM_CABINETS");
+
+    juce::XmlElement* target = nullptr;
+    for (auto* child : xml->getChildWithTagNameIterator("MODEL"))
+        if (child->getStringAttribute("path") == modelPath)
+        {
+            target = child;
+            break;
+        }
+    if (target == nullptr)
+    {
+        target = new juce::XmlElement("MODEL");
+        target->setAttribute("path", modelPath);
+        xml->addChildElement(target);
+    }
+    target->setAttribute("controlsStored", true);
+    for (int control = 0;
+         control < static_cast<int>(controls.size()); ++control)
+        target->setAttribute(
+            "control" + juce::String(control),
+            juce::jlimit(
+                0.0f, 1.0f,
+                controls[static_cast<size_t>(control)]));
+    settings.setValue(
+        "namCabinetPreferences", xml->toString());
+    return settings.saveIfNeeded()
+        ? juce::Result::ok()
+        : juce::Result::fail(
+              "Could not save the NAM control preference.");
+}
+
+void queueNamControlPreference(
+    juce::ThreadPool& pool, juce::String modelPath,
+    std::array<float, 5> controls)
+{
+    pool.addJob(std::function<void()> {
+        [path = std::move(modelPath), controls]
+        {
+            const auto result =
+                persistNamControlPreference(path, controls);
+            if (result.failed())
+                megadsp::Diagnostics::instance().log(
+                    "nam-preference-save-failed",
+                    result.getErrorMessage());
+        } });
 }
 
 juce::StringArray globalNamFavorites()
@@ -1687,6 +1776,8 @@ MegaDSPAudioProcessor::MegaDSPAudioProcessor()
 MegaDSPAudioProcessor::~MegaDSPAudioProcessor()
 {
     stopTimer();
+    flushPendingNamControlPreferences(true);
+    namPreferencePool.removeAllJobs(true, 30000);
     libraryIndexPool.removeAllJobs(true, 30000);
     releaseAutomaticLibraryClaims();
     impulseResponseLoadPool.removeAllJobs(true, 30000);
@@ -1830,7 +1921,87 @@ void MegaDSPAudioProcessor::parameterGestureChanged(
         beginUndoTransaction("Adjust " + name);
     }
     else
+    {
         endUndoTransaction();
+        scheduleNamControlPreference(parameterIndex);
+    }
+}
+
+void MegaDSPAudioProcessor::scheduleNamControlPreference(
+    int parameterIndex)
+{
+    const auto& allParameters = getParameters();
+    if (!juce::isPositiveAndBelow(
+            parameterIndex, allParameters.size()))
+        return;
+    const auto* changed = allParameters[parameterIndex];
+    const auto snapshot = getSelectedSnapshot();
+    auto& state = snapshotStates[static_cast<size_t>(snapshot)];
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        auto& slotState = state.slots[static_cast<size_t>(slot)];
+        if (static_cast<megadsp::ModuleType>(juce::roundToInt(
+                slotState.type.load(std::memory_order_relaxed)))
+            != megadsp::ModuleType::neuralAmpModeler
+            || slotState.namModelPath.isEmpty())
+            continue;
+        for (int control = 0; control < 5; ++control)
+        {
+            if (parameters.getParameter(
+                    controlParameterIds[static_cast<size_t>(slot)]
+                                       [static_cast<size_t>(control)])
+                != changed)
+                continue;
+            auto& pending =
+                pendingNamControlPreferences[static_cast<size_t>(slot)];
+            if (pending.modelPath.isNotEmpty()
+                && pending.modelPath != slotState.namModelPath)
+                queueNamControlPreference(
+                    namPreferencePool, pending.modelPath,
+                    pending.controls);
+            pending.modelPath = slotState.namModelPath;
+            for (int remembered = 0; remembered < 5; ++remembered)
+                pending.controls[static_cast<size_t>(remembered)] =
+                    slotState.controls[static_cast<size_t>(remembered)]
+                        .load(std::memory_order_relaxed);
+            pending.countdown = 15;
+            return;
+        }
+    }
+}
+
+void MegaDSPAudioProcessor::flushPendingNamControlPreferences(
+    bool force)
+{
+    for (auto& pending : pendingNamControlPreferences)
+    {
+        if (pending.modelPath.isEmpty())
+            continue;
+        if (!force && --pending.countdown > 0)
+            continue;
+        const auto modelPath = std::move(pending.modelPath);
+        const auto controls = pending.controls;
+        pending = {};
+        queueNamControlPreference(
+            namPreferencePool, modelPath, controls);
+    }
+}
+
+void MegaDSPAudioProcessor::applyNamControlPreference(
+    int snapshot, int slot, const std::array<float, 5>& controls)
+{
+    if (!juce::isPositiveAndBelow(snapshot, megadsp::snapshotCount)
+        || !juce::isPositiveAndBelow(slot, megadsp::slotCount))
+        return;
+    auto& slotState =
+        snapshotStates[static_cast<size_t>(snapshot)]
+            .slots[static_cast<size_t>(slot)];
+    for (int control = 0; control < 5; ++control)
+        slotState.controls[static_cast<size_t>(control)].store(
+            juce::jlimit(
+                0.0f, 1.0f,
+                controls[static_cast<size_t>(control)]),
+            std::memory_order_relaxed);
 }
 
 void MegaDSPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
@@ -5560,6 +5731,8 @@ juce::Result MegaDSPAudioProcessor::loadAdjacentNamModelAsync(
                 const auto preference = namCabinetPreference(
                     resolved.getFullPathName(), namModelRootDirectory());
                 completed->cabinetEnabled = preference.enabled;
+                completed->controlsStored = preference.controlsStored;
+                completed->controls = preference.controls;
                 completed->clearCabinet = true;
                 const auto impulse = juce::File(preference.impulsePath);
                 if (preference.impulsePath.isNotEmpty()
@@ -5616,6 +5789,8 @@ juce::Result MegaDSPAudioProcessor::loadNamModelAsync(
                 const auto preference = namCabinetPreference(
                     file.getFullPathName(), namModelRootDirectory());
                 completed->cabinetEnabled = preference.enabled;
+                completed->controlsStored = preference.controlsStored;
+                completed->controls = preference.controls;
                 completed->clearCabinet = true;
                 const auto impulse = juce::File(preference.impulsePath);
                 if (preference.impulsePath.isNotEmpty()
@@ -5701,6 +5876,12 @@ void MegaDSPAudioProcessor::finishPendingNamModelLoad()
                     completed->cabinetEnabled);
                 if (persisted.failed())
                     result = persisted;
+            }
+            else if (completed->controlsStored)
+            {
+                applyNamControlPreference(
+                    completed->snapshot, completed->load.slot,
+                    completed->controls);
             }
             if (completed->snapshot == getSelectedSnapshot())
                 publishSnapshotToParameters(completed->snapshot);
@@ -5942,6 +6123,9 @@ juce::Result MegaDSPAudioProcessor::loadNamModel(
         return juce::Result::fail("NAM model commit superseded.");
     }
 
+    if (preference.controlsStored)
+        applyNamControlPreference(
+            getSelectedSnapshot(), slot, preference.controls);
     finishDataMutation();
     publishSnapshotToParameters(getSelectedSnapshot());
     updateHostDisplay(
@@ -6185,6 +6369,7 @@ void MegaDSPAudioProcessor::timerCallback()
 {
     finishPendingImpulseResponseLoad();
     finishPendingNamModelLoad();
+    flushPendingNamControlPreferences(false);
     if (++automaticLibraryPollCounter >= 30)
     {
         automaticLibraryPollCounter = 0;
@@ -6290,6 +6475,25 @@ void MegaDSPAudioProcessor::refreshAssetLibrariesForTesting()
         pollAutomaticLibraryUpdates();
         finishLibraryIndexForTesting();
     }
+}
+
+void MegaDSPAudioProcessor::finishNamPreferenceSaveForTesting()
+{
+    const auto& allParameters = getParameters();
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        auto* parameter = parameters.getParameter(
+            megadsp::controlParameterId(slot, 0));
+        const auto index = allParameters.indexOf(parameter);
+        if (index >= 0)
+            scheduleNamControlPreference(index);
+    }
+    flushPendingNamControlPreferences(true);
+    const auto deadline =
+        juce::Time::getMillisecondCounterHiRes() + 30000.0;
+    while (namPreferencePool.getNumJobs() > 0
+           && juce::Time::getMillisecondCounterHiRes() < deadline)
+        juce::Thread::sleep(1);
 }
 
 void MegaDSPAudioProcessor::finishImpulseResponseLoadForTesting()
