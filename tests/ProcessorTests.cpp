@@ -2144,6 +2144,8 @@ public:
                 1);
             expect(
                 irBrowser.searchImpulseResponses("hall -bright").empty());
+            const auto orderBeforeFavorite =
+                irBrowser.searchImpulseResponses({});
             expect(irBrowser.setImpulseResponseFavorite(
                 nestedIr, true).wasOk());
             const auto favoriteIrs =
@@ -2153,6 +2155,20 @@ public:
                 expectEquals(
                     favoriteIrs.front().file.getFullPathName(),
                     nestedIr.getFullPathName());
+            const auto orderAfterFavorite =
+                irBrowser.searchImpulseResponses({});
+            expectEquals(
+                static_cast<int>(orderAfterFavorite.size()),
+                static_cast<int>(orderBeforeFavorite.size()));
+            for (size_t index = 0;
+                 index < std::min(
+                     orderBeforeFavorite.size(),
+                     orderAfterFavorite.size());
+                 ++index)
+                expectEquals(
+                    orderAfterFavorite[index].file.getFullPathName(),
+                    orderBeforeFavorite[index].file.getFullPathName(),
+                    "Favoriting must not reorder IR results.");
             MegaDSPAudioProcessor favoriteIrRestored;
             expect(
                 favoriteIrRestored.isImpulseResponseFavorite(nestedIr),
@@ -2195,6 +2211,20 @@ public:
                     nestedIr, true).wasOk());
                 convolutionGraph
                     .setCompactImpulseFavoritesOnlyForTesting(false);
+                convolutionGraph.scrollCompactNamLibraryForTesting(1);
+                expectEquals(
+                    convolutionGraph
+                        .compactNamFirstVisibleModelForTesting(),
+                    1);
+                convolutionGraph
+                    .toggleCompactImpulseFavoriteForTesting(2);
+                expectEquals(
+                    convolutionGraph
+                        .compactNamFirstVisibleModelForTesting(),
+                    1,
+                    "Favoriting must preserve IR list scroll position.");
+                expect(convolutionBrowser.setImpulseResponseFavorite(
+                    nestedIr, true).wasOk());
                 convolutionGraph.setCompactAssetFilterForTesting(
                     "BRIGHT-HALL");
                 expectEquals(

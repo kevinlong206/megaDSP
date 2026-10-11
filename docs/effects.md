@@ -323,7 +323,8 @@ filter directly above it. Exact path matches rank above bounded typo matches,
 unordered terms may be combined, quoted phrases stay together, and `-term`
 excludes a match. `mono`, `stereo`, `short`, `medium`, `long`, and
 `sr:48000` provide structured metadata filters after validation. Each row has
-a persistent favorite star, and **FAVORITES** limits the list to starred IRs.
+a persistent favorite star that does not change result order, and **FAVORITES**
+limits the list to starred IRs.
 Clicking a match schedules asynchronous preparation while the current IR keeps
 processing. The header **SETTINGS > Libraries** menu manages the global IR root
 and validated index.
@@ -923,7 +924,7 @@ DI aliases are recognized, and small typos are ranked below exact matches.
 Each row has a clickable star and a confirmed-delete trash icon, and the
 **FAVORITES** toggle filters the list to starred models. The header
 **SETTINGS > Libraries** menu changes the recursive directory and rebuilds its
-validated index. Favorites persist globally and sort above other matches.
+validated index. Favorites persist globally without changing result order.
 The **A1**, **A2**, **CAB**, and **AMP** pills filter
 architecture generation and whether capture metadata says the cabinet is
 included. Results show model, capture, architecture, sample rate, and cabinet

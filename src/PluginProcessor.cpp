@@ -4898,7 +4898,7 @@ MegaDSPAudioProcessor::searchImpulseResponses(
             const auto favorite = favoritePaths.contains(
                 entry.file.getFullPathName());
             auto matched = true;
-            auto score = favorite ? 10 : 0;
+            auto score = 0;
             for (const auto& term : terms)
             {
                 if (term.text.isEmpty())
@@ -4924,8 +4924,6 @@ MegaDSPAudioProcessor::searchImpulseResponses(
         {
             if (left.score != right.score)
                 return left.score > right.score;
-            if (left.entry.favorite != right.entry.favorite)
-                return left.entry.favorite;
             return left.entry.relativePath.compareIgnoreCase(
                        right.entry.relativePath) < 0;
         });
@@ -5228,7 +5226,7 @@ MegaDSPAudioProcessor::searchNamModels(
             const auto favorite = favoritePaths.contains(
                 entry.file.getFullPathName());
             auto matched = true;
-            auto score = favorite ? 10 : 0;
+            auto score = 0;
             for (const auto& term : terms)
             {
                 if (term.text.isEmpty())
@@ -5254,8 +5252,6 @@ MegaDSPAudioProcessor::searchNamModels(
         {
             if (left.score != right.score)
                 return left.score > right.score;
-            if (left.entry.favorite != right.entry.favorite)
-                return left.entry.favorite;
             return left.entry.relativePath.compareIgnoreCase(
                        right.entry.relativePath) < 0;
         });

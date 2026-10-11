@@ -1240,6 +1240,8 @@ public:
             expect(automaticallyAdded.deleteFile());
             browser.refreshAssetLibrariesForTesting();
             expectEquals(browser.namModelLibrarySize(), 3);
+            const auto orderBeforeFavorite =
+                browser.searchNamModels({});
             expect(browser.setNamModelFavorite(
                        pedalModel, true).wasOk());
             const auto favorites =
@@ -1253,14 +1255,22 @@ public:
                     pedalModel.getFullPathName());
                 expect(favorites.front().favorite);
             }
-            const auto allWithFavoriteFirst =
+            const auto orderAfterFavorite =
                 browser.searchNamModels({});
-            expect(!allWithFavoriteFirst.empty());
-            if (!allWithFavoriteFirst.empty())
+            expectEquals(
+                static_cast<int>(orderAfterFavorite.size()),
+                static_cast<int>(orderBeforeFavorite.size()));
+            for (size_t index = 0;
+                 index < std::min(
+                     orderBeforeFavorite.size(),
+                     orderAfterFavorite.size());
+                 ++index)
                 expectEquals(
-                    allWithFavoriteFirst.front()
+                    orderAfterFavorite[index]
                         .file.getFullPathName(),
-                    pedalModel.getFullPathName());
+                    orderBeforeFavorite[index]
+                        .file.getFullPathName(),
+                    "Favoriting must not reorder NAM results.");
             MegaDSPAudioProcessor favoriteRestored;
             expect(favoriteRestored.isNamModelFavorite(pedalModel),
                    "Favorites must persist across processor instances.");
@@ -1309,6 +1319,8 @@ public:
                 compactBrowser.prepareToPlay(48000.0, 64);
                 compactBrowser.addModule(
                     ModuleType::neuralAmpModeler);
+                expect(compactBrowser.loadNamModel(
+                           0, ampModel).wasOk());
                 megadsp::ui::EffectGraph graph(
                     compactBrowser, 0,
                     ModuleType::neuralAmpModeler);
@@ -1330,6 +1342,10 @@ public:
                 graph.scrollCompactNamLibraryForTesting(1);
                 expectEquals(
                     graph.compactNamFirstVisibleModelForTesting(), 1);
+                graph.toggleCompactNamFavoriteForTesting(1);
+                expectEquals(
+                    graph.compactNamFirstVisibleModelForTesting(), 1,
+                    "Favoriting must preserve NAM list scroll position.");
                 graph.setCompactAssetFilterForTesting("COPPER");
                 expectEquals(
                     graph.compactNamLibraryModelCountForTesting(), 1);

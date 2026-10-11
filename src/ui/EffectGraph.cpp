@@ -327,13 +327,16 @@ void EffectGraph::toggleCompactAssetFavorite(int index)
 {
     if (!juce::isPositiveAndBelow(index, compactAssetCount()))
         return;
+    const auto favorite = isCompactNamLibrary()
+        ? !compactNamModels[static_cast<size_t>(index)].favorite
+        : !compactImpulseResponses[static_cast<size_t>(index)].favorite;
     const auto result = isCompactNamLibrary()
         ? processor.setNamModelFavorite(
               compactNamModels[static_cast<size_t>(index)].file,
-              !compactNamModels[static_cast<size_t>(index)].favorite)
+              favorite)
         : processor.setImpulseResponseFavorite(
               compactImpulseResponses[static_cast<size_t>(index)].file,
-              !compactImpulseResponses[static_cast<size_t>(index)].favorite);
+              favorite);
     if (result.failed())
     {
         juce::AlertWindow::showMessageBoxAsync(
@@ -344,7 +347,14 @@ void EffectGraph::toggleCompactAssetFavorite(int index)
             result.getErrorMessage());
         return;
     }
-    refreshCompactAssetLibrary();
+    compactAssetLibraryGeneration = processor.assetLibraryGeneration();
+    if (compactNamFavoriteFilter.getToggleState() && !favorite)
+        refreshCompactAssetLibrary();
+    else if (isCompactNamLibrary())
+        compactNamModels[static_cast<size_t>(index)].favorite = favorite;
+    else
+        compactImpulseResponses[static_cast<size_t>(index)].favorite =
+            favorite;
     repaint();
 }
 
