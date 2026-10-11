@@ -136,6 +136,14 @@ EffectGraph::EffectGraph(
         compactNamFavoriteFilter.onClick =
             [this] { refreshCompactAssetLibrary(true); };
         addAndMakeVisible(compactNamFavoriteFilter);
+        compactNamNewestSort.setButtonText("NEWEST");
+        compactNamNewestSort.setClickingTogglesState(true);
+        compactNamNewestSort.setTooltip(
+            "Sort NAM models by when they were added to the filesystem.");
+        compactNamNewestSort.onClick =
+            [this] { refreshCompactAssetLibrary(true); };
+        addAndMakeVisible(compactNamNewestSort);
+        compactNamNewestSort.setVisible(isCompactNamLibrary());
     }
     inputSpectrum.fill(-100.0f);
     outputSpectrum.fill(-100.0f);
@@ -153,6 +161,7 @@ EffectGraph::~EffectGraph()
     compactAssetSearch.onTextChange = nullptr;
     compactAssetSearch.onReturnKey = nullptr;
     compactNamFavoriteFilter.onClick = nullptr;
+    compactNamNewestSort.onClick = nullptr;
     endGestures();
 }
 
@@ -165,6 +174,9 @@ void EffectGraph::resized()
         auto searchRow = area.removeFromTop(compactAssetSearchHeight);
         compactNamFavoriteFilter.setBounds(
             searchRow.removeFromRight(72.0f).toNearestInt());
+        if (isCompactNamLibrary())
+            compactNamNewestSort.setBounds(
+                searchRow.removeFromRight(60.0f).toNearestInt());
         compactAssetSearch.setBounds(
             searchRow.toNearestInt());
     }
@@ -214,7 +226,10 @@ void EffectGraph::refreshCompactAssetLibrary(bool resetScroll)
     if (isCompactNamLibrary())
     {
         compactNamModels = processor.searchNamModels(
-            query, std::numeric_limits<int>::max());
+            query, std::numeric_limits<int>::max(),
+            compactNamNewestSort.getToggleState()
+                ? NamModelSort::newestAdded
+                : NamModelSort::relevance);
         if (compactNamFavoriteFilter.getToggleState())
             std::erase_if(
                 compactNamModels,
@@ -2928,6 +2943,22 @@ void EffectGraph::setCompactNamFavoritesOnlyForTesting(bool favoritesOnly)
     compactNamFavoriteFilter.setToggleState(
         favoritesOnly, juce::dontSendNotification);
     refreshCompactAssetLibrary(true);
+}
+
+void EffectGraph::setCompactNamNewestSortForTesting(bool newest)
+{
+    compactNamNewestSort.setToggleState(
+        newest, juce::dontSendNotification);
+    refreshCompactAssetLibrary(true);
+}
+
+juce::String EffectGraph::compactNamModelPathForTesting(int index) const
+{
+    return juce::isPositiveAndBelow(
+               index, static_cast<int>(compactNamModels.size()))
+        ? compactNamModels[static_cast<size_t>(index)]
+              .file.getFullPathName()
+        : juce::String();
 }
 
 void EffectGraph::toggleCompactNamFavoriteForTesting(int index)

@@ -929,6 +929,9 @@ Each row has a clickable star and a confirmed-delete trash icon, and the
 **FAVORITES** toggle filters the list to starred models. The header
 **SETTINGS > Libraries** menu changes the recursive directory and rebuilds its
 validated index. Favorites persist globally without changing result order.
+The **NEWEST** toggle sorts matching models by filesystem creation time, newest
+first, with modification time used only when creation time is unavailable.
+Turning it off restores relevance and path ordering.
 The **A1**, **A2**, **CAB**, and **AMP** pills filter
 architecture generation and whether capture metadata says the cabinet is
 included. Results show model, capture, architecture, sample rate, and cabinet

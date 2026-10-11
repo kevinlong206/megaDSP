@@ -31,10 +31,17 @@ struct NamModelLibraryEntry
     juce::String searchableText;
     double sampleRate = 0.0;
     double inputLevelDbU = std::numeric_limits<double>::quiet_NaN();
+    std::int64_t filesystemAddedTimeMs = 0;
     int submodelCount = 1;
     int cabIncluded = -1;
     bool isA2 = false;
     bool favorite = false;
+};
+
+enum class NamModelSort
+{
+    relevance,
+    newestAdded
 };
 
 struct PluginPerformanceSnapshot
@@ -223,7 +230,8 @@ public:
     juce::Result setNamModelRootDirectory(const juce::File&);
     juce::Result rebuildNamModelLibrary();
     std::vector<NamModelLibraryEntry> searchNamModels(
-        const juce::String& query, int maximumResults = 200);
+        const juce::String& query, int maximumResults = 200,
+        NamModelSort sort = NamModelSort::relevance);
     int namModelLibrarySize();
     bool isNamModelFavorite(const juce::File&) const;
     juce::Result setNamModelFavorite(const juce::File&, bool);

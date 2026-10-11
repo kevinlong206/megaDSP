@@ -1253,6 +1253,54 @@ public:
             root.deleteRecursively();
         }
 
+        beginTest("NAM library sorts newest filesystem profiles first");
+        {
+            const auto root =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getNonexistentChildFile(
+                        "megaDSP-nam-newest", {}, true);
+            expect(root.createDirectory().wasOk());
+            const auto oldest = root.getChildFile("oldest.nam");
+            const auto middle = root.getChildFile("middle.nam");
+            const auto newest = root.getChildFile("newest.nam");
+            expect(oldest.replaceWithText(linearNamJson()));
+            juce::Thread::sleep(20);
+            expect(middle.replaceWithText(linearNamJson()));
+            juce::Thread::sleep(20);
+            expect(newest.replaceWithText(linearNamJson()));
+
+            MegaDSPAudioProcessor processor;
+            processor.prepareToPlay(48000.0, 64);
+            processor.addModule(ModuleType::neuralAmpModeler);
+            expect(processor.setNamModelRootDirectory(root).wasOk());
+            const auto sorted = processor.searchNamModels(
+                {}, std::numeric_limits<int>::max(),
+                NamModelSort::newestAdded);
+            expectEquals(static_cast<int>(sorted.size()), 3);
+            if (sorted.size() == 3)
+            {
+                expectEquals(
+                    sorted[0].file.getFullPathName(),
+                    newest.getFullPathName());
+                expectEquals(
+                    sorted[1].file.getFullPathName(),
+                    middle.getFullPathName());
+                expectEquals(
+                    sorted[2].file.getFullPathName(),
+                    oldest.getFullPathName());
+            }
+
+            megadsp::ui::EffectGraph graph(
+                processor, 0, ModuleType::neuralAmpModeler);
+            graph.setBounds(0, 0, 384, 70);
+            graph.setCompactNamNewestSortForTesting(true);
+            expectEquals(
+                graph.compactNamModelPathForTesting(0),
+                newest.getFullPathName());
+            root.deleteRecursively();
+        }
+
         beginTest("Recursive NAM library validates, searches, and persists");
         {
             const auto root =
@@ -1293,7 +1341,6 @@ public:
             expect(pedalModel.replaceWithText(
                 juce::String(pedalJson.dump())));
             expect(invalid.replaceWithText("{ not a model }"));
-
             MegaDSPAudioProcessor browser;
             expect(browser.setNamModelRootDirectory(root).wasOk());
             expectEquals(browser.namModelLibrarySize(), 3);
@@ -1515,8 +1562,16 @@ public:
                 juce::XmlDocument::parse(testCache);
             expect(persistedCache != nullptr);
             if (persistedCache != nullptr)
+            {
                 expectEquals(
-                    persistedCache->getIntAttribute("schema"), 2);
+                    persistedCache->getIntAttribute("schema"), 3);
+                auto* cachedModel =
+                    persistedCache->getChildByAttribute(
+                        "path", "drive-pedal.nam");
+                expect(cachedModel != nullptr);
+                if (cachedModel != nullptr)
+                    expect(cachedModel->hasAttribute("addedTimeMs"));
+            }
             expect(pedalModel.replaceWithText("{ cache probe }"));
             MegaDSPAudioProcessor cachedBrowser;
             expectEquals(cachedBrowser.namModelLibrarySize(), 3);

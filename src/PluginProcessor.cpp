@@ -132,6 +132,14 @@ juce::String namModelSearchableText(
         .toLowerCase();
 }
 
+std::int64_t filesystemAddedTimeMs(const juce::File& file)
+{
+    const auto creationTime = file.getCreationTime().toMilliseconds();
+    return creationTime > 0
+        ? creationTime
+        : file.getLastModificationTime().toMilliseconds();
+}
+
 struct NamSearchTerm
 {
     juce::String text;
@@ -479,6 +487,7 @@ discoverNamModelPaths(const juce::File& root)
         entry.relativePath =
             file.getRelativePathFrom(root).replaceCharacter('\\', '/');
         entry.displayName = file.getFileNameWithoutExtension();
+        entry.filesystemAddedTimeMs = filesystemAddedTimeMs(file);
         entry.searchableText = namModelSearchableText(entry);
         discovered.push_back(std::move(entry));
     }
@@ -1215,6 +1224,7 @@ std::optional<NamModelLibraryEntry> inspectNamModel(
     if (effectiveArchitecture != architectureName)
         entry.architecture += " / " + effectiveArchitecture;
     entry.sampleRate = effectiveSampleRate;
+    entry.filesystemAddedTimeMs = filesystemAddedTimeMs(file);
     entry.submodelCount = submodelCount;
     entry.isA2 = isA2;
 
@@ -1274,7 +1284,7 @@ bool restoreNamModelLibraryCache(
     const auto xml = juce::XmlDocument::parse(cache);
     if (xml == nullptr
         || !xml->hasTagName("NAM_LIBRARY")
-        || xml->getIntAttribute("schema") != 2
+        || xml->getIntAttribute("schema") != 3
         || xml->getStringAttribute("root") != root.getFullPathName())
         return false;
 
@@ -1295,6 +1305,9 @@ bool restoreNamModelLibraryCache(
         entry.inputLevelDbU = child->hasAttribute("inputLevelDbU")
             ? child->getDoubleAttribute("inputLevelDbU")
             : std::numeric_limits<double>::quiet_NaN();
+        entry.filesystemAddedTimeMs =
+            static_cast<std::int64_t>(
+                child->getDoubleAttribute("addedTimeMs"));
         entry.submodelCount = child->getIntAttribute("submodels", 1);
         entry.cabIncluded = child->getIntAttribute("cab", -1);
         entry.isA2 = child->getBoolAttribute("a2");
@@ -1312,7 +1325,7 @@ juce::Result persistNamModelLibraryCache(
     const std::vector<NamModelLibraryEntry>& entries)
 {
     juce::XmlElement xml("NAM_LIBRARY");
-    xml.setAttribute("schema", 2);
+    xml.setAttribute("schema", 3);
     xml.setAttribute("root", root.getFullPathName());
     for (const auto& entry : entries)
     {
@@ -1326,6 +1339,9 @@ juce::Result persistNamModelLibraryCache(
         child->setAttribute("sampleRate", entry.sampleRate);
         if (std::isfinite(entry.inputLevelDbU))
             child->setAttribute("inputLevelDbU", entry.inputLevelDbU);
+        child->setAttribute(
+            "addedTimeMs",
+            static_cast<double>(entry.filesystemAddedTimeMs));
         child->setAttribute("submodels", entry.submodelCount);
         child->setAttribute("cab", entry.cabIncluded);
         child->setAttribute("a2", entry.isA2);
@@ -5373,7 +5389,7 @@ void MegaDSPAudioProcessor::scheduleNamModelLibraryRebuild()
 
 std::vector<NamModelLibraryEntry>
 MegaDSPAudioProcessor::searchNamModels(
-    const juce::String& query, int maximumResults)
+    const juce::String& query, int maximumResults, NamModelSort sort)
 {
     ensureNamModelLibrary();
     maximumResults = juce::jmax(0, maximumResults);
@@ -5419,9 +5435,15 @@ MegaDSPAudioProcessor::searchNamModels(
     }
     std::stable_sort(
         scoredMatches.begin(), scoredMatches.end(),
-        [](const auto& left, const auto& right)
+        [sort](const auto& left, const auto& right)
         {
-            if (left.score != right.score)
+            if (sort == NamModelSort::newestAdded
+                && left.entry.filesystemAddedTimeMs
+                    != right.entry.filesystemAddedTimeMs)
+                return left.entry.filesystemAddedTimeMs
+                    > right.entry.filesystemAddedTimeMs;
+            if (sort == NamModelSort::relevance
+                && left.score != right.score)
                 return left.score > right.score;
             return left.entry.relativePath.compareIgnoreCase(
                        right.entry.relativePath) < 0;

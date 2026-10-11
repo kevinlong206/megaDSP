@@ -65,6 +65,8 @@ public:
     void scrollCompactNamLibraryForTesting(int rows);
     void setCompactAssetFilterForTesting(const juce::String&);
     void setCompactNamFavoritesOnlyForTesting(bool);
+    void setCompactNamNewestSortForTesting(bool);
+    juce::String compactNamModelPathForTesting(int index) const;
     void toggleCompactNamFavoriteForTesting(int index);
     void setCompactImpulseFavoritesOnlyForTesting(bool);
     void toggleCompactImpulseFavoriteForTesting(int index);
@@ -158,6 +160,7 @@ private:
     juce::String dragReadout;
     juce::TextEditor compactAssetSearch;
     juce::TextButton compactNamFavoriteFilter;
+    juce::TextButton compactNamNewestSort;
     std::vector<NamModelLibraryEntry> compactNamModels;
     std::vector<ImpulseResponseLibraryEntry> compactImpulseResponses;
     std::uint64_t compactAssetLibraryGeneration = 0;
