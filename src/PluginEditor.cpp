@@ -2944,10 +2944,11 @@ private:
             unavailableReason =
                 "External sidechain is unavailable; the processor "
                 "continues to use its internal detector.";
-        else if (type == megadsp::ModuleType::delay && control == 4
+        else if (type == megadsp::ModuleType::delay
+                 && (control == 6 || control == 7)
                  && !processor.hasStereoOutput())
             unavailableReason =
-                "Ping Pong is unavailable without stereo output.";
+                "Stereo delay routing is unavailable without stereo output.";
         button.setPresentation(megadsp::ui::togglePresentation(
             type, control, state, unavailableReason));
     }

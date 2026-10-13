@@ -615,8 +615,8 @@ public:
         expectEquals(compressorDefaults[7], 0.0f);
         const auto delayDefaults = megadsp::moduleDefaults(
             megadsp::ModuleType::delay);
-        expectEquals(delayDefaults[4], 0.0f);
-        expectEquals(delayDefaults[5], 1.0f);
+        expectEquals(delayDefaults[4], megadsp::discreteValue(0, 4));
+        expectEquals(delayDefaults[2], 1.0f);
         expectEquals(delayDefaults[8], 0.0f);
         const auto decoderDefaults = megadsp::moduleDefaults(
             megadsp::ModuleType::midSideDecoder);
@@ -843,17 +843,17 @@ public:
         expect(!megadsp::isControlContextuallyVisible(
             megadsp::ModuleType::delay, 0, delayContext));
         expect(megadsp::isControlContextuallyVisible(
-            megadsp::ModuleType::delay, 6, delayContext));
+            megadsp::ModuleType::delay, 1, delayContext));
         expect(megadsp::isControlContextuallyVisible(
-            megadsp::ModuleType::delay, 7, delayContext));
-        delayContext[5] = 0.0f;
+            megadsp::ModuleType::delay, 8, delayContext));
+        delayContext[2] = 0.0f;
         expect(megadsp::isControlContextuallyVisible(
             megadsp::ModuleType::delay, 0, delayContext));
         expect(!megadsp::isControlContextuallyVisible(
-            megadsp::ModuleType::delay, 6, delayContext));
+            megadsp::ModuleType::delay, 1, delayContext));
         expectEquals(delayContext[0], retainedFreeTime);
         expect(!megadsp::isControlContextuallyEnabled(
-            megadsp::ModuleType::delay, 4, delayContext, false, true));
+            megadsp::ModuleType::delay, 6, delayContext, false, true));
 
         auto tremoloContext = megadsp::moduleDefaults(
             megadsp::ModuleType::tremolo);
@@ -952,11 +952,10 @@ public:
         });
         expectDefaults(megadsp::ModuleType::delay, {
             exponentialDefault(1.0f, 2000.0f, 250.0f),
-            0.30f / 0.95f, 0.20f,
-            exponentialDefault(800.0f, 20000.0f, 8000.0f),
-            0.0f, 1.0f, megadsp::discreteValue(5, 8),
-            exponentialDefault(0.05f, 8.0f, 0.5f),
-            0.0f, 0.5f, 0.5f, 0.5f
+            megadsp::discreteValue(9, 12), 1.0f, 0.30f / 0.94f,
+            megadsp::discreteValue(0, 4), 0.25f,
+            megadsp::discreteValue(0, 4), 0.50f, 0.0f, 0.65f,
+            0.0f, 0.20f
         });
         expectDefaults(megadsp::ModuleType::algorithmicReverb, {
             exponentialDefault(0.2f, 12.0f, 2.0f),
@@ -1304,6 +1303,19 @@ public:
             0.18f, 0.12f, 0.72f, 0.58f, 0.08f, 0.72f,
             linearDefault(-18.0f, 12.0f, 0.0f)
         });
+        expectDefaults(megadsp::ModuleType::guitarTuner, {
+            linearDefault(430.0f, 450.0f, 440.0f),
+            megadsp::discreteValue(0, 3),
+            megadsp::discreteValue(1, 7),
+            linearDefault(-12.0f, 12.0f, 0.0f),
+            linearDefault(-24.0f, 24.0f, 0.0f),
+            linearDefault(-72.0f, -24.0f, -60.0f),
+            exponentialDefault(0.04f, 0.60f, 0.12f),
+            megadsp::discreteValue(4, 5),
+            0.45f, 0.0f,
+            linearDefault(-24.0f, 6.0f, 0.0f),
+            linearDefault(0.0f, 2.0f, 0.6f)
+        });
         expectDefaults(megadsp::ModuleType::stageVocal, {
             exponentialDefault(40.0f, 220.0f, 80.0f),
             linearDefault(0.0f, 30.0f, 10.0f),
@@ -1380,7 +1392,7 @@ public:
         });
 
         beginTest("Host parameter contract remains fixed");
-        expectEquals(megadsp::moduleTypeCount, 59);
+        expectEquals(megadsp::moduleTypeCount, 60);
         expectEquals(megadsp::stateSchemaVersion, 13);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
@@ -1489,7 +1501,9 @@ public:
                          megadsp::ModuleType::portalPermuter), 57);
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::irMosaic), 58);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 59);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::guitarTuner), 59);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 60);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1522,7 +1536,7 @@ public:
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 59);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 60);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1558,7 +1572,8 @@ public:
                           : type == megadsp::ModuleType::diffusionDelay
                               || type == megadsp::ModuleType::pitchBloom
                           ? megadsp::ModuleCapability::eventTelemetry
-                          : type == megadsp::ModuleType::studioPhaser
+                          : type == megadsp::ModuleType::delay
+                              || type == megadsp::ModuleType::studioPhaser
                               || type == megadsp::ModuleType::studioFlanger
                               || type == megadsp::ModuleType::frequencyLab
                               || type == megadsp::ModuleType::spatialOrbit
@@ -1578,6 +1593,7 @@ public:
                               || type == megadsp::ModuleType::midnightCurrent
                               || type == megadsp::ModuleType::autoWah
                               || type == megadsp::ModuleType::resonantSculpture
+                              || type == megadsp::ModuleType::guitarTuner
                               || type == megadsp::ModuleType::stageVocal
                               || type == megadsp::ModuleType::vinylSimulator
                               || type == megadsp::ModuleType::optoLeveler
@@ -1855,6 +1871,8 @@ public:
         expectCategory(megadsp::ModuleType::irMosaic,
                       megadsp::ModuleCategory::reverbAndSpace,
                       "Reverb & Space");
+        expectCategory(megadsp::ModuleType::guitarTuner,
+                      megadsp::ModuleCategory::guitar, "Guitar");
         expectCategory(megadsp::ModuleType::neuralAmpModeler,
                       megadsp::ModuleCategory::guitar, "Guitar");
         expectCategory(megadsp::ModuleType::stageVocal,

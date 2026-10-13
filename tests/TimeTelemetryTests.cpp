@@ -55,6 +55,40 @@ public:
             }
         };
 
+        beginTest("Delay telemetry reports measured stereo wet activity");
+        DelayModule delay;
+        delay.prepare(spec);
+        auto delayControls = moduleDefaults(ModuleType::delay);
+        delayControls[0] =
+            std::log(20.0f) / std::log(2000.0f);
+        delayControls[2] = 0.0f;
+        delayControls[3] = 0.65f;
+        delayControls[6] = discreteValue(1, 4);
+        delayControls[7] = 0.8f;
+        delayControls[8] = 0.5f;
+        delayControls[10] = 0.5f;
+        delayControls[11] = 1.0f;
+        juce::AudioBuffer<float> delaySignal(2, 4096);
+        fillSignal(delaySignal, 0);
+        delay.process(delaySignal, delayControls, {});
+        ContinuousTelemetrySnapshot delayTelemetry;
+        expect(delay.readContinuousTelemetry(delayTelemetry));
+        expect(delayTelemetry.sequence == 0);
+        fillSignal(delaySignal, 4096);
+        delay.process(delaySignal, delayControls, capture);
+        expect(delay.readContinuousTelemetry(delayTelemetry));
+        expect(delayTelemetry.sequence == 1);
+        expectEquals(
+            static_cast<int>(delayTelemetry.valueCount),
+            static_cast<int>(DelayModule::telemetryValueCount));
+        expect(delayTelemetry.values[DelayModule::leftWetEnergy] > 0.0f);
+        expect(delayTelemetry.values[DelayModule::rightWetEnergy] > 0.0f);
+        expect(delayTelemetry.values[DelayModule::duckingGain] < 1.0f);
+        expect(delayTelemetry.values[DelayModule::movementSamples] > 0.0f);
+        delay.reset();
+        expect(delay.readContinuousTelemetry(delayTelemetry));
+        expect(delayTelemetry.sequence == 0);
+
         beginTest("Diffusion events require captured processed activity");
         DiffusionDelayModule diffusion;
         diffusion.prepare(spec);

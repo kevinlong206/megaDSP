@@ -110,11 +110,8 @@ public:
 
         beginTest("Toggle text keeps semantic label and state together");
         expectEquals(
-            togglePresentation(ModuleType::delay, 5, true).buttonText,
+            togglePresentation(ModuleType::delay, 2, true).buttonText,
             juce::String("Sync: Tempo"));
-        expectEquals(
-            togglePresentation(ModuleType::delay, 4, false).buttonText,
-            juce::String("Ping Pong: Off"));
         expectEquals(
             togglePresentation(ModuleType::compressor, 7, true).buttonText,
             juce::String("Detector: External"));

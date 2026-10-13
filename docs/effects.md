@@ -1,6 +1,6 @@
 # Effects reference
 
-Detailed control and interaction notes for each of megaDSP's fifty-four
+Detailed control and interaction notes for each of megaDSP's fifty-nine
 modules. For installation and a quick overview see the [README](../README.md).
 
 Runtime-specific graphs show **DSP telemetry waiting** until their slot has
@@ -170,6 +170,33 @@ allocation-free after prepare. Mix zero remains exact immediate dry.
 
 ---
 
+## Guitar Tuner
+
+Provides zero-latency audio passthrough with a dedicated detector path for
+chromatic, standard guitar, bass, Drop D, Open D, Open G, and DADGAD tuning.
+The prepared detector decimates into fixed history, uses normalized
+autocorrelation with fractional-lag refinement, and selects one stereo channel
+by measured block energy so hard-panned or anti-phase sources do not cancel
+before analysis. Steady test tones resolve to sub-cent precision while
+confidence and the input gate reject weak or non-periodic input.
+
+**Reference Pitch** calibrates A4 from 430 to 450 Hz. **Transpose** shifts the
+selected tuning by up to one octave. **Input Gain** affects detection only;
+**Gate**, **Response**, and **Hold** control acquisition, stability, noise
+rejection, and how long the last reliable note remains visible. **Display
+Range** sets the visible cent span, while **Strobe Speed** changes visual motion
+without changing pitch analysis. **Mute** uses a click-safe fade and **Output**
+sets the otherwise transparent passthrough level.
+
+The compact card owns three switchable displays. **Strobe** moves measured
+bands left or right with cent error and stops at tune. **Precision** shows a
+high-resolution linear cent marker. **Needle** presents a familiar arc meter.
+All views show note, octave, measured frequency, cent error, confidence state,
+and the selected tuning. Click the view pills or use Left/Right; Up/Down changes
+the tuning.
+
+---
+
 ## Guitar Cabinet
 
 A cabinet convolution processor intended to follow an amp or preamp. It ships
@@ -282,7 +309,29 @@ combined response of every interacting section.
 
 ## Delay
 
-The editable tap timeline visualises the delay path. A compact two-dimensional **Rate/Depth Movement** field edits both modulation parameters together. **Sync** toggles between free **Time** and a synced **Division**; the inactive control is hidden, unfocusable, and retains its automation value. Ping Pong alternates correctly even when the host supplies a duplicated mono source through a stereo track. The filtered feedback loop uses a high-headroom soft bound so coherent input and a resumed bypass tail cannot accumulate into a host-muting spike.
+The flagship dual-line delay provides four distinct repeat models:
+**Studio** stays clean and crossfades abrupt time changes without Doppler,
+**Tape** glides through time changes with saturation, bandwidth loss,
+wow/flutter, and drift, **BBD** combines clock wander with companded darkening,
+and **Vintage Digital** adds restrained early-digital bandwidth and resolution
+character. **Character**, **Tone**, and **Movement** are calibrated separately
+for each model so the choices are different algorithms rather than presets over
+one feedback loop.
+
+**Sync** exposes exactly one free **Time** or tempo **Division** value. **Mono**,
+**Dual**, **Ping Pong**, and **Cross** route the prepared left/right delay lines,
+while **Spread** controls their time offset and crossfeed width. Ping Pong
+alternates duplicated mono correctly and every mode has a safe mono fallback.
+The compact graph directly edits timing and Feedback, exposes model and stereo
+mode pills, and draws measured left/right repeat energy, interval, movement,
+and ducking instead of a control-derived animation.
+
+Filtering and nonlinear color live inside the feedback path, so successive
+repeats evolve naturally. The loop is stable by design and retains a final
+finite soft bound for hostile coherent input. **Ducking** attenuates only the
+completed wet output, allowing repeats to rise into gaps without changing the
+dry signal or feedback generation. Dry remains immediate, Mix zero is exact
+dry at a static setting, and the module contributes zero host PDC.
 
 ---
 

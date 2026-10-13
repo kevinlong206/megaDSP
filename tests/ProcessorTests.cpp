@@ -813,6 +813,38 @@ public:
                    > 0.1f);
         }
 
+        beginTest("Compact Delay directly edits timing and feedback");
+        {
+            MegaDSPAudioProcessor delayProcessor;
+            delayProcessor.prepareToPlay(48000.0, 512);
+            setType(
+                delayProcessor, 0, megadsp::ModuleType::delay);
+            delayProcessor.flushPendingUpdatesForTesting();
+            megadsp::ui::EffectGraph graph(
+                delayProcessor, 0, megadsp::ModuleType::delay);
+            graph.setBounds(0, 0, 384, 120);
+            graph.setValue(2, 0.0f);
+            graph.setCompactDelayFromPointForTesting(
+                { 10000.0f, -100.0f });
+            expectWithinAbsoluteError(
+                graph.value(0), 1.0f, 0.000001f);
+            expectWithinAbsoluteError(
+                graph.value(3), 1.0f, 0.000001f);
+            graph.setCompactDelayFromPointForTesting(
+                { -100.0f, 10000.0f });
+            expectWithinAbsoluteError(
+                graph.value(0), 0.0f, 0.000001f);
+            expectWithinAbsoluteError(
+                graph.value(3), 0.0f, 0.000001f);
+            expect(graph.keyPressed(juce::KeyPress(
+                juce::KeyPress::rightKey)));
+            expect(graph.value(0) > 0.0f);
+            juce::Image image(
+                juce::Image::ARGB, graph.getWidth(), graph.getHeight(), true);
+            juce::Graphics graphics(image);
+            graph.paint(graphics);
+        }
+
         beginTest("NAM library list does not request DSP telemetry");
         {
             MegaDSPAudioProcessor namProcessor;
@@ -828,6 +860,39 @@ public:
             expect(
                 !namProcessor.getVisualizationData().isSlotActive(0),
                 "The compact NAM library must not capture unused DSP data.");
+        }
+
+        beginTest("Compact Guitar Tuner switches all display modes");
+        {
+            MegaDSPAudioProcessor tunerProcessor;
+            tunerProcessor.prepareToPlay(48000.0, 512);
+            setType(
+                tunerProcessor, 0, megadsp::ModuleType::guitarTuner);
+            tunerProcessor.flushPendingUpdatesForTesting();
+            megadsp::ui::EffectGraph graph(
+                tunerProcessor, 0, megadsp::ModuleType::guitarTuner);
+            graph.setBounds(0, 0, 384, 120);
+            for (int view = 0;
+                 view < megadsp::GuitarTunerModule::viewCount; ++view)
+            {
+                graph.selectCompactTunerViewForTesting(view);
+                expectEquals(
+                    megadsp::discreteIndex(
+                        graph.value(
+                            megadsp::GuitarTunerModule::viewControl),
+                        megadsp::GuitarTunerModule::viewCount),
+                    view);
+                juce::Image image(
+                    juce::Image::ARGB,
+                    graph.getWidth(), graph.getHeight(), true);
+                juce::Graphics graphics(image);
+                graph.paint(graphics);
+                expect(image.getPixelAt(192, 60).getAlpha() > 0);
+            }
+            expect(graph.keyPressed(juce::KeyPress(
+                juce::KeyPress::rightKey)));
+            expect(graph.keyPressed(juce::KeyPress(
+                juce::KeyPress::upKey)));
         }
 
         beginTest("Every active graph owns visualization capture");
@@ -1119,10 +1184,12 @@ public:
         beginTest("Telemetry-rich compact views render measured state");
         {
             constexpr std::array telemetryTypes {
+                megadsp::ModuleType::delay,
                 megadsp::ModuleType::autoWah,
                 megadsp::ModuleType::stageVocal,
                 megadsp::ModuleType::midnightCurrent,
                 megadsp::ModuleType::resonantSculpture,
+                megadsp::ModuleType::guitarTuner,
                 megadsp::ModuleType::analogTape,
                 megadsp::ModuleType::vinylSimulator,
                 megadsp::ModuleType::chaosField

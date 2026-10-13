@@ -77,7 +77,10 @@ public:
         beginTest("Search tag matching finds module");
         const auto bbdModules = flatten(
             megadsp::ui::filterAndGroupModules("BBD"));
-        expectEquals(static_cast<int>(bbdModules.size()), 2);
+        expectEquals(static_cast<int>(bbdModules.size()), 3);
+        expect(std::find(bbdModules.begin(), bbdModules.end(),
+                         megadsp::ModuleType::delay)
+               != bbdModules.end());
         expect(std::find(bbdModules.begin(), bbdModules.end(),
                          megadsp::ModuleType::vintageChorus)
                != bbdModules.end());

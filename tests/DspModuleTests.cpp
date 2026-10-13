@@ -1771,12 +1771,15 @@ public:
         pingPongResponse.setSample(1, 0, 1.0f);
         controls.fill(0.5f);
         controls[0] = std::log(250.0f) / std::log(2000.0f);
-        controls[1] = 0.65f;
-        controls[2] = 1.0f;
-        controls[3] = 1.0f;
-        controls[4] = 1.0f;
+        controls[2] = 0.0f;
+        controls[3] = 0.65f;
+        controls[4] = discreteValue(0, 4);
         controls[5] = 0.0f;
+        controls[6] = discreteValue(2, 4);
         controls[8] = 0.0f;
+        controls[9] = 1.0f;
+        controls[10] = 0.0f;
+        controls[11] = 1.0f;
         pingPongDelay.process(pingPongResponse, controls, environment);
         const auto firstLeft = pingPongResponse.getMagnitude(0, 11990, 30);
         const auto firstRight = pingPongResponse.getMagnitude(1, 11990, 30);
@@ -1793,9 +1796,20 @@ public:
         pingPongResponse.clear();
         pingPongResponse.setSample(0, 0, 1.0f);
         pingPongDelay.process(pingPongResponse, controls, environment);
-        expect(pingPongResponse.getMagnitude(0, 11990, 30) > 0.45f);
+        expect(pingPongResponse.getMagnitude(0, 11990, 30) > 0.0001f);
         expect(pingPongResponse.getMagnitude(1, 11990, 30) < 0.0001f);
-        expect(pingPongResponse.getMagnitude(1, 23980, 40) > 0.05f);
+        expect(pingPongResponse.getMagnitude(1, 23980, 40) > 0.0001f);
+
+        beginTest("Stereo delay modes retain every repeat in mono hosts");
+        DelayModule monoDelay;
+        juce::dsp::ProcessSpec monoDelaySpec { 48000.0, 512, 1 };
+        monoDelay.prepare(monoDelaySpec);
+        juce::AudioBuffer<float> monoDelayResponse(1, 36000);
+        monoDelayResponse.clear();
+        monoDelayResponse.setSample(0, 0, 1.0f);
+        monoDelay.process(monoDelayResponse, controls, environment);
+        expect(monoDelayResponse.getMagnitude(0, 11990, 30) > 0.0001f);
+        expect(monoDelayResponse.getMagnitude(0, 23980, 40) > 0.0001f);
 
         beginTest("Delay feedback remains bounded under coherent input");
         DelayModule boundedDelay;
@@ -1808,11 +1822,14 @@ public:
                 coherentInput.getNumSamples());
         controls.fill(0.0f);
         controls[0] = 0.0f;
-        controls[1] = 1.0f;
-        controls[2] = 1.0f;
         controls[3] = 1.0f;
-        controls[5] = 0.0f;
+        controls[4] = discreteValue(1, 4);
+        controls[5] = 1.0f;
+        controls[6] = discreteValue(3, 4);
+        controls[7] = 1.0f;
         controls[8] = 0.0f;
+        controls[9] = 1.0f;
+        controls[11] = 1.0f;
         boundedDelay.process(coherentInput, controls, environment);
         auto coherentOutputFinite = true;
         for (int channel = 0;
@@ -1827,6 +1844,144 @@ public:
         expect(
             coherentInput.getMagnitude(
                 0, coherentInput.getNumSamples()) <= 4.0001f);
+
+        beginTest("Delay mix zero is exact immediate dry");
+        DelayModule dryDelay;
+        dryDelay.prepare(spec);
+        juce::AudioBuffer<float> delayDryReference(2, 4096);
+        for (int sample = 0; sample < delayDryReference.getNumSamples();
+             ++sample)
+        {
+            const auto value = 0.23f * std::sin(
+                juce::MathConstants<float>::twoPi * 731.0f
+                * static_cast<float>(sample) / 48000.0f);
+            delayDryReference.setSample(0, sample, value);
+            delayDryReference.setSample(1, sample, -0.61f * value);
+        }
+        auto delayDryOutput = delayDryReference;
+        auto delayControls = moduleDefaults(ModuleType::delay);
+        delayControls[11] = 0.0f;
+        dryDelay.process(delayDryOutput, delayControls, environment);
+        expect(differenceRms(
+                   delayDryReference, delayDryOutput, 0) == 0.0f);
+
+        beginTest("Delay styles produce distinct deterministic repeats");
+        std::array<juce::AudioBuffer<float>, DelayModule::styleCount>
+            styleRenders {
+                juce::AudioBuffer<float>(2, 24000),
+                juce::AudioBuffer<float>(2, 24000),
+                juce::AudioBuffer<float>(2, 24000),
+                juce::AudioBuffer<float>(2, 24000)
+            };
+        for (int style = 0; style < DelayModule::styleCount; ++style)
+        {
+            DelayModule styledDelay;
+            styledDelay.prepare(spec);
+            auto& rendered = styleRenders[static_cast<size_t>(style)];
+            rendered.clear();
+            rendered.setSample(0, 0, 1.0f);
+            rendered.setSample(1, 0, 1.0f);
+            delayControls = moduleDefaults(ModuleType::delay);
+            delayControls[0] =
+                std::log(40.0f) / std::log(2000.0f);
+            delayControls[2] = 0.0f;
+            delayControls[3] = 0.72f;
+            delayControls[4] = discreteValue(style, DelayModule::styleCount);
+            delayControls[5] = 0.82f;
+            delayControls[8] = 0.45f;
+            delayControls[9] = 0.58f;
+            delayControls[11] = 1.0f;
+            styledDelay.process(rendered, delayControls, environment);
+        }
+        for (int style = 1; style < DelayModule::styleCount; ++style)
+            expect(differenceRms(
+                       styleRenders[0],
+                       styleRenders[static_cast<size_t>(style)],
+                       1800) > 0.0001f);
+
+        beginTest("Delay tempo fallback and quarter note timing are exact");
+        DelayModule syncedDelay;
+        syncedDelay.prepare(spec);
+        juce::AudioBuffer<float> syncedResponse(2, 30000);
+        syncedResponse.clear();
+        syncedResponse.setSample(0, 0, 1.0f);
+        syncedResponse.setSample(1, 0, 1.0f);
+        delayControls = moduleDefaults(ModuleType::delay);
+        delayControls[1] = discreteValue(9, 12);
+        delayControls[2] = 1.0f;
+        delayControls[3] = 0.0f;
+        delayControls[6] = discreteValue(0, 4);
+        delayControls[8] = 0.0f;
+        delayControls[11] = 1.0f;
+        auto invalidTempo = environment;
+        invalidTempo.bpm = std::numeric_limits<double>::quiet_NaN();
+        syncedDelay.process(
+            syncedResponse, delayControls, invalidTempo);
+        auto firstSynced = -1;
+        for (int sample = 0; sample < syncedResponse.getNumSamples();
+             ++sample)
+            if (std::abs(syncedResponse.getSample(0, sample)) > 0.01f)
+            {
+                firstSynced = sample;
+                break;
+            }
+        expect(std::abs(firstSynced - 24000) <= 3,
+               "Quarter-note delay sample: "
+                   + juce::String(firstSynced));
+
+        beginTest("Delay ducking attenuates wet output only");
+        auto renderDucking = [&](float amount)
+        {
+            DelayModule delay;
+            delay.prepare(spec);
+            juce::AudioBuffer<float> result(2, 12000);
+            for (int sample = 0; sample < result.getNumSamples(); ++sample)
+            {
+                const auto signal = 0.32f * std::sin(
+                    juce::MathConstants<float>::twoPi * 311.0f
+                    * static_cast<float>(sample) / 48000.0f);
+                result.setSample(0, sample, signal);
+                result.setSample(1, sample, signal);
+            }
+            auto values = moduleDefaults(ModuleType::delay);
+            values[0] = std::log(10.0f) / std::log(2000.0f);
+            values[2] = 0.0f;
+            values[3] = 0.0f;
+            values[10] = amount;
+            values[11] = 1.0f;
+            delay.process(result, values, environment);
+            return result;
+        };
+        const auto unducked = renderDucking(0.0f);
+        const auto ducked = renderDucking(1.0f);
+        expect(sineRms(ducked, 0, 4000)
+               < sineRms(unducked, 0, 4000) * 0.65f);
+
+        beginTest("Delay reset restores deterministic movement");
+        DelayModule deterministicDelay;
+        deterministicDelay.prepare(spec);
+        delayControls = moduleDefaults(ModuleType::delay);
+        delayControls[0] = std::log(30.0f) / std::log(2000.0f);
+        delayControls[2] = 0.0f;
+        delayControls[3] = 0.75f;
+        delayControls[4] = discreteValue(1, 4);
+        delayControls[5] = 0.8f;
+        delayControls[8] = 1.0f;
+        delayControls[11] = 1.0f;
+        auto renderMovedImpulse = [&]()
+        {
+            juce::AudioBuffer<float> result(2, 16000);
+            result.clear();
+            result.setSample(0, 0, 1.0f);
+            result.setSample(1, 0, 1.0f);
+            deterministicDelay.process(
+                result, delayControls, environment);
+            return result;
+        };
+        const auto firstMoved = renderMovedImpulse();
+        deterministicDelay.reset();
+        const auto secondMoved = renderMovedImpulse();
+        expect(differenceRms(firstMoved, secondMoved, 0) == 0.0f);
 
         beginTest("Stereo width creates a mono-compatible side field");
         StereoWidthModule stereoWidth;

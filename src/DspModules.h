@@ -59,3 +59,4 @@
 #include "modules/Bitcrusher.h"
 #include "modules/PortalPermuter.h"
 #include "modules/IRMosaic.h"
+#include "modules/GuitarTuner.h"

@@ -38,7 +38,7 @@ juce::String toggleState(
         return state ? "Low Pass" : "Bell";
     if (type == ModuleType::compressor && control == 7)
         return state ? "External" : "Internal";
-    if ((type == ModuleType::delay && control == 5)
+    if ((type == ModuleType::delay && control == 2)
         || (type == ModuleType::tremolo && control == 2)
         || ((type == ModuleType::studioPhaser
              || type == ModuleType::studioFlanger
@@ -285,6 +285,7 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::bitcrusher: return "Crush";
         case ModuleType::portalPermuter: return "Portal";
         case ModuleType::irMosaic: return "IR Mosaic";
+        case ModuleType::guitarTuner: return "Tuner";
         case ModuleType::empty:
         case ModuleType::delay:
         case ModuleType::limiter:
@@ -428,6 +429,7 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::midnightCurrent:
         case ModuleType::autoWah:
         case ModuleType::resonantSculpture:
+        case ModuleType::guitarTuner:
         case ModuleType::neuralAmpModeler:
         case ModuleType::stageVocal:
         case ModuleType::vinylSimulator:

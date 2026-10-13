@@ -82,25 +82,30 @@ constexpr Metadata saturatorMetadata {{
     unused, unused, unused, unused, unused, unused
 }};
 constexpr Metadata delayMetadata {{
-    { "Time", ControlKind::rotary, true, "Timing",
-      "Sets free-running delay time." },
-    { "Feedback", ControlKind::rotary, true, "Repeats",
-      "Sets how long the repeats continue." },
-    { "Mix", ControlKind::rotary, true, "Output",
-      "Blends the delay and dry signals." },
-    { "Tone", ControlKind::horizontal, true, "Repeats",
-      "Darkens or brightens each repeat." },
-    { "Ping Pong", ControlKind::toggle, false, "Stereo",
-      "Alternates repeats between left and right." },
-    { "Sync", ControlKind::toggle, true, "Timing",
-      "Locks delay time to the host tempo." },
+    { "Time", ControlKind::horizontal, true, "Timing",
+      "Sets free-running delay time from 1 millisecond to 2 seconds." },
     { "Division", ControlKind::choice, true, "Timing",
       "Selects the tempo-synced note value." },
-    { "Movement Rate", ControlKind::rotary, false, "Movement",
-      "Sets delay-line modulation speed from 0.05 to 8 Hz." },
-    { "Movement Depth", ControlKind::rotary, false, "Movement",
-      "Sets peak delay-time movement from 0 to 10 ms." },
-    unused, unused, unused
+    { "Sync", ControlKind::toggle, true, "Timing",
+      "Locks delay time to the host tempo." },
+    { "Feedback", ControlKind::horizontal, true, "Repeats",
+      "Sets how long repeats continue through the colored feedback loop." },
+    { "Style", ControlKind::choice, true, "Character",
+      "Selects Studio, Tape, BBD, or Vintage Digital delay behavior." },
+    { "Character", ControlKind::horizontal, true, "Character",
+      "Increases model-specific drive, bandwidth loss, and age." },
+    { "Stereo Mode", ControlKind::choice, true, "Stereo",
+      "Selects Mono, Dual, Ping Pong, or Cross routing." },
+    { "Spread", ControlKind::horizontal, true, "Stereo",
+      "Offsets dual delay times and controls stereo crossfeed width." },
+    { "Movement", ControlKind::horizontal, true, "Movement",
+      "Adds deterministic model-specific chorus, wow, drift, or clock wander." },
+    { "Tone", ControlKind::horizontal, true, "Repeats",
+      "Darkens or brightens the evolving feedback path." },
+    { "Ducking", ControlKind::horizontal, false, "Output",
+      "Moves completed repeats behind the input and releases into the gaps." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends immediate dry signal with the completed delay output." }
 }};
 constexpr Metadata stereoWidthMetadata {{
     { "Width", ControlKind::horizontal, true, "Stereo Image",
@@ -1376,6 +1381,32 @@ constexpr Metadata resonantSculptureMetadata {{
     { "Output", ControlKind::level, true, "Output",
       "Adjusts level after the dry and resonant paths." }
 }};
+constexpr Metadata guitarTunerMetadata {{
+    { "Reference Pitch", ControlKind::horizontal, true, "Calibration",
+      "Calibrates concert A from 430 to 450 Hz." },
+    { "View", ControlKind::choice, true, "Display",
+      "Selects Strobe, Precision, or Needle tuning visualization." },
+    { "Tuning", ControlKind::choice, true, "Target",
+      "Selects Chromatic, Guitar, Bass, Drop D, Open D, Open G, or DADGAD targets." },
+    { "Transpose", ControlKind::horizontal, false, "Target",
+      "Shifts the target notes from -12 to +12 semitones." },
+    { "Input Gain", ControlKind::level, false, "Detector",
+      "Adjusts detector sensitivity without changing passthrough level." },
+    { "Gate", ControlKind::level, true, "Detector",
+      "Rejects input below the selected level from pitch tracking." },
+    { "Response", ControlKind::horizontal, true, "Detector",
+      "Balances fast note acquisition against steady cent readout." },
+    { "Display Range", ControlKind::choice, false, "Display",
+      "Sets the visible fine-tuning range from plus or minus 2 to 50 cents." },
+    { "Strobe Speed", ControlKind::horizontal, false, "Display",
+      "Sets how quickly the strobe pattern moves for a given pitch error." },
+    { "Mute", ControlKind::toggle, true, "Output",
+      "Silences passthrough audio while tuning without interrupting analysis." },
+    { "Output", ControlKind::level, false, "Output",
+      "Adjusts passthrough level when Mute is off." },
+    { "Hold", ControlKind::horizontal, false, "Display",
+      "Keeps the last confident note visible after the input falls away." }
+}};
 constexpr Names emptyNames { "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-" };
 constexpr Names eqNames {
     "Low Frequency", "Low Gain", "Low Q",
@@ -1392,8 +1423,8 @@ constexpr Names saturatorNames {
     "-", "-", "-", "-", "-"
 };
 constexpr Names delayNames {
-    "Time", "Feedback", "Mix", "Tone", "Ping Pong", "Sync",
-    "Division", "Movement Rate", "Movement Depth", "-", "-", "-"
+    "Time", "Division", "Sync", "Feedback", "Style", "Character",
+    "Stereo Mode", "Spread", "Movement", "Tone", "Ducking", "Mix"
 };
 constexpr Names limiterNames {
     "Threshold", "Ceiling", "Release", "Lookahead", "Auto Gain", "-", "-",
@@ -1625,6 +1656,10 @@ constexpr Names resonantSculptureNames {
     "Material", "Shape", "Pitch Offset", "Excitation", "Decay", "Mutation",
     "Bow", "Strike", "Stereo Field", "Chaos", "Mix", "Output"
 };
+constexpr Names guitarTunerNames {
+    "Reference Pitch", "View", "Tuning", "Transpose", "Input Gain", "Gate",
+    "Response", "Display Range", "Strobe Speed", "Mute", "Output", "Hold"
+};
 const std::array<std::array<float, 16>, 3> premiumEarlyMilliseconds {{
     { 11.3f, 18.7f, 27.1f, 37.9f, 51.7f, 69.1f, 79.3f, 88.7f,
       99.1f, 111.7f, 125.3f, 140.9f, 158.3f, 177.7f, 199.1f, 223.9f },
@@ -1817,9 +1852,14 @@ ControlOptions optionsFor(ModuleType type, int control)
         return { { "Bell", "High Shelf", "Low Pass" }, 3 };
     if (type == ModuleType::saturator && control == 5)
         return { { "Soft", "Smooth", "Hard" }, 3 };
+    if (type == ModuleType::delay && control == 1)
+        return { { "1/32T", "1/32", "1/16T", "1/16",
+                   "1/8T", "1/16.", "1/8", "1/4T",
+                   "1/8.", "1/4", "1/4.", "1/2" }, 12 };
+    if (type == ModuleType::delay && control == 4)
+        return { { "Studio", "Tape", "BBD", "Vintage Digital" }, 4 };
     if (type == ModuleType::delay && control == 6)
-        return { { "1/32", "1/16", "1/16.", "1/8",
-                   "1/8.", "1/4", "1/4.", "1/2" }, 8 };
+        return { { "Mono", "Dual", "Ping Pong", "Cross" }, 4 };
     if (type == ModuleType::algorithmicReverb && control == 4)
         return { { "Hall", "Chamber", "Plate" }, 3 };
     if (type == ModuleType::tremolo && control == 0)
@@ -1934,6 +1974,14 @@ ControlOptions optionsFor(ModuleType type, int control)
         return { { "Low Pass", "Band Pass", "Peak", "Classic Wah" }, 4 };
     if (type == ModuleType::resonantSculpture && control == 0)
         return { { "String", "Glass", "Metal", "Membrane" }, 4 };
+    if (type == ModuleType::guitarTuner && control == 1)
+        return { { "Strobe", "Precision", "Needle" }, 3 };
+    if (type == ModuleType::guitarTuner && control == 2)
+        return { { "Chromatic", "Guitar", "Bass", "Drop D",
+                   "Open D", "Open G", "DADGAD" }, 7 };
+    if (type == ModuleType::guitarTuner && control == 7)
+        return { { "+/- 2 cents", "+/- 5 cents", "+/- 10 cents",
+                   "+/- 25 cents", "+/- 50 cents" }, 5 };
     if (type == ModuleType::optoLeveler && control == 2)
         return { { "Compress", "Limit" }, 2 };
     if (type == ModuleType::fetLimiter && control == 4)
@@ -1987,11 +2035,10 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
             break;
         case ModuleType::delay:
             values = { exponentialNormalized(1.0f, 2000.0f, 250.0f),
-                       0.30f / 0.95f, 0.20f,
-                       exponentialNormalized(800.0f, 20000.0f, 8000.0f),
-                       0.0f, 1.0f, discreteValue(5, 8),
-                       exponentialNormalized(0.05f, 8.0f, 0.5f), 0.0f,
-                       0.5f, 0.5f, 0.5f };
+                       discreteValue(9, 12), 1.0f, 0.30f / 0.94f,
+                       discreteValue(0, 4), 0.25f,
+                       discreteValue(0, 4), 0.50f, 0.0f, 0.65f,
+                       0.0f, 0.20f };
             break;
         case ModuleType::limiter:
             values = { linearNormalized(-24.0f, 0.0f, -1.0f),
@@ -2563,6 +2610,15 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                 linearNormalized(-18.0f, 12.0f, 0.0f)
             };
             break;
+        case ModuleType::guitarTuner:
+            values = {
+                0.5f, discreteValue(0, 3), discreteValue(1, 7),
+                0.5f, 0.5f, linearNormalized(-72.0f, -24.0f, -60.0f),
+                exponentialNormalized(0.04f, 0.60f, 0.12f),
+                discreteValue(4, 5), 0.45f, 0.0f,
+                linearNormalized(-24.0f, 6.0f, 0.0f), 0.30f
+            };
+            break;
         case ModuleType::empty: break;
     }
     return values;
@@ -2611,10 +2667,13 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             break;
         case ModuleType::delay:
             if (control == 0) return juce::String(exponential(1.0f, 2000.0f, value), 0) + " ms";
-            if (control == 1) return juce::String(value * 95.0f, 0) + "%";
-            if (control == 3) return formatFrequency(exponential(800.0f, 20000.0f, value));
-            if (control == 7) return juce::String(exponential(0.05f, 8.0f, value), 2) + " Hz";
-            if (control == 8) return juce::String(value * 10.0f, 1) + " ms";
+            if (control == 3) return juce::String(value * 94.0f, 0) + "%";
+            if (control == 5) return juce::String(value * 100.0f, 0) + "%";
+            if (control == 7) return juce::String(value * 100.0f, 0) + "%";
+            if (control == 8) return juce::String(value * 100.0f, 0) + "%";
+            if (control == 9) return juce::String(value * 100.0f, 0) + "%";
+            if (control == 10) return juce::String(value * 18.0f, 1) + " dB";
+            if (control == 11) return juce::String(value * 100.0f, 0) + "%";
             break;
         case ModuleType::limiter:
             if (control == 0) return juce::String(linear(-24.0f, 0.0f, value), 1) + " dB";
@@ -3413,6 +3472,30 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 11)
                 return juce::String(linear(-18.0f, 12.0f, value), 1) + " dB";
             break;
+        case ModuleType::guitarTuner:
+            if (control == 0)
+                return juce::String(linear(430.0f, 450.0f, value), 1) + " Hz";
+            if (control == 3)
+            {
+                const auto transpose = juce::roundToInt(
+                    linear(-12.0f, 12.0f, value));
+                return (transpose > 0 ? "+" : "")
+                    + juce::String(transpose) + " st";
+            }
+            if (control == 4)
+                return juce::String(linear(-24.0f, 24.0f, value), 1) + " dB";
+            if (control == 5)
+                return juce::String(linear(-72.0f, -24.0f, value), 1) + " dB";
+            if (control == 6)
+                return juce::String(
+                    exponential(0.04f, 0.60f, value) * 1000.0f, 0) + " ms";
+            if (control == 8)
+                return juce::String(linear(0.5f, 5.0f, value), 2) + "x";
+            if (control == 10)
+                return juce::String(linear(-24.0f, 6.0f, value), 1) + " dB";
+            if (control == 11)
+                return juce::String(linear(0.0f, 2.0f, value), 2) + " s";
+            break;
         case ModuleType::empty: break;
     }
     return juce::String(value * 100.0f, 0) + "%";
@@ -3480,11 +3563,12 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             break;
         case ModuleType::delay:
             if (control == 0) return exponentialNormalized(1.0f, 2000.0f, value);
-            if (control == 1) return juce::jlimit(0.0f, 1.0f, value / 95.0f);
-            if (control == 3) return exponentialNormalized(
-                800.0f, 20000.0f, parsedFrequency(text, value));
-            if (control == 7) return exponentialNormalized(0.05f, 8.0f, value);
-            if (control == 8) return juce::jlimit(0.0f, 1.0f, value / 10.0f);
+            if (control == 3) return juce::jlimit(0.0f, 1.0f, value / 94.0f);
+            if (control == 5 || control == 7 || control == 8
+                || control == 9 || control == 11)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 18.0f);
             break;
         case ModuleType::limiter:
             if (control == 0) return linearNormalized(-24.0f, 0.0f, value);
@@ -4259,6 +4343,26 @@ std::optional<float> parseControlValue(ModuleType type, int control,
             if (control == 11)
                 return linearNormalized(-18.0f, 12.0f, value);
             break;
+        case ModuleType::guitarTuner:
+            if (control == 0)
+                return linearNormalized(430.0f, 450.0f, value);
+            if (control == 3)
+                return linearNormalized(-12.0f, 12.0f, value);
+            if (control == 4)
+                return linearNormalized(-24.0f, 24.0f, value);
+            if (control == 5)
+                return linearNormalized(-72.0f, -24.0f, value);
+            if (control == 6)
+                return exponentialNormalized(
+                    0.04f, 0.60f,
+                    parsedMilliseconds(text, value) * 0.001f);
+            if (control == 8)
+                return linearNormalized(0.5f, 5.0f, value);
+            if (control == 10)
+                return linearNormalized(-24.0f, 6.0f, value);
+            if (control == 11)
+                return linearNormalized(0.0f, 2.0f, value);
+            break;
         case ModuleType::empty: break;
     }
     return juce::jlimit(0.0f, 1.0f, value / 100.0f);
@@ -4281,9 +4385,9 @@ bool isControlContextuallyVisible(
             break;
         case ModuleType::delay:
             if (control == 0)
-                return values[5] < 0.5f;
-            if (control == 6)
-                return values[5] >= 0.5f;
+                return values[2] < 0.5f;
+            if (control == 1)
+                return values[2] >= 0.5f;
             break;
         case ModuleType::tremolo:
         {
@@ -4381,6 +4485,7 @@ bool isControlContextuallyVisible(
         case ModuleType::midnightCurrent:
         case ModuleType::autoWah:
         case ModuleType::resonantSculpture:
+        case ModuleType::guitarTuner:
             break;
     }
     return true;
@@ -4395,7 +4500,7 @@ bool isControlContextuallyEnabled(
         return false;
     if (type == ModuleType::compressor && control == 7)
         return hasExternalSidechain;
-    if (type == ModuleType::delay && control == 4)
+    if (type == ModuleType::delay && (control == 6 || control == 7))
         return hasStereoOutput;
     if (type == ModuleType::dynamicEqualizer && control == 9)
         return hasExternalSidechain;
@@ -4463,9 +4568,10 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
         makeDefinition(
             ModuleType::delay, "Delay",
             ModuleCategory::delayAndEcho,
-            "Create tempo-synced or free echoes with stereo movement.",
-            "delay echo repeats ping pong modulation", delayNames,
-            delayMetadata, &makeModule<DelayModule>),
+            "Shape pristine or colored dual-line echoes with stereo movement.",
+            "delay echo repeats tape bbd digital ping pong modulation ducking",
+            delayNames, delayMetadata, &makeModule<DelayModule>,
+            ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::limiter, "Limiter",
             ModuleCategory::dynamics,
@@ -4875,7 +4981,14 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             irMosaicNames, irMosaicMetadata,
             &makeModule<IRMosaicModule>,
             ModuleCapability::impulseResponse
-                | ModuleCapability::continuousTelemetry)
+                | ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::guitarTuner, "Guitar Tuner", ModuleCategory::guitar,
+            "Tune guitar, bass, and chromatic sources with sub-cent visual precision.",
+            "guitar bass chromatic tuner strobe precision needle cents pitch calibration",
+            guitarTunerNames, guitarTunerMetadata,
+            &makeModule<GuitarTunerModule>,
+            ModuleCapability::continuousTelemetry)
     }};
     return definitions;
 }
@@ -4991,6 +5104,9 @@ CompactVisualization compactVisualization(ModuleType type)
         case ModuleType::harmonicMirage:
         case ModuleType::resonantSculpture:
             return CompactVisualization::resonator;
+
+        case ModuleType::guitarTuner:
+            return CompactVisualization::tuner;
 
         case ModuleType::analogTape:
         case ModuleType::vinylSimulator:

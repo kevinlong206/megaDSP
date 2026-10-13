@@ -105,7 +105,7 @@ public:
         {
             expectEquals(static_cast<int>(ModuleType::programEqualizer), 52);
             expectEquals(static_cast<int>(ModuleType::studioPlate), 53);
-            expectEquals(moduleTypeCount, 59);
+            expectEquals(moduleTypeCount, 60);
             const auto& definition =
                 moduleDefinition(ModuleType::programEqualizer);
             expect(definition.category == ModuleCategory::eqAndFilters);

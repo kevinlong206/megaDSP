@@ -6266,9 +6266,14 @@ void MegaDSPAudioProcessor::loadFactoryPreset(int presetIndex)
         setSlot(0, megadsp::ModuleType::equalizer,
                 { { 1, 0.45f }, { 4, 0.52f }, { 7, 0.56f } });
         setSlot(1, megadsp::ModuleType::delay,
-                { { 1, 0.42f }, { 2, 0.36f }, { 3, 0.72f },
-                  { 4, 1.0f }, { 5, 1.0f }, { 6, 0.43f },
-                  { 7, 0.28f }, { 8, 0.18f } });
+                { { 1, megadsp::discreteValue(8, 12) },
+                  { 2, 1.0f }, { 3, 0.42f },
+                  { 4, megadsp::discreteValue(1, 4) },
+                  { 5, 0.38f },
+                  { 6, megadsp::discreteValue(2, 4) },
+                  { 7, 0.62f }, { 8, 0.24f },
+                  { 9, 0.58f }, { 10, 0.32f },
+                  { 11, 0.36f } });
     }
     else if (presetIndex == 4)
     {

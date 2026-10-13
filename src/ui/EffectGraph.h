@@ -41,6 +41,8 @@ public:
     void setCompactEqualizerBandFromPointForTesting(
         int band, juce::Point<float>);
     void setCompactEqualizerOutputFromYForTesting(float);
+    void setCompactDelayFromPointForTesting(juce::Point<float>);
+    void selectCompactTunerViewForTesting(int);
     juce::Rectangle<float> compactEqualizerPlotAreaForTesting() const
     {
         return compactEqualizerPlotArea();
@@ -128,6 +130,12 @@ private:
     void setCompactEqualizerBandFromPoint(
         int band, juce::Point<float>);
     void setCompactEqualizerOutputFromY(float);
+    juce::Rectangle<float> compactDelayStyleArea() const;
+    juce::Rectangle<float> compactDelayStereoArea() const;
+    juce::Rectangle<float> compactDelayTimelineArea() const;
+    void setCompactDelayFromPoint(juce::Point<float>);
+    juce::Rectangle<float> compactTunerViewArea() const;
+    void selectCompactTunerView(int);
     void timerCallback() override;
     void refreshVisualization();
     void calculateSpectrum(
