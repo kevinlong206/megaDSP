@@ -10,17 +10,8 @@ namespace
 {
 constexpr float minimumFrequency = 20.0f;
 constexpr float maximumFrequency = 1600.0f;
-constexpr int analysisHop = 96;
+constexpr int analysisHop = 384;
 constexpr int analysisWindow = 768;
-
-constexpr std::array<std::array<int, 6>, 6> tuningNotes {{
-    { 40, 45, 50, 55, 59, 64 },
-    { 28, 33, 38, 43, 47, 52 },
-    { 38, 45, 50, 55, 59, 64 },
-    { 38, 45, 50, 54, 57, 62 },
-    { 38, 43, 50, 55, 59, 62 },
-    { 38, 45, 50, 55, 57, 62 }
-}};
 
 constexpr std::array<float, GuitarTunerModule::rangeCount> displayRanges {
     2.0f, 5.0f, 10.0f, 25.0f, 50.0f
@@ -40,8 +31,21 @@ float frequencyForMidi(int midi, float referenceHz) noexcept
 }
 } // namespace
 
+GuitarTunerModule::GuitarTunerModule()
+    : juce::Thread("megaDSP tuner analysis")
+{
+}
+
+GuitarTunerModule::~GuitarTunerModule()
+{
+    signalThreadShouldExit();
+    stopThread(2000);
+}
+
 void GuitarTunerModule::prepare(const juce::dsp::ProcessSpec& spec)
 {
+    signalThreadShouldExit();
+    stopThread(2000);
     sampleRate = detail::safeSampleRate(spec.sampleRate);
     decimation = juce::jmax(
         1, juce::roundToInt(sampleRate / 12000.0));
@@ -53,35 +57,40 @@ void GuitarTunerModule::prepare(const juce::dsp::ProcessSpec& spec)
     dcPole = std::exp(
         -juce::MathConstants<float>::twoPi * 18.0f
         / detectorRate);
-    outputGainSmoothed.reset(sampleRate, 0.012);
     reset();
+    startThread(juce::Thread::Priority::low);
 }
 
 void GuitarTunerModule::reset()
 {
-    history.fill(0.0f);
-    correlations.fill(0.0f);
     lowpassState = 0.0f;
     dcState = 0.0f;
+    decimationCounter = 0;
+    captureWasEnabled = false;
+    const auto write = inputWrite.load(std::memory_order_relaxed);
+    inputRead.store(write, std::memory_order_release);
+    resetGeneration.fetch_add(1, std::memory_order_release);
+    telemetry.clear();
+    meter.store(-100.0f, std::memory_order_relaxed);
+}
+
+void GuitarTunerModule::resetAnalysisState() noexcept
+{
+    history.fill(0.0f);
+    correlations.fill(0.0f);
     inputEnvelope = 0.0f;
     trackedFrequency = 0.0f;
     targetFrequency = 0.0f;
     currentCents = 0.0f;
     confidence = 0.0f;
-    strobePosition = 0.0f;
     holdRemainingSeconds = 0.0f;
     targetMidi = 69;
     detectedMidi = 69;
-    decimationCounter = 0;
     analysisCounter = 0;
     writePosition = 0;
     samplesWritten = 0;
-    initialized = false;
     telemetrySequence = 0;
     telemetryState = {};
-    telemetry.clear();
-    outputGainSmoothed.setCurrentAndTargetValue(1.0f);
-    meter.store(-100.0f, std::memory_order_relaxed);
 }
 
 float GuitarTunerModule::sampleAtAge(int age) const noexcept
@@ -92,54 +101,46 @@ float GuitarTunerModule::sampleAtAge(int age) const noexcept
     return history[static_cast<size_t>(index % historySize)];
 }
 
-void GuitarTunerModule::pushAnalysisSample(float input) noexcept
+void GuitarTunerModule::consumeAnalysisSample(float input) noexcept
 {
-    if (++decimationCounter < decimation)
-        return;
-    decimationCounter = 0;
-
-    lowpassState = lowpassPole * lowpassState
-        + (1.0f - lowpassPole) * input;
-    dcState = dcPole * dcState
-        + (1.0f - dcPole) * lowpassState;
     history[static_cast<size_t>(writePosition)] =
-        detail::finiteSample(lowpassState - dcState);
+        detail::finiteSample(input);
     writePosition = (writePosition + 1) % historySize;
     samplesWritten = juce::jmin(historySize, samplesWritten + 1);
     ++analysisCounter;
-}
+    const auto magnitude = std::abs(input);
+    const auto envelopeAttack = 1.0f
+        - std::exp(-1.0f / (detectorRate * 0.004f));
+    const auto envelopeRelease = 1.0f
+        - std::exp(-1.0f / (detectorRate * 0.18f));
+    inputEnvelope += (magnitude > inputEnvelope
+            ? envelopeAttack : envelopeRelease)
+        * (magnitude - inputEnvelope);
 
-int GuitarTunerModule::nearestTargetMidi(
-    float frequency, float referenceHz, int tuning,
-    int transpose) const noexcept
-{
-    const auto chromatic =
-        juce::roundToInt(midiForFrequency(frequency, referenceHz));
-    if (tuning <= 0)
-        return juce::jlimit(0, 127, chromatic + transpose);
+    if (analysisCounter >= analysisHop)
+        analysePitch();
 
-    const auto& notes = tuningNotes[
-        static_cast<size_t>(juce::jlimit(1, tuningCount - 1, tuning) - 1)];
-    auto best = notes[0] + transpose;
-    auto bestDistance = std::abs(chromatic - best);
-    for (const auto note : notes)
+    if (confidence < 0.12f)
     {
-        const auto candidate = note + transpose;
-        const auto distance = std::abs(chromatic - candidate);
-        if (distance < bestDistance)
+        holdRemainingSeconds = juce::jmax(
+            0.0f, holdRemainingSeconds - 1.0f / detectorRate);
+        if (holdRemainingSeconds <= 0.0f)
         {
-            best = candidate;
-            bestDistance = distance;
+            trackedFrequency = 0.0f;
+            targetFrequency = 0.0f;
+            currentCents = 0.0f;
         }
     }
-    return juce::jlimit(0, 127, best);
 }
 
-void GuitarTunerModule::analysePitch(
-    float gateDb, float responseSeconds, float referenceHz,
-    int tuning, int transpose, float holdSeconds) noexcept
+void GuitarTunerModule::analysePitch() noexcept
 {
     analysisCounter = 0;
+    const auto currentGateDb = gateDb.load(std::memory_order_relaxed);
+    const auto currentResponseSeconds =
+        responseSeconds.load(std::memory_order_relaxed);
+    const auto currentReferenceHz =
+        referenceHz.load(std::memory_order_relaxed);
     const auto levelDb = juce::Decibels::gainToDecibels(
         juce::jmax(1.0e-9f, inputEnvelope), -120.0f);
     const auto minimumLag = juce::jmax(
@@ -148,9 +149,10 @@ void GuitarTunerModule::analysePitch(
         maximumLagCount - 2,
         static_cast<int>(detectorRate / minimumFrequency));
     if (samplesWritten < maximumLag + analysisWindow + 2
-        || levelDb < gateDb)
+        || levelDb < currentGateDb)
     {
         confidence *= 0.82f;
+        publishTelemetry();
         return;
     }
 
@@ -205,7 +207,7 @@ void GuitarTunerModule::analysePitch(
     const auto candidate = detectorRate
         / (static_cast<float>(selectedLag) + fraction);
     const auto levelConfidence = juce::jlimit(
-        0.0f, 1.0f, (levelDb - gateDb) / 18.0f);
+        0.0f, 1.0f, (levelDb - currentGateDb) / 18.0f);
     const auto periodicConfidence = juce::jlimit(
         0.0f, 1.0f, (centre - 0.55f) / 0.43f);
     const auto candidateConfidence =
@@ -216,6 +218,7 @@ void GuitarTunerModule::analysePitch(
         || candidateConfidence < 0.18f)
     {
         confidence *= 0.82f;
+        publishTelemetry();
         return;
     }
 
@@ -223,7 +226,7 @@ void GuitarTunerModule::analysePitch(
         0.02f, 1.0f,
         1.0f - std::exp(
             -static_cast<float>(analysisHop)
-            / (detectorRate * responseSeconds)));
+            / (detectorRate * currentResponseSeconds)));
     if (trackedFrequency <= 0.0f
         || confidence < 0.12f
         || std::abs(
@@ -240,13 +243,78 @@ void GuitarTunerModule::analysePitch(
     detectedMidi = juce::jlimit(
         0, 127,
         juce::roundToInt(
-            midiForFrequency(trackedFrequency, referenceHz)));
-    targetMidi = nearestTargetMidi(
-        trackedFrequency, referenceHz, tuning, transpose);
-    targetFrequency = frequencyForMidi(targetMidi, referenceHz);
+            midiForFrequency(trackedFrequency, currentReferenceHz)));
+    targetMidi = detectedMidi;
+    targetFrequency =
+        frequencyForMidi(targetMidi, currentReferenceHz);
     currentCents = 1200.0f * std::log2(
         trackedFrequency / targetFrequency);
-    holdRemainingSeconds = holdSeconds;
+    holdRemainingSeconds = holdSeconds.load(std::memory_order_relaxed);
+    publishTelemetry();
+}
+
+void GuitarTunerModule::publishTelemetry() noexcept
+{
+    const auto levelDb = juce::Decibels::gainToDecibels(
+        juce::jmax(1.0e-9f, inputEnvelope), -120.0f);
+    meter.store(levelDb, std::memory_order_relaxed);
+    telemetryState.sequence = ++telemetrySequence;
+    telemetryState.valueCount = telemetryValueCount;
+    telemetryState.values[detectedFrequencyHz] = trackedFrequency;
+    telemetryState.values[targetFrequencyHz] = targetFrequency;
+    telemetryState.values[centsError] = currentCents;
+    telemetryState.values[trackingConfidence] = confidence;
+    telemetryState.values[inputLevelDb] = levelDb;
+    telemetryState.values[targetMidiNote] =
+        static_cast<float>(targetMidi);
+    telemetryState.values[detectedMidiNote] =
+        static_cast<float>(detectedMidi);
+    telemetryState.values[strobePhase] = 0.0f;
+    telemetryState.values[activeView] = 1.0f;
+    telemetryState.values[activeTuning] = 0.0f;
+    telemetryState.values[displayRangeCents] =
+        displayRange.load(std::memory_order_relaxed);
+    telemetryState.values[inTune] =
+        confidence >= 0.45f && std::abs(currentCents) <= 0.5f
+        ? 1.0f : 0.0f;
+    appendContinuousTelemetryHistory(
+        telemetryState,
+        { currentCents, confidence, levelDb, 0.0f },
+        telemetryHistoryValueCount);
+    telemetry.publish(telemetryState);
+}
+
+void GuitarTunerModule::run()
+{
+    auto observedReset =
+        resetGeneration.load(std::memory_order_acquire);
+    resetAnalysisState();
+    while (!threadShouldExit())
+    {
+        const auto requestedReset =
+            resetGeneration.load(std::memory_order_acquire);
+        if (requestedReset != observedReset)
+        {
+            observedReset = requestedReset;
+            resetAnalysisState();
+        }
+
+        auto read = inputRead.load(std::memory_order_relaxed);
+        const auto write = inputWrite.load(std::memory_order_acquire);
+        if (read == write)
+        {
+            juce::Thread::sleep(2);
+            continue;
+        }
+        while (read < write)
+        {
+            consumeAnalysisSample(
+                inputQueue[static_cast<size_t>(
+                    read % inputQueueCapacity)]);
+            ++read;
+        }
+        inputRead.store(read, std::memory_order_release);
+    }
 }
 
 void GuitarTunerModule::process(
@@ -258,42 +326,41 @@ void GuitarTunerModule::process(
     if (channels <= 0 || buffer.getNumSamples() <= 0)
         return;
 
-    const auto referenceHz = detail::lerp(
+    referenceHz.store(detail::lerp(
         430.0f, 450.0f,
-        detail::normalizedControl(controls[referenceControl], 0.5f));
-    const auto view = discreteIndex(
-        detail::normalizedControl(controls[viewControl], 0.1667f),
-        viewCount);
-    const auto tuning = discreteIndex(
-        detail::normalizedControl(controls[tuningControl], 0.0714f),
-        tuningCount);
-    const auto transpose = juce::roundToInt(detail::lerp(
-        -12.0f, 12.0f,
-        detail::normalizedControl(controls[transposeControl], 0.5f)));
-    const auto inputGain = juce::Decibels::decibelsToGain(detail::lerp(
+        detail::normalizedControl(controls[referenceControl], 0.5f)),
+        std::memory_order_relaxed);
+    inputGain.store(juce::Decibels::decibelsToGain(detail::lerp(
         -24.0f, 24.0f,
-        detail::normalizedControl(controls[inputGainControl], 0.5f)));
-    const auto gateDb = detail::lerp(
+        detail::normalizedControl(controls[inputGainControl], 0.5f))),
+        std::memory_order_relaxed);
+    gateDb.store(detail::lerp(
         -72.0f, -24.0f,
-        detail::normalizedControl(controls[gateControl], 0.25f));
-    const auto responseSeconds = detail::exponential(
+        detail::normalizedControl(controls[gateControl], 0.25f)),
+        std::memory_order_relaxed);
+    responseSeconds.store(detail::exponential(
         0.04f, 0.60f,
-        detail::normalizedControl(controls[responseControl], 0.42f));
-    const auto range = displayRanges[static_cast<size_t>(discreteIndex(
+        detail::normalizedControl(controls[responseControl], 0.42f)),
+        std::memory_order_relaxed);
+    displayRange.store(displayRanges[static_cast<size_t>(discreteIndex(
         detail::normalizedControl(controls[rangeControl], 0.9f),
-        rangeCount))];
-    const auto strobeSpeed = detail::lerp(
-        0.5f, 5.0f,
-        detail::normalizedControl(controls[strobeSpeedControl], 0.45f));
-    const auto muted =
-        detail::normalizedControl(controls[muteControl], 0.0f) >= 0.5f;
-    const auto outputGain = muted ? 0.0f
-        : juce::Decibels::decibelsToGain(detail::lerp(
-              -24.0f, 6.0f,
-              detail::normalizedControl(controls[outputControl], 0.8f)));
-    const auto holdSeconds = detail::lerp(
+        rangeCount))], std::memory_order_relaxed);
+    holdSeconds.store(detail::lerp(
         0.0f, 2.0f,
-        detail::normalizedControl(controls[holdControl], 0.3f));
+        detail::normalizedControl(controls[holdControl], 0.3f)),
+        std::memory_order_relaxed);
+
+    if (!environment.captureTelemetry)
+    {
+        captureWasEnabled = false;
+        return;
+    }
+    if (!captureWasEnabled)
+    {
+        captureWasEnabled = true;
+        resetGeneration.fetch_add(1, std::memory_order_release);
+    }
+
     auto detectorChannel = 0;
     if (channels > 1)
     {
@@ -310,92 +377,27 @@ void GuitarTunerModule::process(
         }
         detectorChannel = rightEnergy > leftEnergy ? 1 : 0;
     }
-    outputGainSmoothed.setTargetValue(outputGain);
-    if (!initialized)
-    {
-        outputGainSmoothed.setCurrentAndTargetValue(outputGain);
-        initialized = true;
-    }
-
-    const auto envelopeAttack = 1.0f
-        - static_cast<float>(std::exp(-1.0 / (sampleRate * 0.004)));
-    const auto envelopeRelease = 1.0f
-        - static_cast<float>(std::exp(-1.0 / (sampleRate * 0.18)));
+    auto write = inputWrite.load(std::memory_order_relaxed);
+    const auto read = inputRead.load(std::memory_order_acquire);
+    const auto gain = inputGain.load(std::memory_order_relaxed);
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
-        const auto mono = detail::finiteSample(
-            buffer.getSample(detectorChannel, sample)) * inputGain;
-        const auto magnitude = std::abs(mono);
-        inputEnvelope += (magnitude > inputEnvelope
-                ? envelopeAttack : envelopeRelease)
-            * (magnitude - inputEnvelope);
-        pushAnalysisSample(mono);
-        if (analysisCounter >= analysisHop)
-            analysePitch(
-                gateDb, responseSeconds, referenceHz,
-                tuning, transpose, holdSeconds);
-
-        if (confidence < 0.12f)
-        {
-            holdRemainingSeconds = juce::jmax(
-                0.0f,
-                holdRemainingSeconds
-                    - 1.0f / static_cast<float>(sampleRate));
-            if (holdRemainingSeconds <= 0.0f)
-            {
-                trackedFrequency = 0.0f;
-                targetFrequency = 0.0f;
-                currentCents = 0.0f;
-            }
-        }
-        const auto centsVelocity =
-            trackedFrequency > 0.0f ? currentCents / range : 0.0f;
-        strobePosition = std::fmod(
-            strobePosition
-                + centsVelocity * strobeSpeed
-                    / static_cast<float>(sampleRate),
-            1.0f);
-        if (strobePosition < 0.0f)
-            strobePosition += 1.0f;
-
-        const auto gain = outputGainSmoothed.getNextValue();
-        for (int channel = 0; channel < channels; ++channel)
-            buffer.setSample(
-                channel, sample,
-                detail::finiteSample(
-                    buffer.getSample(channel, sample) * gain));
+        if (++decimationCounter < decimation)
+            continue;
+        decimationCounter = 0;
+        const auto input = detail::finiteSample(
+            buffer.getSample(detectorChannel, sample)) * gain;
+        lowpassState = lowpassPole * lowpassState
+            + (1.0f - lowpassPole) * input;
+        dcState = dcPole * dcState
+            + (1.0f - dcPole) * lowpassState;
+        if (write - read >= inputQueueCapacity)
+            continue;
+        inputQueue[static_cast<size_t>(write % inputQueueCapacity)] =
+            detail::finiteSample(lowpassState - dcState);
+        ++write;
     }
-
-    const auto levelDb = juce::Decibels::gainToDecibels(
-        juce::jmax(1.0e-9f, inputEnvelope), -120.0f);
-    meter.store(levelDb, std::memory_order_relaxed);
-    if (environment.captureTelemetry)
-    {
-        telemetryState.sequence = ++telemetrySequence;
-        telemetryState.valueCount = telemetryValueCount;
-        telemetryState.values[detectedFrequencyHz] = trackedFrequency;
-        telemetryState.values[targetFrequencyHz] = targetFrequency;
-        telemetryState.values[centsError] = currentCents;
-        telemetryState.values[trackingConfidence] = confidence;
-        telemetryState.values[inputLevelDb] = levelDb;
-        telemetryState.values[targetMidiNote] =
-            static_cast<float>(targetMidi);
-        telemetryState.values[detectedMidiNote] =
-            static_cast<float>(detectedMidi);
-        telemetryState.values[strobePhase] = strobePosition;
-        telemetryState.values[activeView] = static_cast<float>(view);
-        telemetryState.values[activeTuning] =
-            static_cast<float>(tuning);
-        telemetryState.values[displayRangeCents] = range;
-        telemetryState.values[inTune] =
-            confidence >= 0.45f && std::abs(currentCents) <= 0.5f
-            ? 1.0f : 0.0f;
-        appendContinuousTelemetryHistory(
-            telemetryState,
-            { currentCents, confidence, levelDb, strobePosition },
-            telemetryHistoryValueCount);
-        telemetry.publish(telemetryState);
-    }
+    inputWrite.store(write, std::memory_order_release);
 }
 
 bool GuitarTunerModule::readContinuousTelemetry(

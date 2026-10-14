@@ -172,28 +172,22 @@ allocation-free after prepare. Mix zero remains exact immediate dry.
 
 ## Guitar Tuner
 
-Provides zero-latency audio passthrough with a dedicated detector path for
-chromatic, standard guitar, bass, Drop D, Open D, Open G, and DADGAD tuning.
-The prepared detector decimates into fixed history, uses normalized
-autocorrelation with fractional-lag refinement, and selects one stereo channel
-by measured block energy so hard-panned or anti-phase sources do not cancel
-before analysis. Steady test tones resolve to sub-cent precision while
-confidence and the input gate reject weak or non-periodic input.
+Provides bit-exact zero-latency passthrough and chromatic tuning. The audio
+callback only selects and decimates the detector input into a fixed lock-free
+queue while the compact card is active. A low-priority worker performs
+normalized autocorrelation and fractional-lag refinement, keeping the expensive
+pitch search off the audio thread. Hard-panned and anti-phase sources remain
+detectable because the stronger stereo channel is selected before capture.
 
-**Reference Pitch** calibrates A4 from 430 to 450 Hz. **Transpose** shifts the
-selected tuning by up to one octave. **Input Gain** affects detection only;
-**Gate**, **Response**, and **Hold** control acquisition, stability, noise
-rejection, and how long the last reliable note remains visible. **Display
-Range** sets the visible cent span, while **Strobe Speed** changes visual motion
-without changing pitch analysis. **Mute** uses a click-safe fade and **Output**
-sets the otherwise transparent passthrough level.
+**Reference Pitch** calibrates A4 from 430 to 450 Hz. **Input Gain** affects
+detection only; **Gate**, **Response**, and **Hold** control acquisition,
+stability, noise rejection, and how long the last reliable note remains
+visible. **Display Range** sets the visible cent span.
 
-The compact card owns three switchable displays. **Strobe** moves measured
-bands left or right with cent error and stops at tune. **Precision** shows a
-high-resolution linear cent marker. **Needle** presents a familiar arc meter.
-All views show note, octave, measured frequency, cent error, confidence state,
-and the selected tuning. Click the view pills or use Left/Right; Up/Down changes
-the tuning.
+The compact card uses one focused **Precision** display with the chromatic note,
+octave, measured frequency, cent error, and confidence state. Legacy view,
+tuning, transpose, strobe, mute, and output parameter values remain saved for
+project compatibility but are hidden and do not affect analysis or audio.
 
 ---
 

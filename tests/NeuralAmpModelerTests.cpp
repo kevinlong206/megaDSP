@@ -854,6 +854,79 @@ public:
             f.deleteFile();
         }
 
+        beginTest("Host restore supersedes an in-flight NAM load");
+        {
+            const auto unique = juce::String::toHexString(
+                juce::Time::getHighResolutionTicks());
+            const auto root =
+                juce::File::getSpecialLocation(
+                    juce::File::tempDirectory)
+                    .getNonexistentChildFile(
+                        "megaDSP-nam-host-restore-" + unique, {}, true);
+            expect(root.createDirectory().wasOk());
+            const auto restoredModel = writeNam(
+                linearNamJson(), "host-restore-a-" + unique);
+            const auto pendingModel = writeNam(
+                linearNamJson(), "host-restore-b-" + unique);
+            const auto cabinet = writeImpulse(
+                root.getChildFile("host-restore.wav"), 7);
+
+            MegaDSPAudioProcessor source;
+            source.prepareToPlay(48000.0, 64);
+            source.addModule(ModuleType::neuralAmpModeler);
+            juce::MemoryBlock saved;
+            source.getStateInformation(saved);
+            auto stateXml = juce::AudioProcessor::getXmlFromBinary(
+                saved.getData(), static_cast<int>(saved.getSize()));
+            expect(stateXml != nullptr);
+            if (stateXml != nullptr)
+            {
+                auto state = juce::ValueTree::fromXml(*stateXml);
+                auto snapshots = state.getChildWithName("SNAPSHOTS");
+                auto snapshot = snapshots.getChild(0);
+                auto slot = snapshot.getChild(0);
+                slot.setProperty(
+                    "namModel", restoredModel.getFullPathName(), nullptr);
+                slot.setProperty(
+                    "namCabinet", cabinet.getFullPathName(), nullptr);
+                slot.setProperty("namCabinetEnabled", true, nullptr);
+                stateXml = state.createXml();
+                saved.reset();
+                juce::AudioProcessor::copyXmlToBinary(*stateXml, saved);
+            }
+
+            MegaDSPAudioProcessor restored;
+            restored.prepareToPlay(48000.0, 64);
+            restored.addModule(ModuleType::neuralAmpModeler);
+            std::atomic<bool> cancellationReported { false };
+            expect(restored.loadNamModelAsync(
+                0, pendingModel,
+                [&cancellationReported](const juce::Result& result)
+                {
+                    cancellationReported.store(
+                        result.failed(), std::memory_order_release);
+                }).wasOk());
+
+            restored.setStateInformation(
+                saved.getData(), static_cast<int>(saved.getSize()));
+            expect(cancellationReported.load(std::memory_order_acquire));
+            expectEquals(
+                restored.namModelPath(0),
+                restoredModel.getFullPathName());
+            expectEquals(
+                restored.namCabinetPath(0),
+                cabinet.getFullPathName());
+            expect(restored.isNamCabinetEnabled(0));
+
+            expect(restored.clearNamModel(0).wasOk(),
+                   "State restore must release the topology mutation gate.");
+            expect(restored.namModelPath(0).isEmpty());
+
+            restoredModel.deleteFile();
+            pendingModel.deleteFile();
+            root.deleteRecursively();
+        }
+
         beginTest("Cabinet defaults use relative paths and NAM metadata");
         {
             const auto root =

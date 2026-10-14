@@ -408,6 +408,7 @@ private:
     void finishTopologyMutation(
         bool compact, bool resetRack, bool publishAlways);
     bool beginTopologyMutation();
+    bool cancelPendingAssetMutationForStateRestore();
     void restorePendingImpulseResponses();
     void restorePendingNamModels();
     void updateHostBypassLatency(int latency) noexcept;
@@ -539,6 +540,7 @@ private:
         bool selectConvolutionBank = false;
     };
     juce::CriticalSection pendingImpulseResponseLoadLock;
+    juce::CriticalSection assetMutationCommitLock;
     std::unique_ptr<PendingImpulseResponseLoad>
         pendingImpulseResponseLoad;
     juce::ThreadPool impulseResponseLoadPool { 1 };

@@ -115,10 +115,9 @@ EffectGraph::EffectGraph(
     {
         setTitle("Precision guitar tuner");
         setDescription(
-            "Shows measured note, frequency, cent error, confidence, and tuning motion.");
+            "Shows the chromatic note, frequency, cent error, and confidence.");
         setHelpText(
-            "Click Strobe, Precision, or Needle to change views. "
-            "Left and Right also change view; Up and Down change tuning.");
+            "The Precision marker shows whether the detected chromatic note is sharp or flat.");
     }
     if (compactAssets)
     {
@@ -2438,54 +2437,8 @@ void EffectGraph::paintCompact(
                 && telemetry.sequence != 0
                 && telemetry.valueCount
                        >= GuitarTunerModule::telemetryValueCount;
-            const auto selectedView = valid
-                ? juce::jlimit(
-                      0, GuitarTunerModule::viewCount - 1,
-                      juce::roundToInt(
-                          telemetry.values[
-                              GuitarTunerModule::activeView]))
-                : discreteIndex(
-                      value(GuitarTunerModule::viewControl),
-                      GuitarTunerModule::viewCount);
-            constexpr std::array<const char*, 3> viewLabels {
-                "STROBE", "PRECISION", "NEEDLE"
-            };
-            constexpr std::array<const char*, 7> tuningLabels {
-                "CHROMATIC", "GUITAR", "BASS", "DROP D",
-                "OPEN D", "OPEN G", "DADGAD"
-            };
-            const auto viewArea = compactTunerViewArea();
-            for (int view = 0; view < GuitarTunerModule::viewCount; ++view)
-            {
-                auto pill = viewArea;
-                pill.setX(
-                    viewArea.getX()
-                    + static_cast<float>(view)
-                        * viewArea.getWidth()
-                        / static_cast<float>(GuitarTunerModule::viewCount));
-                pill.setWidth(
-                    viewArea.getWidth()
-                        / static_cast<float>(GuitarTunerModule::viewCount)
-                    - 2.0f);
-                const auto active = view == selectedView;
-                graphics.setColour(
-                    active ? accent.withAlpha(0.44f)
-                           : juce::Colours::black.withAlpha(0.24f));
-                graphics.fillRoundedRectangle(pill, 3.0f);
-                graphics.setColour(
-                    juce::Colours::white.withAlpha(
-                        active ? 0.96f : 0.56f));
-                graphics.setFont(juce::FontOptions(
-                    7.0f, active ? juce::Font::bold
-                                : juce::Font::plain));
-                graphics.drawText(
-                    viewLabels[static_cast<size_t>(view)],
-                    pill.toNearestInt(),
-                    juce::Justification::centred);
-            }
-
             auto display = area;
-            display.removeFromTop(34.0f);
+            display.removeFromTop(10.0f);
             display = display.reduced(3.0f, 1.0f);
             const auto confidence = valid
                 ? juce::jlimit(
@@ -2506,15 +2459,6 @@ void EffectGraph::paintCompact(
                       telemetry.values[
                           GuitarTunerModule::targetMidiNote])
                 : 69;
-            const auto activeTuning = valid
-                ? juce::jlimit(
-                      0, GuitarTunerModule::tuningCount - 1,
-                      juce::roundToInt(
-                          telemetry.values[
-                              GuitarTunerModule::activeTuning]))
-                : discreteIndex(
-                      value(GuitarTunerModule::tuningControl),
-                      GuitarTunerModule::tuningCount);
             const auto frequency = valid
                 ? telemetry.values[
                       GuitarTunerModule::detectedFrequencyHz]
@@ -2550,114 +2494,40 @@ void EffectGraph::paintCompact(
                 juce::Justification::centredTop);
 
             auto meterArea = display.reduced(7.0f, 3.0f);
-            if (selectedView == 0)
+            const auto centreY = meterArea.getCentreY();
+            graphics.setColour(
+                juce::Colours::white.withAlpha(0.16f));
+            graphics.drawHorizontalLine(
+                juce::roundToInt(centreY),
+                meterArea.getX(), meterArea.getRight());
+            for (int tick = -10; tick <= 10; ++tick)
             {
-                const auto phase = valid
-                    ? telemetry.values[GuitarTunerModule::strobePhase]
-                    : 0.0f;
-                for (int band = 0; band < 3; ++band)
-                {
-                    auto bandArea = meterArea.removeFromTop(
-                        meterArea.getHeight()
-                        / static_cast<float>(3 - band));
-                    const auto blockWidth =
-                        juce::jmax(8.0f, bandArea.getWidth() / 12.0f);
-                    const auto offset = std::fmod(
-                        phase * blockWidth
-                            * (1.0f
-                               + static_cast<float>(band) * 0.37f),
-                        blockWidth * 2.0f);
-                    for (float x = bandArea.getX() - blockWidth * 2.0f;
-                         x < bandArea.getRight() + blockWidth * 2.0f;
-                         x += blockWidth * 2.0f)
-                    {
-                        graphics.setColour(
-                            activeColour.withAlpha(
-                                0.18f + confidence * 0.62f));
-                        graphics.fillRect(
-                            x + offset, bandArea.getY() + 1.0f,
-                            blockWidth, bandArea.getHeight() - 2.0f);
-                    }
-                }
+                const auto x = meterArea.getCentreX()
+                    + static_cast<float>(tick) / 20.0f
+                        * meterArea.getWidth();
+                const auto major = tick % 5 == 0;
                 graphics.setColour(
-                    juce::Colours::white.withAlpha(0.82f));
+                    juce::Colours::white.withAlpha(
+                        major ? 0.42f : 0.18f));
                 graphics.drawVerticalLine(
-                    juce::roundToInt(display.getCentreX()),
-                    display.getY(), display.getBottom());
+                    juce::roundToInt(x),
+                    centreY - (major ? 11.0f : 6.0f),
+                    centreY + (major ? 11.0f : 6.0f));
             }
-            else if (selectedView == 1)
-            {
-                const auto centreY = meterArea.getCentreY();
-                graphics.setColour(
-                    juce::Colours::white.withAlpha(0.16f));
-                graphics.drawHorizontalLine(
-                    juce::roundToInt(centreY),
-                    meterArea.getX(), meterArea.getRight());
-                for (int tick = -10; tick <= 10; ++tick)
-                {
-                    const auto x = meterArea.getCentreX()
-                        + static_cast<float>(tick) / 20.0f
-                            * meterArea.getWidth();
-                    const auto major = tick % 5 == 0;
-                    graphics.setColour(
-                        juce::Colours::white.withAlpha(
-                            major ? 0.42f : 0.18f));
-                    graphics.drawVerticalLine(
-                        juce::roundToInt(x),
-                        centreY - (major ? 11.0f : 6.0f),
-                        centreY + (major ? 11.0f : 6.0f));
-                }
-                const auto markerX = meterArea.getCentreX()
-                    + juce::jlimit(-1.0f, 1.0f, cents / range)
-                        * meterArea.getWidth() * 0.5f;
-                graphics.setColour(
-                    activeColour.withAlpha(0.35f + confidence * 0.65f));
-                graphics.fillRoundedRectangle(
-                    markerX - 2.0f, meterArea.getY(),
-                    4.0f, meterArea.getHeight(), 2.0f);
-            }
-            else
-            {
-                const auto centre = juce::Point<float>(
-                    meterArea.getCentreX(), meterArea.getBottom() - 5.0f);
-                const auto radius = juce::jmin(
-                    meterArea.getWidth() * 0.46f,
-                    meterArea.getHeight() * 0.92f);
-                juce::Path arc;
-                arc.addCentredArc(
-                    centre.x, centre.y, radius, radius,
-                    0.0f,
-                    -juce::MathConstants<float>::pi * 0.72f,
-                    -juce::MathConstants<float>::pi * 0.28f,
-                    true);
-                graphics.setColour(
-                    juce::Colours::white.withAlpha(0.24f));
-                graphics.strokePath(
-                    arc, juce::PathStrokeType(2.0f));
-                const auto position =
-                    juce::jlimit(-1.0f, 1.0f, cents / range);
-                const auto angle =
-                    -juce::MathConstants<float>::halfPi
-                    + position * juce::MathConstants<float>::pi * 0.44f;
-                const auto tip = centre
-                    + juce::Point<float>(
-                          std::cos(angle), std::sin(angle))
-                        * radius * 0.92f;
-                graphics.setColour(
-                    activeColour.withAlpha(0.35f + confidence * 0.65f));
-                graphics.drawLine(
-                    centre.x, centre.y, tip.x, tip.y, 2.2f);
-                graphics.fillEllipse(
-                    centre.x - 3.0f, centre.y - 3.0f, 6.0f, 6.0f);
-            }
+            const auto markerX = meterArea.getCentreX()
+                + juce::jlimit(-1.0f, 1.0f, cents / range)
+                    * meterArea.getWidth() * 0.5f;
+            graphics.setColour(
+                activeColour.withAlpha(0.35f + confidence * 0.65f));
+            graphics.fillRoundedRectangle(
+                markerX - 2.0f, meterArea.getY(),
+                4.0f, meterArea.getHeight(), 2.0f);
             auto statusArea = display.removeFromBottom(14.0f);
             graphics.setColour(
                 juce::Colours::white.withAlpha(0.54f));
             graphics.setFont(juce::FontOptions(7.0f, juce::Font::bold));
             graphics.drawText(
-                juce::String(
-                    tuningLabels[static_cast<size_t>(activeTuning)])
-                    + "  A="
+                juce::String("CHROMATIC  A=")
                     + juce::String(
                         430.0f
                             + 20.0f
@@ -3002,18 +2872,6 @@ void EffectGraph::mouseDown(const juce::MouseEvent& event)
             setCompactDelayFromPoint(event.position);
         }
     }
-    else if (type == ModuleType::guitarTuner
-             && compactTunerViewArea().contains(event.position))
-    {
-        grabKeyboardFocus();
-        const auto view = juce::jlimit(
-            0, GuitarTunerModule::viewCount - 1,
-            static_cast<int>(
-                (event.position.x - compactTunerViewArea().getX())
-                / juce::jmax(1.0f, compactTunerViewArea().getWidth())
-                * static_cast<float>(GuitarTunerModule::viewCount)));
-        selectCompactTunerView(view);
-    }
 }
 
 void EffectGraph::mouseDrag(const juce::MouseEvent& event)
@@ -3202,41 +3060,7 @@ bool EffectGraph::keyPressed(const juce::KeyPress& key)
         return false;
     }
     if (type == ModuleType::guitarTuner)
-    {
-        if (key.getKeyCode() == juce::KeyPress::leftKey
-            || key.getKeyCode() == juce::KeyPress::rightKey)
-        {
-            const auto direction =
-                key.getKeyCode() == juce::KeyPress::rightKey ? 1 : -1;
-            const auto current = discreteIndex(
-                value(GuitarTunerModule::viewControl),
-                GuitarTunerModule::viewCount);
-            selectCompactTunerView(
-                (current + direction + GuitarTunerModule::viewCount)
-                % GuitarTunerModule::viewCount);
-            return true;
-        }
-        if (key.getKeyCode() == juce::KeyPress::upKey
-            || key.getKeyCode() == juce::KeyPress::downKey)
-        {
-            const auto direction =
-                key.getKeyCode() == juce::KeyPress::upKey ? 1 : -1;
-            const auto current = discreteIndex(
-                value(GuitarTunerModule::tuningControl),
-                GuitarTunerModule::tuningCount);
-            const auto next =
-                (current + direction + GuitarTunerModule::tuningCount)
-                % GuitarTunerModule::tuningCount;
-            beginGestures();
-            setValue(
-                GuitarTunerModule::tuningControl,
-                discreteValue(next, GuitarTunerModule::tuningCount));
-            endGestures();
-            repaint();
-            return true;
-        }
         return false;
-    }
     if (type == ModuleType::compressor)
     {
         if (key.getKeyCode() == juce::KeyPress::upKey
@@ -3852,24 +3676,6 @@ void EffectGraph::setCompactDelayFromPoint(juce::Point<float> point)
     repaint();
 }
 
-juce::Rectangle<float> EffectGraph::compactTunerViewArea() const
-{
-    auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
-    area.removeFromTop(14.0f);
-    return area.removeFromTop(18.0f).reduced(2.0f, 1.0f);
-}
-
-void EffectGraph::selectCompactTunerView(int view)
-{
-    view = juce::jlimit(0, GuitarTunerModule::viewCount - 1, view);
-    beginGestures();
-    setValue(
-        GuitarTunerModule::viewControl,
-        discreteValue(view, GuitarTunerModule::viewCount));
-    endGestures();
-    repaint();
-}
-
 #if defined(MEGADSP_TESTS)
 void EffectGraph::setCompactCompressorThresholdFromYForTesting(
     float y)
@@ -3894,10 +3700,6 @@ void EffectGraph::setCompactDelayFromPointForTesting(
     setCompactDelayFromPoint(point);
 }
 
-void EffectGraph::selectCompactTunerViewForTesting(int view)
-{
-    selectCompactTunerView(view);
-}
 #endif
 
 std::unique_ptr<juce::AccessibilityHandler>

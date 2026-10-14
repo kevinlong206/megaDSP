@@ -120,7 +120,7 @@ public:
                 "Rate " + juce::String(rate, 0));
         }
 
-        beginTest("Reference pitch and transposed guitar targets are exact");
+        beginTest("Reference pitch and chromatic targets are exact");
         {
             GuitarTunerModule module;
             module.prepare({ 48000.0, 512, 1 });
@@ -184,7 +184,7 @@ public:
                         reference.getSample(channel, sample), 1.0e-7f);
         }
 
-        beginTest("Mute fades to silence and silence releases confidence");
+        beginTest("Legacy output controls cannot alter passthrough");
         {
             GuitarTunerModule module;
             module.prepare({ 48000.0, 512, 1 });
@@ -206,7 +206,9 @@ public:
                     block.setSample(0, sample, 0.5f);
                 module.process(block, controls, environment);
             }
-            expectEquals(block.getMagnitude(0, 0, block.getNumSamples()), 0.0f);
+            expectWithinAbsoluteError(
+                block.getMagnitude(0, 0, block.getNumSamples()),
+                0.5f, 1.0e-7f);
 
             controls[GuitarTunerModule::muteControl] = 0.0f;
             controls[GuitarTunerModule::holdControl] = 0.0f;
@@ -215,7 +217,16 @@ public:
                 block.clear();
                 module.process(block, controls, environment);
             }
-            expect(module.readContinuousTelemetry(snapshot));
+            const auto timeout =
+                juce::Time::getMillisecondCounterHiRes() + 2000.0;
+            do
+            {
+                juce::Thread::sleep(10);
+                expect(module.readContinuousTelemetry(snapshot));
+            }
+            while (snapshot.values[
+                       GuitarTunerModule::detectedFrequencyHz] > 0.0f
+                   && juce::Time::getMillisecondCounterHiRes() < timeout);
             expect(snapshot.values[
                        GuitarTunerModule::trackingConfidence] < 0.12f);
             expectEquals(
@@ -223,7 +234,7 @@ public:
                 0.0f);
         }
 
-        beginTest("Telemetry view and range follow the active controls");
+        beginTest("Telemetry stays Precision and Chromatic");
         {
             GuitarTunerModule module;
             module.prepare({ 44100.0, 256, 1 });
@@ -237,7 +248,11 @@ public:
             expectEquals(
                 juce::roundToInt(snapshot.values[
                     GuitarTunerModule::activeView]),
-                2);
+                1);
+            expectEquals(
+                juce::roundToInt(snapshot.values[
+                    GuitarTunerModule::activeTuning]),
+                0);
             expectEquals(
                 snapshot.values[
                     GuitarTunerModule::displayRangeCents],
@@ -290,7 +305,24 @@ private:
             module.process(block, controls, environment);
         }
         megadsp::ContinuousTelemetrySnapshot snapshot;
-        module.readContinuousTelemetry(snapshot);
+        std::uint64_t previousSequence = 0;
+        auto stableReads = 0;
+        const auto timeout =
+            juce::Time::getMillisecondCounterHiRes() + 2500.0;
+        do
+        {
+            juce::Thread::sleep(20);
+            if (!module.readContinuousTelemetry(snapshot)
+                || snapshot.sequence == 0)
+                continue;
+            if (snapshot.sequence == previousSequence)
+                ++stableReads;
+            else
+                stableReads = 0;
+            previousSequence = snapshot.sequence;
+        }
+        while (stableReads < 5
+               && juce::Time::getMillisecondCounterHiRes() < timeout);
         return snapshot;
     }
 };

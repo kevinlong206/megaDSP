@@ -3801,6 +3801,46 @@ bool MegaDSPAudioProcessor::beginTopologyMutation()
     return true;
 }
 
+bool MegaDSPAudioProcessor::cancelPendingAssetMutationForStateRestore()
+{
+    const juce::ScopedLock commitLock(assetMutationCommitLock);
+    if (!topologyMutationInProgress.load(std::memory_order_acquire))
+        return false;
+
+    impulseResponseLoadPool.removeAllJobs(true, 30000);
+    namModelLoadPool.removeAllJobs(true, 30000);
+
+    std::unique_ptr<PendingImpulseResponseLoad> impulse;
+    {
+        const juce::ScopedLock lock(pendingImpulseResponseLoadLock);
+        impulse = std::move(pendingImpulseResponseLoad);
+    }
+    std::unique_ptr<PendingNamModelLoad> nam;
+    {
+        const juce::ScopedLock lock(pendingNamModelLoadLock);
+        nam = std::move(pendingNamModelLoad);
+    }
+    if (impulse == nullptr && nam == nullptr)
+        return false;
+
+    if (impulse != nullptr)
+        impulse->rack->cancelImpulseResponse(impulse->load);
+    if (nam != nullptr)
+    {
+        nam->rack->cancelNamModel(nam->load);
+        nam->rack->cancelNamModel(nam->cabinetLoad);
+    }
+
+    const auto cancelled = juce::Result::fail(
+        "Asset loading was cancelled because the host restored plug-in state.");
+    if (impulse != nullptr && impulse->callback)
+        impulse->callback(cancelled);
+    if (nam != nullptr && nam->callback)
+        nam->callback(cancelled);
+    topologyMutationInProgress.store(false, std::memory_order_release);
+    return true;
+}
+
 void MegaDSPAudioProcessor::finishTopologyMutation(
     bool compact, bool resetRack, bool publishAlways)
 {
@@ -4169,8 +4209,14 @@ void MegaDSPAudioProcessor::setStateInformation(const void* data, int size)
                 restored.getProperty("editorHeight", 720)));
         selectedTab = static_cast<int>(
             restored.getProperty("selectedTab", 0));
+        cancelPendingAssetMutationForStateRestore();
         if (!beginTopologyMutation())
+        {
+            megadsp::Diagnostics::instance().logRealtime(
+                megadsp::DiagnosticEvent::stateRejected,
+                diagnosticInstanceId, 2, size);
             return;
+        }
         restoreParameterState(restored);
         restoreSnapshots(restored, schemaVersion);
         finishTopologyMutation(true, true, true);
@@ -4426,6 +4472,7 @@ MegaDSPAudioProcessor::loadConvolutionImpulseResponseBankAsync(
 
 void MegaDSPAudioProcessor::finishPendingImpulseResponseLoad()
 {
+    const juce::ScopedLock commitLock(assetMutationCommitLock);
     std::unique_ptr<PendingImpulseResponseLoad> completed;
     {
         const juce::ScopedLock lock(pendingImpulseResponseLoadLock);
@@ -5847,6 +5894,7 @@ juce::Result MegaDSPAudioProcessor::loadNamModelAsync(
 
 void MegaDSPAudioProcessor::finishPendingNamModelLoad()
 {
+    const juce::ScopedLock commitLock(assetMutationCommitLock);
     std::unique_ptr<PendingNamModelLoad> completed;
     {
         const juce::ScopedLock lock(pendingNamModelLoadLock);

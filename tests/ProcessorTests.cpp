@@ -862,7 +862,7 @@ public:
                 "The compact NAM library must not capture unused DSP data.");
         }
 
-        beginTest("Compact Guitar Tuner switches all display modes");
+        beginTest("Compact Guitar Tuner keeps one Precision display");
         {
             MegaDSPAudioProcessor tunerProcessor;
             tunerProcessor.prepareToPlay(48000.0, 512);
@@ -872,26 +872,15 @@ public:
             megadsp::ui::EffectGraph graph(
                 tunerProcessor, 0, megadsp::ModuleType::guitarTuner);
             graph.setBounds(0, 0, 384, 120);
-            for (int view = 0;
-                 view < megadsp::GuitarTunerModule::viewCount; ++view)
-            {
-                graph.selectCompactTunerViewForTesting(view);
-                expectEquals(
-                    megadsp::discreteIndex(
-                        graph.value(
-                            megadsp::GuitarTunerModule::viewControl),
-                        megadsp::GuitarTunerModule::viewCount),
-                    view);
-                juce::Image image(
-                    juce::Image::ARGB,
-                    graph.getWidth(), graph.getHeight(), true);
-                juce::Graphics graphics(image);
-                graph.paint(graphics);
-                expect(image.getPixelAt(192, 60).getAlpha() > 0);
-            }
-            expect(graph.keyPressed(juce::KeyPress(
+            juce::Image image(
+                juce::Image::ARGB,
+                graph.getWidth(), graph.getHeight(), true);
+            juce::Graphics graphics(image);
+            graph.paint(graphics);
+            expect(image.getPixelAt(192, 60).getAlpha() > 0);
+            expect(!graph.keyPressed(juce::KeyPress(
                 juce::KeyPress::rightKey)));
-            expect(graph.keyPressed(juce::KeyPress(
+            expect(!graph.keyPressed(juce::KeyPress(
                 juce::KeyPress::upKey)));
         }
 
@@ -1222,6 +1211,20 @@ public:
                     telemetryProcessor.processBlock(block, telemetryMidi);
                 }
                 megadsp::ContinuousTelemetrySnapshot telemetry;
+                if (type == megadsp::ModuleType::guitarTuner)
+                {
+                    const auto timeout =
+                        juce::Time::getMillisecondCounterHiRes() + 2000.0;
+                    do
+                    {
+                        juce::Thread::sleep(10);
+                        telemetryProcessor.readContinuousTelemetry(
+                            0, telemetry);
+                    }
+                    while (telemetry.sequence == 0
+                           && juce::Time::getMillisecondCounterHiRes()
+                                  < timeout);
+                }
                 expect(
                     telemetryProcessor.readContinuousTelemetry(
                         0, telemetry),

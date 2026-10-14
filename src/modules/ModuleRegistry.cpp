@@ -1385,9 +1385,9 @@ constexpr Metadata guitarTunerMetadata {{
     { "Reference Pitch", ControlKind::horizontal, true, "Calibration",
       "Calibrates concert A from 430 to 450 Hz." },
     { "View", ControlKind::choice, true, "Display",
-      "Selects Strobe, Precision, or Needle tuning visualization." },
+      "Legacy saved display selection; the tuner now always uses Precision." },
     { "Tuning", ControlKind::choice, true, "Target",
-      "Selects Chromatic, Guitar, Bass, Drop D, Open D, Open G, or DADGAD targets." },
+      "Legacy saved target selection; the tuner now always uses Chromatic." },
     { "Transpose", ControlKind::horizontal, false, "Target",
       "Shifts the target notes from -12 to +12 semitones." },
     { "Input Gain", ControlKind::level, false, "Detector",
@@ -1399,11 +1399,11 @@ constexpr Metadata guitarTunerMetadata {{
     { "Display Range", ControlKind::choice, false, "Display",
       "Sets the visible fine-tuning range from plus or minus 2 to 50 cents." },
     { "Strobe Speed", ControlKind::horizontal, false, "Display",
-      "Sets how quickly the strobe pattern moves for a given pitch error." },
+      "Legacy saved strobe setting retained for project compatibility." },
     { "Mute", ControlKind::toggle, true, "Output",
-      "Silences passthrough audio while tuning without interrupting analysis." },
+      "Legacy saved mute setting; tuner passthrough is now always transparent." },
     { "Output", ControlKind::level, false, "Output",
-      "Adjusts passthrough level when Mute is off." },
+      "Legacy saved output setting; tuner passthrough is now always transparent." },
     { "Hold", ControlKind::horizontal, false, "Display",
       "Keeps the last confident note visible after the input falls away." }
 }};
@@ -4436,6 +4436,13 @@ bool isControlContextuallyVisible(
             if (control == 4)
                 return values[2] >= 0.5f;
             break;
+        case ModuleType::guitarTuner:
+            return control == GuitarTunerModule::referenceControl
+                || control == GuitarTunerModule::inputGainControl
+                || control == GuitarTunerModule::gateControl
+                || control == GuitarTunerModule::responseControl
+                || control == GuitarTunerModule::rangeControl
+                || control == GuitarTunerModule::holdControl;
         case ModuleType::neuralAmpModeler:
         case ModuleType::stereoWidth:
         case ModuleType::rotarySpeaker:
@@ -4485,7 +4492,6 @@ bool isControlContextuallyVisible(
         case ModuleType::midnightCurrent:
         case ModuleType::autoWah:
         case ModuleType::resonantSculpture:
-        case ModuleType::guitarTuner:
             break;
     }
     return true;
@@ -4984,8 +4990,8 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
                 | ModuleCapability::continuousTelemetry),
         makeDefinition(
             ModuleType::guitarTuner, "Guitar Tuner", ModuleCategory::guitar,
-            "Tune guitar, bass, and chromatic sources with sub-cent visual precision.",
-            "guitar bass chromatic tuner strobe precision needle cents pitch calibration",
+            "Tune chromatic sources with off-thread sub-cent precision analysis and transparent passthrough.",
+            "guitar bass chromatic tuner precision cents pitch calibration",
             guitarTunerNames, guitarTunerMetadata,
             &makeModule<GuitarTunerModule>,
             ModuleCapability::continuousTelemetry)
