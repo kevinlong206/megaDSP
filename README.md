@@ -7,6 +7,11 @@ or CLAP plugin with a growing collection of high-quality, intuitive effects.
 Use a module on its own or combine up to eight in a serial chain to shape,
 transform, and finish your audio without juggling separate plugins.
 
+Mono, mono-to-stereo, and stereo channel layouts are supported. In Logic Pro,
+choose **Mono->Stereo** on a mono track to feed its signal equally into both
+rack channels and retain stereo effect output. Host bypass keeps that signal
+centered and preserves reported latency.
+
 Eight complete **Snapshots** let one instance hold multiple racks. Click a
 snapshot to recall it; clicking an unused snapshot activates a fresh blank rack
 without copying the current one. Shift-click saves the current rack to an empty

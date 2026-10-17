@@ -2055,6 +2055,7 @@ void MegaDSPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     snapshotScratch.setSize(preparedChannelCount, preparedMaximumBlockSize);
     snapshotZero.setSize(preparedChannelCount, preparedMaximumBlockSize);
     snapshotZero.clear();
+    monoStereoScratch.setSize(2, preparedMaximumBlockSize);
     for (auto& output : liveSafeSnapshotOutputs)
     {
         output.setSize(
@@ -2094,9 +2095,11 @@ bool MegaDSPAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) c
 {
     const auto mainInput = layouts.getChannelSet(true, 0);
     const auto mainOutput = layouts.getChannelSet(false, 0);
-    if (mainInput != mainOutput
-        || (mainInput != juce::AudioChannelSet::mono()
-            && mainInput != juce::AudioChannelSet::stereo()))
+    if ((mainInput != juce::AudioChannelSet::mono()
+         && mainInput != juce::AudioChannelSet::stereo())
+        || (mainOutput != mainInput
+            && !(mainInput == juce::AudioChannelSet::mono()
+                 && mainOutput == juce::AudioChannelSet::stereo())))
         return false;
 
     if (layouts.inputBuses.size() > 1)
@@ -2126,11 +2129,9 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     lastAudioBlockSamples.store(
         buffer.getNumSamples(), std::memory_order_relaxed);
     audioCallbackGeneration.fetch_add(1, std::memory_order_relaxed);
-    for (int channel = getTotalNumInputChannels();
-         channel < getTotalNumOutputChannels(); ++channel)
-        buffer.clear(channel, 0, buffer.getNumSamples());
-
     auto main = getBusBuffer(buffer, false, 0);
+    const auto upmixMono = getChannelCountOfBus(true, 0) == 1
+                           && main.getNumChannels() == 2;
     const juce::AudioBuffer<float>* sidechainPointer = nullptr;
     juce::AudioBuffer<float> sidechain;
     if (getBusCount(true) > 1 && getChannelCountOfBus(true, 1) > 0)
@@ -2149,42 +2150,60 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             for (int channel = 0; channel < main.getNumChannels(); ++channel)
                 hostBypassDelay[static_cast<size_t>(juce::jmin(channel, 1))][
                     static_cast<size_t>(hostBypassWritePosition)] =
-                    main.getSample(channel, sample);
+                    main.getSample(upmixMono ? 0 : channel, sample);
             if (++hostBypassWritePosition >= bypassLatency)
                 hostBypassWritePosition = 0;
         }
     }
 
     const auto bpm = currentBpm();
-    const auto processRange = [this, &main, sidechainPointer, bpm](
+    const auto processRange = [this, &main, sidechainPointer, bpm, upmixMono](
                                   int start, int samples)
     {
         if (samples <= 0)
             return;
-        std::array<float*, 2> mainPointers {};
-        for (int channel = 0; channel < main.getNumChannels(); ++channel)
-            mainPointers[static_cast<size_t>(channel)] =
-                main.getWritePointer(channel, start);
-        juce::AudioBuffer<float> mainRange(
-            mainPointers.data(), main.getNumChannels(), samples);
-
-        std::array<float*, 2> sidechainPointers {};
-        std::optional<juce::AudioBuffer<float>> sidechainRange;
-        if (sidechainPointer != nullptr)
+        for (int offset = 0; offset < samples;)
         {
-            for (int channel = 0;
-                 channel < sidechainPointer->getNumChannels(); ++channel)
-                sidechainPointers[static_cast<size_t>(channel)] =
-                    const_cast<float*>(
-                        sidechainPointer->getReadPointer(channel, start));
-            sidechainRange.emplace(
-                sidechainPointers.data(),
-                sidechainPointer->getNumChannels(), samples);
+            const auto count = upmixMono
+                ? juce::jmin(preparedMaximumBlockSize, samples - offset)
+                : samples;
+            std::array<float*, 2> mainPointers {};
+            for (int channel = 0; channel < main.getNumChannels(); ++channel)
+            {
+                if (upmixMono)
+                    monoStereoScratch.copyFrom(
+                        channel, 0, main, 0, start + offset, count);
+                mainPointers[static_cast<size_t>(channel)] =
+                    upmixMono ? monoStereoScratch.getWritePointer(channel)
+                              : main.getWritePointer(channel, start + offset);
+            }
+            juce::AudioBuffer<float> mainRange(
+                mainPointers.data(), main.getNumChannels(), count);
+
+            std::array<float*, 2> sidechainPointers {};
+            std::optional<juce::AudioBuffer<float>> sidechainRange;
+            if (sidechainPointer != nullptr)
+            {
+                for (int channel = 0;
+                     channel < sidechainPointer->getNumChannels(); ++channel)
+                    sidechainPointers[static_cast<size_t>(channel)] =
+                        const_cast<float*>(sidechainPointer->getReadPointer(
+                            channel, start + offset));
+                sidechainRange.emplace(
+                    sidechainPointers.data(),
+                    sidechainPointer->getNumChannels(), count);
+            }
+            processSnapshotRange(
+                mainRange,
+                sidechainRange.has_value() ? &*sidechainRange : nullptr,
+                bpm);
+            // The second output may alias the first sidechain input.
+            if (upmixMono)
+                for (int channel = 0; channel < main.getNumChannels(); ++channel)
+                    main.copyFrom(
+                        channel, start + offset, mainRange, channel, 0, count);
+            offset += count;
         }
-        processSnapshotRange(
-            mainRange,
-            sidechainRange.has_value() ? &*sidechainRange : nullptr,
-            bpm);
     };
 
     if (const auto requested =
@@ -2337,6 +2356,8 @@ void MegaDSPAudioProcessor::processBlockBypassed(
             selectWithoutTransition(program);
 
     auto main = getBusBuffer(buffer, false, 0);
+    if (getChannelCountOfBus(true, 0) == 1 && main.getNumChannels() == 2)
+        main.copyFrom(1, 0, main, 0, 0, main.getNumSamples());
     const auto latency = juce::jmin(
         getLatencySamples(), static_cast<int>(hostBypassDelay[0].size()));
     updateHostBypassLatency(latency);

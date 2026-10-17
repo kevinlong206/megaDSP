@@ -506,6 +506,7 @@ private:
     std::atomic<int> snapshotTailSamples { 0 };
     juce::AudioBuffer<float> snapshotScratch;
     juce::AudioBuffer<float> snapshotZero;
+    juce::AudioBuffer<float> monoStereoScratch;
     std::array<juce::AudioBuffer<float>,
                megadsp::snapshotCount> liveSafeSnapshotOutputs;
     std::atomic<int> processedSnapshotGraphCount { 0 };

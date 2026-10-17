@@ -118,6 +118,146 @@ public:
     std::vector<unsigned int> pixels;
 };
 
+class ProcessorChannelLayoutTests final : public juce::UnitTest
+{
+public:
+    ProcessorChannelLayoutTests()
+        : juce::UnitTest("Processor channel layouts", "megaDSP")
+    {
+    }
+
+    void runTest() override
+    {
+        beginTest("Only mono, mono-to-stereo, and stereo layouts are accepted");
+        {
+            MegaDSPAudioProcessor processor;
+            for (const auto& input : { juce::AudioChannelSet::disabled(),
+                                      juce::AudioChannelSet::mono(),
+                                      juce::AudioChannelSet::stereo(),
+                                      juce::AudioChannelSet::create5point1() })
+                for (const auto& output : { juce::AudioChannelSet::disabled(),
+                                           juce::AudioChannelSet::mono(),
+                                           juce::AudioChannelSet::stereo(),
+                                           juce::AudioChannelSet::create5point1() })
+                {
+                    auto layout = processor.getBusesLayout();
+                    layout.inputBuses.set(0, input);
+                    layout.outputBuses.set(0, output);
+                    const auto supported =
+                        (input == juce::AudioChannelSet::mono()
+                         && (output == juce::AudioChannelSet::mono()
+                             || output == juce::AudioChannelSet::stereo()))
+                        || (input == juce::AudioChannelSet::stereo()
+                            && output == juce::AudioChannelSet::stereo());
+                    expect(processor.isBusesLayoutSupported(layout)
+                           == supported);
+                }
+        }
+
+        beginTest("Mono-to-stereo matches duplicated mono with sidechain and bypass");
+        for (const auto sampleRate : { 44100.0, 48000.0, 96000.0 })
+            for (const auto sidechainChannels : { 0, 1, 2 })
+                for (const auto type : { megadsp::ModuleType::empty,
+                                         megadsp::ModuleType::delay,
+                                         megadsp::ModuleType::gateExpander,
+                                         megadsp::ModuleType::limiter })
+                {
+                    MegaDSPAudioProcessor monoProcessor;
+                    MegaDSPAudioProcessor stereoProcessor;
+                    for (auto* processor : { &monoProcessor, &stereoProcessor })
+                    {
+                        auto layout = processor->getBusesLayout();
+                        layout.inputBuses.set(
+                            0, processor == &monoProcessor
+                                ? juce::AudioChannelSet::mono()
+                                : juce::AudioChannelSet::stereo());
+                        layout.inputBuses.set(
+                            1, sidechainChannels == 0
+                                ? juce::AudioChannelSet::disabled()
+                                : juce::AudioChannelSet::canonicalChannelSet(
+                                      sidechainChannels));
+                        expect(processor->setBusesLayout(layout));
+                        processor->prepareToPlay(sampleRate, 64);
+                        auto* parameter = processor->parameters.getParameter(
+                            megadsp::slotParameterId(0, "type"));
+                        parameter->setValueNotifyingHost(
+                            parameter->convertTo0to1(static_cast<float>(type)));
+                        processor->flushPendingUpdatesForTesting();
+                        if (type == megadsp::ModuleType::gateExpander)
+                            for (const auto control : { 8, 9 })
+                                processor->parameters.getParameter(
+                                    megadsp::controlParameterId(0, control))
+                                    ->setValueNotifyingHost(1.0f);
+                    }
+                    juce::MidiBuffer midi;
+                    // Nonzero MIDI offsets also split the oversized callback.
+                    midi.addEvent(juce::MidiMessage::programChange(1, 1), 37);
+                    auto stereoDifference = 0.0f;
+                    for (int block = 0; block < 32; ++block)
+                    {
+                        constexpr int samples = 137;
+                        juce::AudioBuffer<float> mono(
+                            juce::jmax(2, 1 + sidechainChannels), samples);
+                        juce::AudioBuffer<float> stereo(
+                            2 + sidechainChannels, samples);
+                        mono.clear();
+                        stereo.clear();
+                        for (int sample = 0; sample < samples; ++sample)
+                        {
+                            const auto input = 0.2f * std::sin(
+                                static_cast<float>(block * samples + sample)
+                                * 0.031f);
+                            mono.setSample(0, sample, input);
+                            stereo.setSample(0, sample, input);
+                            stereo.setSample(1, sample, input);
+                            for (int channel = 0; channel < sidechainChannels;
+                                 ++channel)
+                            {
+                                const auto detector = 0.1f * std::cos(
+                                    static_cast<float>(block * samples + sample)
+                                    * (0.07f + 0.03f
+                                        * static_cast<float>(channel)));
+                                mono.setSample(1 + channel, sample, detector);
+                                stereo.setSample(2 + channel, sample, detector);
+                            }
+                        }
+                        if (block >= 24)
+                        {
+                            monoProcessor.processBlockBypassed(mono, midi);
+                            stereoProcessor.processBlockBypassed(stereo, midi);
+                        }
+                        else
+                        {
+                            monoProcessor.processBlock(mono, midi);
+                            stereoProcessor.processBlock(stereo, midi);
+                        }
+                        auto maximumError = 0.0f;
+                        for (int sample = 0; sample < samples; ++sample)
+                            for (int channel = 0; channel < 2; ++channel)
+                            {
+                                const auto actual = mono.getSample(channel, sample);
+                                expect(std::isfinite(actual));
+                                maximumError = juce::jmax(
+                                    maximumError,
+                                    std::abs(actual - stereo.getSample(
+                                        channel, sample)));
+                                if (block < 24)
+                                    stereoDifference += std::abs(
+                                        mono.getSample(0, sample)
+                                        - mono.getSample(1, sample));
+                            }
+                        expectWithinAbsoluteError(
+                            maximumError, 0.0f, 0.000001f);
+                    }
+                    if (type == megadsp::ModuleType::gateExpander
+                        && sidechainChannels == 2)
+                        expect(stereoDifference > 0.1f);
+                }
+    }
+};
+
+ProcessorChannelLayoutTests processorChannelLayoutTests;
+
 class ProcessorTopologyTests final : public juce::UnitTest
 {
 public:
