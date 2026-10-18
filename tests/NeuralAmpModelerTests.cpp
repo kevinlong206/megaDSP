@@ -1,6 +1,7 @@
 #include "modules/ModuleRegistry.h"
 #include "modules/NeuralAmpModeler.h"
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 #include "EffectRack.h"
 #include "ui/EffectGraph.h"
 
@@ -457,6 +458,70 @@ public:
             expect(peak > 0.0001f);
             expect(peakSample >= 20,
                    "The post-NAM cabinet must apply the delayed IR.");
+            model.deleteFile();
+            impulse.deleteFile();
+        }
+
+        beginTest("NAM cabinet name and button reflect its active state");
+        {
+            MegaDSPAudioProcessor processor;
+            processor.prepareToPlay(48000.0, 256);
+            processor.addModule(ModuleType::neuralAmpModeler);
+            const auto model = writeNam(
+                linearNamJson(), "nam-cabinet-widget");
+            const auto impulse = writeImpulse(
+                juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getNonexistentChildFile("nam-cabinet-widget", ".wav"));
+            expect(processor.loadNamModel(0, model).wasOk());
+            expect(processor.loadNamCabinetAsync(0, impulse).wasOk());
+            processor.finishNamModelLoadForTesting();
+            expect(processor.setNamCabinetEnabled(0, true).wasOk());
+
+            MegaDSPAudioProcessorEditor editor(processor, 1100, 720);
+            juce::Label* cabinetName = nullptr;
+            juce::TextButton* cabinetButton = nullptr;
+            const auto findCabinetControls = [&](auto&& self,
+                                                  juce::Component& parent) -> void
+            {
+                for (auto* child : parent.getChildren())
+                {
+                    if (auto* label = dynamic_cast<juce::Label*>(child);
+                        label != nullptr && label->getText().startsWith("CAB  "))
+                        cabinetName = label;
+                    if (auto* button = dynamic_cast<juce::TextButton*>(child);
+                        button != nullptr && button->getButtonText() == "IR ON")
+                        cabinetButton = button;
+                    self(self, *child);
+                }
+            };
+            findCabinetControls(findCabinetControls, editor);
+            expect(cabinetName != nullptr);
+            expect(cabinetButton != nullptr);
+            if (cabinetName != nullptr && cabinetButton != nullptr)
+            {
+                expect(cabinetName->isVisible());
+                expect(cabinetName->getText().contains(
+                    impulse.getFileNameWithoutExtension()));
+                expect(cabinetButton->getToggleState());
+                expect(cabinetButton->findColour(
+                           juce::TextButton::buttonOnColourId)
+                       != cabinetButton->findColour(
+                           juce::TextButton::buttonColourId));
+
+                cabinetButton->onClick();
+                expect(!processor.isNamCabinetEnabled(0));
+                expect(!cabinetName->isVisible());
+                expect(!cabinetButton->getToggleState());
+                expectEquals(cabinetButton->getButtonText(), juce::String("IR OFF"));
+                expectEquals(
+                    processor.namCabinetPath(0), impulse.getFullPathName());
+
+                cabinetButton->onClick();
+                expect(processor.isNamCabinetEnabled(0));
+                expect(cabinetName->isVisible());
+                expect(cabinetButton->getToggleState());
+                expectEquals(cabinetButton->getButtonText(), juce::String("IR ON"));
+            }
             model.deleteFile();
             impulse.deleteFile();
         }

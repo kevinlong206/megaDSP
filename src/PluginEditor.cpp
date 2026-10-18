@@ -1874,6 +1874,14 @@ public:
             addAndMakeVisible(namMatchStatus);
 
             namCabinetEnabled.setButtonText("IR OFF");
+            namCabinetEnabled.setColour(
+                juce::TextButton::buttonColourId,
+                juce::Colour(0xff26313d));
+            namCabinetEnabled.setColour(
+                juce::TextButton::buttonOnColourId, accent);
+            namCabinetEnabled.setColour(
+                juce::TextButton::textColourOnId,
+                juce::Colour(0xff111820));
             namCabinetEnabled.setTooltip(
                 "Enable or disable the speaker impulse for this NAM model.");
             namCabinetEnabled.onClick = [this]
@@ -2415,6 +2423,8 @@ public:
                 juce::dontSendNotification);
             const auto enabled =
                 processor.isNamCabinetEnabled(slot);
+            namCabinetName.setVisible(
+                enabled && path.isNotEmpty() && cabinetPath.isNotEmpty());
             namCabinetEnabled.setButtonText(
                 enabled ? "IR ON" : "IR OFF");
             namCabinetEnabled.setToggleState(

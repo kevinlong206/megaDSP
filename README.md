@@ -16,6 +16,10 @@ Logic caches Audio Unit channel capabilities by plug-in version. Builds that
 change supported channel layouts must increment the configured plug-in version;
 rescanning the same version can retain the previous layouts.
 
+In Neural Amp Modeler, the cabinet name is shown only while its IR is enabled.
+The **IR ON** button uses an accent color to indicate the active cabinet;
+switching it off retains the profile's saved IR selection.
+
 Eight complete **Snapshots** let one instance hold multiple racks. Click a
 snapshot to recall it; clicking an unused snapshot activates a fresh blank rack
 without copying the current one. Shift-click saves the current rack to an empty
