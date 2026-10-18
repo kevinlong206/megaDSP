@@ -12,6 +12,10 @@ choose **Mono->Stereo** on a mono track to feed its signal equally into both
 rack channels and retain stereo effect output. Host bypass keeps that signal
 centered and preserves reported latency.
 
+Logic caches Audio Unit channel capabilities by plug-in version. Builds that
+change supported channel layouts must increment the configured plug-in version;
+rescanning the same version can retain the previous layouts.
+
 Eight complete **Snapshots** let one instance hold multiple racks. Click a
 snapshot to recall it; clicking an unused snapshot activates a fresh blank rack
 without copying the current one. Shift-click saves the current rack to an empty
