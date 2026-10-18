@@ -521,6 +521,107 @@ public:
                 (1 << megadsp::slotCount) - 1);
         }
 
+        beginTest("Ultra compact stacks bypass-only rows in signal order");
+        {
+            MegaDSPAudioProcessor processor;
+            processor.prepareToPlay(48000.0, 512);
+            processor.addModule(megadsp::ModuleType::compressor);
+            for (int slot = 1; slot < megadsp::slotCount; ++slot)
+                processor.addModule(megadsp::ModuleType::delay);
+            processor.parameters.getParameter(
+                megadsp::controlParameterId(0, 0))->setValueNotifyingHost(0.37f);
+            MegaDSPAudioProcessorEditor editor(processor, 820, 280);
+            editor.setWidgetSizeForTesting(
+                megadsp::ui::WidgetSize::ultraCompact);
+            expectEquals(editor.cardCountForTesting(), 8);
+            expectEquals(editor.chainInsertButtonCountForTesting(), 0);
+            expect(editor.rackOverflowsVerticallyForTesting());
+            expect(!editor.rackOverflowsHorizontallyForTesting());
+            editor.setCardsEditorVisibleForTesting(true);
+            expectEquals(editor.activeVisualizationCardCountForTesting(), 0);
+            expect(editor.cardChildrenFitForTesting());
+            for (int slot = 0; slot < 8; ++slot)
+            {
+                auto* card = editor.cardForTesting(slot);
+                expectEquals(card->getHeight(), 36);
+                if (slot > 0)
+                    expect(card->getY()
+                           > editor.cardForTesting(slot - 1)->getBottom());
+                int visible = 0;
+                for (auto* child : card->getChildren())
+                    if (child->isVisible())
+                    {
+                        ++visible;
+                        expect(dynamic_cast<juce::Label*>(child) != nullptr
+                               || dynamic_cast<juce::Button*>(child) != nullptr);
+                    }
+                expectEquals(visible, 2);
+            }
+            auto* first = editor.cardForTesting(0);
+            expect(first->keyPressed(juce::KeyPress(juce::KeyPress::spaceKey)));
+            expect(processor.isSlotBypassed(0));
+            expect(first->keyPressed(juce::KeyPress('b', {}, 'b')));
+            expect(!processor.isSlotBypassed(0));
+            expect(first->keyPressed(juce::KeyPress(
+                juce::KeyPress::downKey, juce::ModifierKeys::altModifier, 0)));
+            editor.applyPendingCardMutationForTesting();
+            expect(processor.getRack().moduleType(1)
+                   == megadsp::ModuleType::compressor);
+            auto* target = editor.cardForTesting(7);
+            auto* dropTarget = dynamic_cast<juce::DragAndDropTarget*>(target);
+            expect(dropTarget != nullptr);
+            if (dropTarget != nullptr)
+            {
+                const juce::DragAndDropTarget::SourceDetails details(
+                    1, editor.cardForTesting(1),
+                    { 1, target->getHeight() - 1 });
+                expect(dropTarget->isInterestedInDragSource(details));
+                dropTarget->itemDragEnter(details);
+                dropTarget->itemDropped(details);
+                editor.applyPendingCardMutationForTesting();
+            }
+            expect(processor.getRack().moduleType(7)
+                   == megadsp::ModuleType::compressor);
+            expectWithinAbsoluteError(
+                processor.parameters.getParameter(
+                    megadsp::controlParameterId(7, 0))->getValue(),
+                0.37f, 0.0001f);
+            target = editor.cardForTesting(0);
+            dropTarget = dynamic_cast<juce::DragAndDropTarget*>(target);
+            if (dropTarget != nullptr)
+            {
+                const juce::DragAndDropTarget::SourceDetails details(
+                    7, editor.cardForTesting(7),
+                    { target->getWidth() - 1, 1 });
+                dropTarget->itemDragEnter(details);
+                dropTarget->itemDropped(details);
+                editor.applyPendingCardMutationForTesting();
+            }
+            expect(processor.getRack().moduleType(0)
+                   == megadsp::ModuleType::compressor);
+            editor.clickChainNavigatorForTesting(7);
+            expect(editor.selectedCardVisibleForTesting());
+            expect(editor.cardForTesting(7)->keyPressed(
+                juce::KeyPress(juce::KeyPress::upKey)));
+            expectEquals(editor.selectedCardForTesting(), 6);
+            expect(editor.selectedCardVisibleForTesting());
+            editor.setSize(820, 620);
+            expect(!editor.rackOverflowsVerticallyForTesting());
+            editor.setWidgetSizeForTesting(megadsp::ui::WidgetSize::small);
+            expectEquals(editor.chainInsertButtonCountForTesting(), 0);
+            expect(editor.rackOverflowsHorizontallyForTesting());
+            expect(editor.cardPresentsAllActiveControlsForTesting());
+            expect(editor.cardChildrenFitForTesting());
+            expectWithinAbsoluteError(
+                processor.parameters.getParameter(
+                    megadsp::controlParameterId(0, 0))->getValue(),
+                0.37f, 0.0001f);
+            editor.setWidgetSizeForTesting(
+                megadsp::ui::WidgetSize::ultraCompact);
+            editor.refreshCardsForTesting();
+            expectEquals(editor.cardHeightForTesting(7), 36);
+        }
+
         beginTest("Widget size is global and absent from project state");
         {
             MegaDSPAudioProcessor preferenceWriter;
@@ -529,6 +630,17 @@ public:
             expectEquals(
                 preferenceReader.globalWidgetSizeId(),
                 juce::String("medium"));
+            expect(preferenceWriter.setGlobalWidgetSizeId(
+                "ultra-compact").wasOk());
+            expectEquals(
+                preferenceReader.globalWidgetSizeId(),
+                juce::String("ultra-compact"));
+            preferenceReader.addModule(megadsp::ModuleType::equalizer);
+            {
+                MegaDSPAudioProcessorEditor editor(preferenceReader, 820, 280);
+                expectEquals(editor.cardHeightForTesting(0), 36);
+                expectEquals(editor.chainInsertButtonCountForTesting(), 0);
+            }
 
             juce::MemoryBlock state;
             preferenceReader.getStateInformation(state);
@@ -627,6 +739,16 @@ public:
                 expect(editor->cardGraphsAvoidControlsForTesting());
                 expect(editor->cardPresentsAllActiveControlsForTesting());
             }
+            editor->setWidgetSizeForTesting(
+                megadsp::ui::WidgetSize::ultraCompact);
+            expectEquals(editor->cardHeightForTesting(0), 36);
+            expect(editor->cardChildrenFitForTesting());
+            expectEquals(editor->activeVisualizationCardCountForTesting(), 0);
+            int ultraControls = 0;
+            for (auto* child : editor->cardForTesting(0)->getChildren())
+                if (child->isVisible())
+                    ++ultraControls;
+            expectEquals(ultraControls, 2);
         }
         expect(std::all_of(
             compactVisualizationKinds.begin(),

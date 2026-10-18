@@ -1949,11 +1949,16 @@ public:
         setTitle(moduleName + " module widget, slot " + juce::String(slot + 1));
         setDescription(
             "Signal-flow position " + juce::String(slot + 1)
-            + ". Use Left and Right to select adjacent module widgets.");
+            + (isUltraCompact()
+                   ? ". Use Up and Down to select adjacent modules."
+                   : ". Use Left and Right to select adjacent module widgets."));
         setHelpText(
-            "All module controls are available in this widget. Use Left and "
-            "Right for adjacent widgets. Space or B toggles bypass. Drag the "
-            "widget header to reorder.");
+            isUltraCompact()
+                ? "Space or B toggles bypass. Drag to reorder, or use "
+                  "Alt+Up and Alt+Down. Switch to S, M, or L to edit controls."
+                : "All module controls are available in this widget. Use Left and "
+                  "Right for adjacent widgets. Space or B toggles bypass. Drag the "
+                  "widget header to reorder.");
         addMouseListener(this, true);
         juce::Desktop::getInstance().addFocusChangeListener(this);
         syncBypassState();
@@ -2052,7 +2057,8 @@ public:
             }
         }
         updateContext(true);
-        startTimerHz(2);
+        if (!isUltraCompact())
+            startTimerHz(2);
     }
 
     ~ModuleCard() override
@@ -2077,14 +2083,29 @@ public:
         if (dragOver)
         {
             graphics.setColour(moduleColour.brighter(0.2f));
-            graphics.fillRect(
-                dropAfter ? cardBounds.getRight() - 4.0f : 1.0f,
-                8.0f, 3.0f, cardBounds.getHeight() - 16.0f);
+            if (isUltraCompact())
+                graphics.fillRect(
+                    8.0f, dropAfter ? cardBounds.getBottom() - 4.0f : 1.0f,
+                    cardBounds.getWidth() - 16.0f, 3.0f);
+            else
+                graphics.fillRect(
+                    dropAfter ? cardBounds.getRight() - 4.0f : 1.0f,
+                    8.0f, 3.0f, cardBounds.getHeight() - 16.0f);
         }
     }
 
     void resized() override
     {
+        if (isUltraCompact())
+        {
+            for (auto* child : getChildren())
+                child->setVisible(child == &name || child == &bypass);
+            auto row = getLocalBounds().reduced(8, 3);
+            bypass.setBounds(row.removeFromRight(30));
+            name.setBounds(row);
+            setEditorVisible(false);
+            return;
+        }
         auto bounds = getLocalBounds().reduced(8);
         auto heading = bounds.removeFromTop(28);
         remove.setBounds(heading.removeFromRight(28).reduced(2));
@@ -2365,14 +2386,17 @@ public:
     {
         const auto changed = selected != shouldBeSelected;
         selected = shouldBeSelected;
-        startTimerHz(selected ? 10 : 2);
+        if (isUltraCompact())
+            stopTimer();
+        else
+            startTimerHz(selected ? 10 : 2);
         if (changed)
             repaint();
     }
 
     void setEditorVisible(bool editorVisible)
     {
-        const auto active = editorVisible;
+        const auto active = editorVisible && !isUltraCompact();
         graph->setVisualizationActive(active);
         for (auto& slider : sliders)
             slider.setMeterActive(active);
@@ -2387,6 +2411,11 @@ public:
     void syncBypassState()
     {
         const auto isBypassed = processor.isSlotBypassed(slot);
+        if (isUltraCompact())
+            name.setText(
+                juce::String(slot + 1) + "  " + moduleName
+                    + (isBypassed ? "  BYPASSED" : "  ON"),
+                juce::dontSendNotification);
         bypass.setToggleState(isBypassed, juce::dontSendNotification);
         bypass.setTitle(
             juce::String(isBypassed ? "Enable " : "Bypass ")
@@ -2406,10 +2435,25 @@ public:
         if (supportsNamModel)
         {
             const auto path = processor.namModelPath(slot);
+            juce::String generation;
+            if (const auto* module =
+                    processor.getRack().activeModuleInstance(slot))
+                if (const auto* capability = module->namModelCapability())
+                    switch (capability->namModelInfo().generation)
+                    {
+                        case megadsp::NamArchitectureGeneration::a1:
+                            generation = "A1  ";
+                            break;
+                        case megadsp::NamArchitectureGeneration::a2:
+                            generation = "A2  ";
+                            break;
+                        case megadsp::NamArchitectureGeneration::unknown:
+                            break;
+                    }
             assetName.setText(
                 path.isEmpty()
                     ? "MODEL  No model loaded"
-                    : "MODEL  "
+                    : "MODEL  " + generation
                           + juce::File(path)
                                 .getFileNameWithoutExtension(),
                 juce::dontSendNotification);
@@ -2560,6 +2604,8 @@ public:
     bool isInterestedInFileDrag(
         const juce::StringArray& files) override
     {
+        if (isUltraCompact())
+            return false;
         return std::any_of(
             files.begin(), files.end(),
             [this](const auto& path)
@@ -2571,6 +2617,8 @@ public:
     void filesDropped(
         const juce::StringArray& files, int, int) override
     {
+        if (isUltraCompact())
+            return;
         editor.selectSlot(slot);
         const auto asset = std::find_if(
             files.begin(), files.end(),
@@ -2625,6 +2673,21 @@ public:
 
     bool keyPressed(const juce::KeyPress& key) override
     {
+        if (isUltraCompact()
+            && (key.getKeyCode() == juce::KeyPress::upKey
+                || key.getKeyCode() == juce::KeyPress::downKey))
+        {
+            const auto direction =
+                key.getKeyCode() == juce::KeyPress::upKey ? -1 : 1;
+            if (key.getModifiers().isAltDown())
+                editor.requestReorderSlot(
+                    slot, juce::jlimit(
+                              0, static_cast<int>(editor.cards.size()) - 1,
+                              slot + direction));
+            else
+                selectAdjacent(direction);
+            return true;
+        }
         if (key.getKeyCode() == juce::KeyPress::leftKey)
             return selectAdjacent(-1);
         if (key.getKeyCode() == juce::KeyPress::rightKey)
@@ -2677,8 +2740,15 @@ public:
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    bool isUltraCompact() const
+    {
+        return editor.widgetSize == megadsp::ui::WidgetSize::ultraCompact;
+    }
+
     bool acceptsAssetFile(const juce::File& file) const
     {
+        if (isUltraCompact())
+            return false;
         const auto extension = file.getFileExtension().toLowerCase();
         if (supportsNamModel)
             return extension == ".nam";
@@ -2977,6 +3047,11 @@ private:
 
     void updateContext(bool forceLayout = false)
     {
+        if (isUltraCompact())
+        {
+            resized();
+            return;
+        }
         const auto values = currentValues();
         const auto stereo = processor.hasStereoOutput();
         const auto sidechain = processor.hasExternalSidechain();
@@ -3035,6 +3110,8 @@ private:
 
     void timerCallback() override
     {
+        if (isUltraCompact())
+            return;
         updateContext();
         syncAssetName();
     }
@@ -3049,6 +3126,11 @@ private:
         editor.selectSlot(target);
         auto* card = editor.cards[static_cast<size_t>(target)].get();
         card->grabKeyboardFocus();
+        if (isUltraCompact())
+        {
+            editor.revealSelectedCard(false);
+            return true;
+        }
         const auto viewLeft = editor.rackViewport.getViewPositionX();
         const auto viewRight = viewLeft + editor.rackViewport.getViewWidth();
         if (card->getX() < viewLeft)
@@ -3063,7 +3145,9 @@ private:
 
     void updateDropPosition(const SourceDetails& details)
     {
-        const auto after = details.localPosition.x > getWidth() / 2;
+        const auto after = isUltraCompact()
+            ? details.localPosition.y > getHeight() / 2
+            : details.localPosition.x > getWidth() / 2;
         if (after != dropAfter)
         {
             dropAfter = after;
@@ -3559,6 +3643,7 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     };
     snapshotsHost.addAndMakeVisible(liveSafeButton);
     for (auto* button : {
+             &ultraCompactButton,
              &smallWidgetsButton,
              &mediumWidgetsButton,
              &largeWidgetsButton })
@@ -3568,6 +3653,13 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     }
     smallWidgetsButton.setTooltip(
         "Use compact 300-pixel module widgets.");
+    ultraCompactButton.setTooltip(
+        "Stack modules top to bottom with bypass and drag-to-reorder only. "
+        "Up/Down selects a module; Alt+Up/Down reorders it.");
+    ultraCompactButton.onClick = [this]
+    {
+        setWidgetSize(megadsp::ui::WidgetSize::ultraCompact, true);
+    };
     mediumWidgetsButton.setTooltip(
         "Use medium 440-pixel module widgets.");
     largeWidgetsButton.setTooltip(
@@ -3824,6 +3916,8 @@ void MegaDSPAudioProcessorEditor::resized()
         snapshotBounds.removeFromRight(28).reduced(1));
     smallWidgetsButton.setBounds(
         snapshotBounds.removeFromRight(28).reduced(1));
+    ultraCompactButton.setBounds(
+        snapshotBounds.removeFromRight(54).reduced(1));
     if (performanceInSnapshotRow)
     {
         const auto performanceBounds =
@@ -3844,6 +3938,37 @@ void MegaDSPAudioProcessorEditor::resized()
 
     rackViewport.setBounds(bounds.reduced(8, 4));
     constexpr auto rackPadding = 8;
+    const auto ultraCompact =
+        widgetSize == megadsp::ui::WidgetSize::ultraCompact;
+    rackViewport.setVerticalScrolling(ultraCompact);
+    rackViewport.setScrollBarsShown(ultraCompact, !ultraCompact);
+    rackViewport.setDescription(
+        ultraCompact ? "Modules process audio from top to bottom."
+                     : "Modules process audio from left to right.");
+    if (ultraCompact)
+    {
+        const auto contentHeight =
+            static_cast<int>(cards.size())
+                * (megadsp::ui::ultraCompactRowHeight + 4)
+            + rackPadding * 2;
+        rackContent.setSize(
+            juce::jmax(
+                1, rackViewport.getWidth()
+                       - (contentHeight > rackViewport.getHeight()
+                              ? rackViewport.getScrollBarThickness() : 0)),
+            juce::jmax(rackViewport.getHeight(), contentHeight));
+        for (auto& button : chainInsertButtons)
+            button->setVisible(false);
+        addButton.setVisible(false);
+        auto rows = rackContent.getLocalBounds().reduced(rackPadding);
+        for (auto& card : cards)
+        {
+            card->setBounds(
+                rows.removeFromTop(megadsp::ui::ultraCompactRowHeight));
+            rows.removeFromTop(4);
+        }
+        return;
+    }
     const auto showAddButton =
         static_cast<int>(cards.size()) < megadsp::slotCount;
     const auto contentWidth = megadsp::ui::calculateRackContentWidth(
@@ -4079,7 +4204,8 @@ void MegaDSPAudioProcessorEditor::refreshChainNavigator()
     {
         auto& button =
             chainInsertButtons[static_cast<size_t>(position)];
-        const auto visible = canInsert && position <= active;
+        const auto visible = canInsert && position <= active
+            && widgetSize != megadsp::ui::WidgetSize::ultraCompact;
         button->setVisible(visible);
         button->setEnabled(canInsert);
         if (!visible)
@@ -4108,6 +4234,18 @@ void MegaDSPAudioProcessorEditor::revealSelectedCard(bool focus)
             selectedSlot, static_cast<int>(cards.size())))
         return;
     auto* card = cards[static_cast<size_t>(selectedSlot)].get();
+    if (widgetSize == megadsp::ui::WidgetSize::ultraCompact)
+    {
+        const auto top = rackViewport.getViewPositionY();
+        if (card->getY() < top)
+            rackViewport.setViewPosition(0, card->getY());
+        else if (card->getBottom() > top + rackViewport.getViewHeight())
+            rackViewport.setViewPosition(
+                0, card->getBottom() - rackViewport.getViewHeight());
+        if (focus)
+            card->grabKeyboardFocus();
+        return;
+    }
     const auto viewLeft = rackViewport.getViewPositionX();
     const auto viewRight = viewLeft + rackViewport.getViewWidth();
     if (card->getWidth() > rackViewport.getViewWidth())
@@ -4129,9 +4267,16 @@ void MegaDSPAudioProcessorEditor::setWidgetSize(
 {
     if (widgetSize == size)
         return;
+    const auto rebuild =
+        widgetSize == megadsp::ui::WidgetSize::ultraCompact
+        || size == megadsp::ui::WidgetSize::ultraCompact;
     widgetSize = size;
     refreshWidgetSizeButtons();
-    resized();
+    rackViewport.setViewPosition(0, 0);
+    if (rebuild)
+        refreshCards();
+    else
+        resized();
     revealSelectedCard(false);
     if (persist)
     {
@@ -4162,6 +4307,7 @@ void MegaDSPAudioProcessorEditor::refreshWidgetSizeButtons()
     update(smallWidgetsButton, megadsp::ui::WidgetSize::small);
     update(mediumWidgetsButton, megadsp::ui::WidgetSize::medium);
     update(largeWidgetsButton, megadsp::ui::WidgetSize::large);
+    update(ultraCompactButton, megadsp::ui::WidgetSize::ultraCompact);
 }
 
 #if defined(MEGADSP_TESTS)
@@ -4236,6 +4382,12 @@ bool MegaDSPAudioProcessorEditor::selectedCardVisibleForTesting() const
             selectedSlot, static_cast<int>(cards.size())))
         return false;
     const auto* card = cards[static_cast<size_t>(selectedSlot)].get();
+    if (widgetSize == megadsp::ui::WidgetSize::ultraCompact)
+    {
+        const auto top = rackViewport.getViewPositionY();
+        return card->getY() >= top
+            && card->getBottom() <= top + rackViewport.getViewHeight();
+    }
     const auto viewLeft = rackViewport.getViewPositionX();
     const auto viewRight = viewLeft + rackViewport.getViewWidth();
     if (card->getWidth() > rackViewport.getViewWidth())
@@ -4419,6 +4571,12 @@ void MegaDSPAudioProcessorEditor::reorderCardForTesting(
 void MegaDSPAudioProcessorEditor::refreshCardsForTesting()
 {
     refreshCards(true);
+}
+
+juce::Component* MegaDSPAudioProcessorEditor::cardForTesting(int slot) const
+{
+    return juce::isPositiveAndBelow(slot, static_cast<int>(cards.size()))
+        ? cards[static_cast<size_t>(slot)].get() : nullptr;
 }
 
 bool MegaDSPAudioProcessorEditor::cardAcceptsAssetDropForTesting(

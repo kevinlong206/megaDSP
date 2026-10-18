@@ -86,6 +86,7 @@ juce::String widgetSizeId(WidgetSize size)
         case WidgetSize::small: return "small";
         case WidgetSize::medium: return "medium";
         case WidgetSize::large: return "large";
+        case WidgetSize::ultraCompact: return "ultra-compact";
     }
     return "small";
 }
@@ -97,6 +98,7 @@ juce::String widgetSizeName(WidgetSize size)
         case WidgetSize::small: return "Small";
         case WidgetSize::medium: return "Medium";
         case WidgetSize::large: return "Large";
+        case WidgetSize::ultraCompact: return "Ultra Compact";
     }
     return "Small";
 }
@@ -107,6 +109,8 @@ WidgetSize widgetSizeFromId(const juce::String& identifier)
         return WidgetSize::medium;
     if (identifier.equalsIgnoreCase("large"))
         return WidgetSize::large;
+    if (identifier.equalsIgnoreCase("ultra-compact"))
+        return WidgetSize::ultraCompact;
     return WidgetSize::small;
 }
 
@@ -117,6 +121,7 @@ int widgetWidth(WidgetSize size)
         case WidgetSize::small: return 300;
         case WidgetSize::medium: return 440;
         case WidgetSize::large: return 640;
+        case WidgetSize::ultraCompact: return 300;
     }
     return 300;
 }
@@ -125,6 +130,8 @@ int calculateRackContentWidth(
     int moduleCount, WidgetSize size, bool showAddButton)
 {
     const auto modules = juce::jmax(0, moduleCount);
+    if (size == WidgetSize::ultraCompact)
+        return widgetWidth(size);
     auto width = modules * widgetWidth(size);
     if (modules > 1)
         width += (modules - 1) * moduleCardGap;

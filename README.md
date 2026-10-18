@@ -19,6 +19,17 @@ rescanning the same version can retain the previous layouts.
 In Neural Amp Modeler, the cabinet name is shown only while its IR is enabled.
 The **IR ON** button uses an accent color to indicate the active cabinet;
 switching it off retains the profile's saved IR selection.
+The loaded model and validated library rows identify the **A1** or **A2**
+architecture generation. Filename-only entries omit this label until metadata
+validation completes.
+
+Choose **ULTRA** beside **S / M / L** for a bypass-only rack: 36-pixel module rows
+stack from top to bottom in signal-flow order. Drag a row above or below another
+to reorder; click its power button or press **Space / B** to bypass. **Up / Down**
+select rows and **Alt+Up / Alt+Down** reorder them. The list scrolls vertically
+when needed. Controls, asset loading, reset, insertion, and removal remain in
+the S/M/L views; ULTRA leaves their values intact and suspends visualizations.
+The selected view uses the existing global widget preference.
 
 Eight complete **Snapshots** let one instance hold multiple racks. Click a
 snapshot to recall it; clicking an unused snapshot activates a fresh blank rack

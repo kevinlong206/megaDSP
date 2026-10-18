@@ -521,11 +521,6 @@ void EffectGraph::paintCompactAssetLibrary(
             ? compactNamModels[static_cast<size_t>(index)].relativePath
             : compactImpulseResponses[static_cast<size_t>(index)]
                   .relativePath;
-        const auto displayName = isCompactNamLibrary()
-            && compactNamModels[static_cast<size_t>(index)]
-                   .displayName.isNotEmpty()
-            ? compactNamModels[static_cast<size_t>(index)].displayName
-            : file.getFileNameWithoutExtension();
         auto rowBounds =
             area.removeFromTop(compactAssetRowHeight).reduced(1.0f);
         const auto loaded = file.getFullPathName() == loadedPath;
@@ -552,7 +547,7 @@ void EffectGraph::paintCompactAssetLibrary(
             loaded ? accent : juce::Colours::white.withAlpha(0.9f));
         graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
         graphics.drawFittedText(
-            displayName,
+            compactAssetDisplayName(index),
             text.removeFromTop(14.0f).toNearestInt(),
             juce::Justification::centredLeft, 1, 0.75f);
         graphics.setColour(juce::Colours::white.withAlpha(0.48f));
@@ -636,6 +631,19 @@ void EffectGraph::paintCompactAssetLibrary(
         graphics.fillRoundedRectangle(
             track.withY(thumbY).withHeight(thumbHeight), 1.5f);
     }
+}
+
+juce::String EffectGraph::compactAssetDisplayName(int index) const
+{
+    if (!isCompactNamLibrary())
+        return compactImpulseResponses[static_cast<size_t>(index)]
+            .file.getFileNameWithoutExtension();
+    const auto& entry = compactNamModels[static_cast<size_t>(index)];
+    const auto generation = entry.architecture.isEmpty()
+        ? juce::String {} : juce::String(entry.isA2 ? "[A2] " : "[A1] ");
+    return generation
+        + (entry.displayName.isNotEmpty()
+               ? entry.displayName : entry.file.getFileNameWithoutExtension());
 }
 
 void EffectGraph::paintCompact(

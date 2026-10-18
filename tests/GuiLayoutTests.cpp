@@ -88,6 +88,12 @@ public:
         expectEquals(widgetWidth(WidgetSize::medium), 440);
         expectEquals(widgetWidth(WidgetSize::large), 640);
         expectEquals(
+            widgetSizeId(widgetSizeFromId("ULTRA-COMPACT")),
+            juce::String("ultra-compact"));
+        expectEquals(
+            widgetSizeName(WidgetSize::ultraCompact),
+            juce::String("Ultra Compact"));
+        expectEquals(
             calculateRackContentWidth(
                 2, WidgetSize::small, false),
             300 * 2 + moduleCardGap);

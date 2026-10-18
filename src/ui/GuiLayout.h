@@ -20,12 +20,14 @@ inline constexpr int moduleCardHeight = 320;
 inline constexpr int moduleCardMaximumHeight = 640;
 inline constexpr int moduleCardGap = 8;
 inline constexpr int addModuleCardHeight = 42;
+inline constexpr int ultraCompactRowHeight = 36;
 
 enum class WidgetSize
 {
     small,
     medium,
-    large
+    large,
+    ultraCompact
 };
 
 juce::String widgetSizeId(WidgetSize);

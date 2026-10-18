@@ -19,6 +19,11 @@ public:
         const juce::MouseEvent& event,
         const juce::MouseWheelDetails& wheel) override
     {
+        if (verticalScrolling)
+        {
+            juce::Viewport::mouseWheelMove(event, wheel);
+            return;
+        }
         auto horizontal = wheel;
         if (std::abs(horizontal.deltaX) < std::abs(horizontal.deltaY))
         {
@@ -27,6 +32,11 @@ public:
         }
         juce::Viewport::mouseWheelMove(event, horizontal);
     }
+
+    void setVerticalScrolling(bool vertical) { verticalScrolling = vertical; }
+
+private:
+    bool verticalScrolling = false;
 };
 
 class MegaDSPAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -58,6 +68,8 @@ public:
     void removeModuleFromChainForTesting(int slot);
     void clickChainNavigatorForTesting(int slot);
     void refreshCardsForTesting();
+    juce::Component* cardForTesting(int slot) const;
+    void applyPendingCardMutationForTesting() { applyPendingCardMutation(); }
     bool cardAcceptsAssetDropForTesting(
         int slot, const juce::String& path) const;
     bool cardHasAssetSearchForTesting(int slot) const;
@@ -146,6 +158,7 @@ private:
     juce::Label snapshotsLabel;
     juce::ToggleButton liveSafeButton { "LIVE SAFE" };
     juce::TextButton smallWidgetsButton { "S" };
+    juce::TextButton ultraCompactButton { "ULTRA" };
     juce::TextButton mediumWidgetsButton { "M" };
     juce::TextButton largeWidgetsButton { "L" };
     juce::Component snapshotsHost;

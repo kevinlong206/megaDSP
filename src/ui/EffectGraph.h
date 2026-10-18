@@ -68,6 +68,12 @@ public:
     void setCompactNamFavoritesOnlyForTesting(bool);
     void setCompactNamNewestSortForTesting(bool);
     juce::String compactNamModelPathForTesting(int index) const;
+    juce::String compactNamModelNameForTesting(int index) const
+    {
+        return juce::isPositiveAndBelow(
+                   index, static_cast<int>(compactNamModels.size()))
+            ? compactAssetDisplayName(index) : juce::String {};
+    }
     void toggleCompactNamFavoriteForTesting(int index);
     void setCompactImpulseFavoritesOnlyForTesting(bool);
     void toggleCompactImpulseFavoriteForTesting(int index);
@@ -114,6 +120,7 @@ private:
     bool isCompactAssetLibrary() const;
     bool isCompactNamLibrary() const;
     juce::String compactAssetLoadedPath() const;
+    juce::String compactAssetDisplayName(int index) const;
     juce::Rectangle<float> compactCompressorLevelArea() const;
     void setCompactCompressorThresholdFromY(float);
     juce::Rectangle<float> compactEqualizerPlotArea() const;

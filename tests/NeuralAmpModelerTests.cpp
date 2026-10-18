@@ -478,6 +478,7 @@ public:
             expect(processor.setNamCabinetEnabled(0, true).wasOk());
 
             MegaDSPAudioProcessorEditor editor(processor, 1100, 720);
+            bool foundA1Label = false;
             juce::Label* cabinetName = nullptr;
             juce::TextButton* cabinetButton = nullptr;
             const auto findCabinetControls = [&](auto&& self,
@@ -488,6 +489,10 @@ public:
                     if (auto* label = dynamic_cast<juce::Label*>(child);
                         label != nullptr && label->getText().startsWith("CAB  "))
                         cabinetName = label;
+                    if (auto* label = dynamic_cast<juce::Label*>(child);
+                        label != nullptr
+                        && label->getText().startsWith("MODEL  A1  "))
+                        foundA1Label = true;
                     if (auto* button = dynamic_cast<juce::TextButton*>(child);
                         button != nullptr && button->getButtonText() == "IR ON")
                         cabinetButton = button;
@@ -497,6 +502,7 @@ public:
             findCabinetControls(findCabinetControls, editor);
             expect(cabinetName != nullptr);
             expect(cabinetButton != nullptr);
+            expect(foundA1Label, "The loaded model must show its A1 generation.");
             if (cabinetName != nullptr && cabinetButton != nullptr)
             {
                 expect(cabinetName->isVisible());
@@ -687,6 +693,58 @@ public:
 #else
             expect(false, "NAM_ENABLE_A2_FAST not defined");
 #endif
+        }
+
+        beginTest("Loaded A2 models and browser rows show their generation");
+        {
+            const auto root =
+                juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getNonexistentChildFile("megadsp-a2-display", {}, true);
+            expect(root.createDirectory().wasOk());
+            const auto model = root.getChildFile("a2-display.nam");
+            auto config = a2StandardConfig();
+            int weightCount = 8 + 8 * 16 + 2;
+            for (const auto& kernel : config["layers"][0]["kernel_sizes"])
+                weightCount += 8 * 8 * kernel.get<int>() + 3 * 8 + 8 * 8;
+            nlohmann::json json {
+                { "version", "0.5.4" },
+                { "architecture", "WaveNet" },
+                { "config", config },
+                { "sample_rate", 48000.0 },
+                { "metadata", nlohmann::json::object() },
+                { "weights", std::vector<float>(
+                                 static_cast<size_t>(weightCount), 0.0f) }
+            };
+            expect(model.replaceWithText(juce::String(json.dump())));
+            MegaDSPAudioProcessor processor;
+            processor.prepareToPlay(48000.0, 64);
+            processor.addModule(ModuleType::neuralAmpModeler);
+            expect(processor.loadNamModel(0, model).wasOk());
+            expect(processor.setNamModelRootDirectory(root).wasOk());
+            expectEquals(processor.namModelLibrarySize(), 1);
+            MegaDSPAudioProcessorEditor editor(processor, 1100, 720);
+            bool foundA2 = false;
+            const auto findLabel = [&](auto&& self,
+                                       juce::Component& parent) -> void
+            {
+                for (auto* child : parent.getChildren())
+                {
+                    if (const auto* label = dynamic_cast<juce::Label*>(child);
+                        label != nullptr
+                        && label->getText().startsWith("MODEL  A2  "))
+                        foundA2 = true;
+                    self(self, *child);
+                }
+            };
+            findLabel(findLabel, editor);
+            expect(foundA2, "The loaded A2 model must be identified.");
+            megadsp::ui::EffectGraph graph(
+                processor, 0, ModuleType::neuralAmpModeler);
+            graph.setBounds(0, 0, 384, 100);
+            expectEquals(
+                graph.compactNamModelNameForTesting(0),
+                juce::String("[A2] a2-display"));
+            root.deleteRecursively();
         }
 
         beginTest("A2 negative: 8ch non-A2 WaveNet");
@@ -1436,6 +1494,9 @@ public:
             expectEquals(
                 graph.compactNamModelPathForTesting(0),
                 newest.getFullPathName());
+            expectEquals(
+                graph.compactNamModelNameForTesting(0),
+                juce::String("[A1] newest"));
             root.deleteRecursively();
         }
 
