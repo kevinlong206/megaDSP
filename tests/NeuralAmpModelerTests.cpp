@@ -798,6 +798,133 @@ public:
     }
 };
 
+class LibraryRebuildTests final : public juce::UnitTest
+{
+public:
+    LibraryRebuildTests()
+        : juce::UnitTest("Library rebuild progress", "megaDSP") {}
+
+    void runTest() override
+    {
+        beginTest("Preparing isolated libraries");
+        const auto root = juce::File::getSpecialLocation(
+            juce::File::tempDirectory).getNonexistentChildFile(
+                "megaDSP-library-progress", {}, true);
+        expect(root.createDirectory().wasOk());
+        {
+            MegaDSPAudioProcessor processor;
+            expect(processor.setNamModelRootDirectory(root).wasOk());
+            expect(processor.setImpulseResponseRootDirectory(root).wasOk());
+            expect(root.getChildFile("model.nam").replaceWithText(
+                linearNamJson()));
+            expect(root.getChildFile("broken.nam").replaceWithText(
+                "{ not a model }"));
+            expect(writeImpulse(root.getChildFile("impulse.wav"))
+                       .existsAsFile());
+            expect(root.getChildFile("broken.wav").replaceWithText(
+                "not audio"));
+
+            for (const auto library : {
+                     MegaDSPAudioProcessor::Library::namModels,
+                     MegaDSPAudioProcessor::Library::impulseResponses })
+            {
+                beginTest("Manual rebuild runs asynchronously and completes");
+                auto progress = std::make_shared<
+                    MegaDSPAudioProcessor::LibraryRebuildProgress>();
+                expectEquals(progress->fraction.load(), -1.0);
+                expect(!progress->finished.load());
+                expect(processor.rebuildLibraryAsync(
+                    library, progress).wasOk());
+                processor.finishLibraryIndexForTesting();
+                const auto finished = progress->finished.load(
+                    std::memory_order_acquire);
+                expect(finished);
+                if (finished)
+                    expect(progress->result.wasOk());
+                expectEquals(progress->fraction.load(), 1.0);
+                expect(!processor.isNamModelLibraryIndexing());
+                expect(!processor.isImpulseResponseLibraryIndexing());
+            }
+            expectEquals(processor.namModelLibrarySize(), 1);
+            expectEquals(processor.impulseResponseLibrarySize(), 1);
+
+            beginTest("Validation progress is bounded and monotonic");
+            std::vector<double> fractions;
+            const auto record = [&fractions](double fraction)
+            {
+                fractions.push_back(fraction);
+            };
+            for (bool namModels : { true, false })
+            {
+                fractions.clear();
+                expect((namModels
+                    ? processor.rebuildNamModelLibrary(record)
+                    : processor.rebuildImpulseResponseLibrary(record))
+                           .wasOk());
+                expect(fractions.size() >= 3);
+                if (!fractions.empty())
+                {
+                    expectEquals(fractions.front(), 0.0);
+                    expectEquals(fractions.back(), 1.0);
+                }
+                double previous = 0.0;
+                for (const auto fraction : fractions)
+                {
+                    expect(fraction >= previous && fraction <= 1.0);
+                    previous = fraction;
+                }
+            }
+
+            beginTest("Manual progress dialog confirms completion");
+            for (const auto library : {
+                     MegaDSPAudioProcessor::Library::namModels,
+                     MegaDSPAudioProcessor::Library::impulseResponses })
+            {
+                MegaDSPAudioProcessorEditor editor(processor, 1100, 720);
+                editor.rebuildLibraryForTesting(library);
+                auto* window = editor.libraryRebuildWindowForTesting();
+                expect(window != nullptr);
+                if (window != nullptr)
+                    expect(window->isCurrentlyModal());
+                processor.finishLibraryIndexForTesting();
+                editor.refreshLibraryRebuildProgressForTesting();
+                if (window != nullptr)
+                {
+                    expectEquals(window->getName(),
+                                 juce::String("Library index rebuilt"));
+                    expectEquals(window->getNumButtons(), 1);
+                    window->exitModalState(1);
+                }
+                editor.refreshLibraryRebuildProgressForTesting();
+                expect(editor.libraryRebuildWindowForTesting() == nullptr);
+            }
+
+            beginTest("Closing the editor does not cancel a library rebuild");
+            {
+                MegaDSPAudioProcessorEditor editor(processor, 1100, 720);
+                editor.rebuildLibraryForTesting(
+                    MegaDSPAudioProcessor::Library::namModels);
+            }
+            processor.finishLibraryIndexForTesting();
+            expect(!processor.isNamModelLibraryIndexing());
+            expectEquals(processor.namModelLibrarySize(), 1);
+        }
+        expect(root.deleteRecursively());
+
+        beginTest("Missing library roots fail explicitly");
+        MegaDSPAudioProcessor processor;
+        auto progress = std::make_shared<
+            MegaDSPAudioProcessor::LibraryRebuildProgress>();
+        expect(processor.rebuildLibraryAsync(
+            MegaDSPAudioProcessor::Library::namModels, progress).failed());
+        expect(processor.rebuildLibraryAsync(
+            MegaDSPAudioProcessor::Library::impulseResponses,
+            progress).failed());
+        expect(!processor.isNamModelLibraryIndexing());
+        expect(!processor.isImpulseResponseLibraryIndexing());
+    }
+};
+
 class NamStateTests final : public juce::UnitTest
 {
 public:
@@ -1830,5 +1957,6 @@ public:
 
 NamRegistryTests namRegistryTests;
 NamDspTests namDspTests;
+LibraryRebuildTests libraryRebuildTests;
 NamStateTests namStateTests;
 } // namespace

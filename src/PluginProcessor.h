@@ -185,7 +185,19 @@ public:
     juce::Result loadBuiltInImpulseResponse(int slot, int index);
     juce::Result loadAdjacentImpulseResponse(int slot, int direction);
     juce::Result setImpulseResponseRootDirectory(const juce::File&);
-    juce::Result rebuildImpulseResponseLibrary();
+    using LibraryIndexProgress = std::function<void(double)>;
+    enum class Library { namModels, impulseResponses };
+    struct LibraryRebuildProgress
+    {
+        std::atomic<double> fraction { -1.0 };
+        std::atomic<bool> finished { false };
+        // Read the result only after acquiring finished.
+        juce::Result result = juce::Result::ok();
+    };
+    juce::Result rebuildLibraryAsync(
+        Library, const std::shared_ptr<LibraryRebuildProgress>&);
+    juce::Result rebuildImpulseResponseLibrary(
+        const LibraryIndexProgress& = {});
     std::vector<ImpulseResponseLibraryEntry> searchImpulseResponses(
         const juce::String& query, int maximumResults = 200);
     int impulseResponseLibrarySize();
@@ -228,7 +240,8 @@ public:
     juce::Result loadAdjacentNamModelAsync(
         int slot, int direction, NamModelLoadCallback = {});
     juce::Result setNamModelRootDirectory(const juce::File&);
-    juce::Result rebuildNamModelLibrary();
+    juce::Result rebuildNamModelLibrary(
+        const LibraryIndexProgress& = {});
     std::vector<NamModelLibraryEntry> searchNamModels(
         const juce::String& query, int maximumResults = 200,
         NamModelSort sort = NamModelSort::relevance);

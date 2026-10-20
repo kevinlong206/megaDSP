@@ -4005,6 +4005,7 @@ void MegaDSPAudioProcessorEditor::resized()
 
 void MegaDSPAudioProcessorEditor::timerCallback()
 {
+    refreshLibraryRebuildProgress();
     headerMeter->setLevels(audioProcessor.getRack().inputMeterDb(),
                            audioProcessor.getRack().outputMeterDb());
     headerMeter->setPerformance(
@@ -4799,14 +4800,10 @@ void MegaDSPAudioProcessorEditor::showSettingsMenu()
             if (result == rebuildNamCommand
                 || result == rebuildImpulseCommand)
             {
-                const auto rebuildResult = result == rebuildNamCommand
-                    ? safeThis->audioProcessor.rebuildNamModelLibrary()
-                    : safeThis->audioProcessor.rebuildImpulseResponseLibrary();
-                if (rebuildResult.failed())
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon,
-                        "Could not rebuild library",
-                        rebuildResult.getErrorMessage());
+                safeThis->rebuildLibrary(
+                    result == rebuildNamCommand
+                        ? MegaDSPAudioProcessor::Library::namModels
+                        : MegaDSPAudioProcessor::Library::impulseResponses);
                 return;
             }
             auto& service = megadsp::Diagnostics::instance();
@@ -4846,6 +4843,68 @@ void MegaDSPAudioProcessorEditor::showSettingsMenu()
                     safeThis->refreshIdentityPresentation();
                 });
         });
+}
+
+void MegaDSPAudioProcessorEditor::rebuildLibrary(
+    MegaDSPAudioProcessor::Library library)
+{
+    if (libraryRebuildProgress != nullptr)
+        return;
+    auto progress =
+        std::make_shared<MegaDSPAudioProcessor::LibraryRebuildProgress>();
+    const auto result = audioProcessor.rebuildLibraryAsync(library, progress);
+    if (result.failed())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "Could not rebuild library", result.getErrorMessage());
+        return;
+    }
+    libraryRebuildProgress = std::move(progress);
+    libraryRebuildFraction = -1.0;
+    libraryRebuildWindow = std::make_unique<juce::AlertWindow>(
+        library == MegaDSPAudioProcessor::Library::namModels
+            ? "Rebuilding NAM model index" : "Rebuilding IR index",
+        "Scanning library folders...",
+        juce::MessageBoxIconType::NoIcon, this);
+    libraryRebuildWindow->setEscapeKeyCancels(false);
+    libraryRebuildWindow->addProgressBarComponent(libraryRebuildFraction);
+    libraryRebuildWindow->enterModalState();
+}
+
+void MegaDSPAudioProcessorEditor::refreshLibraryRebuildProgress()
+{
+    if (libraryRebuildProgress == nullptr)
+        return;
+    if (libraryRebuildProgress->finished.load(std::memory_order_acquire))
+    {
+        if (libraryRebuildWindow->getNumButtons() == 0)
+        {
+            const auto& result = libraryRebuildProgress->result;
+            libraryRebuildFraction = result.wasOk() ? 1.0 : 0.0;
+            libraryRebuildWindow->setName(
+                result.wasOk() ? "Library index rebuilt"
+                               : "Could not rebuild library");
+            libraryRebuildWindow->setMessage(
+                result.wasOk() ? "The library is ready to browse."
+                               : result.getErrorMessage());
+            libraryRebuildWindow->addButton(
+                "OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+            libraryRebuildWindow->setEscapeKeyCancels(true);
+        }
+        if (!libraryRebuildWindow->isCurrentlyModal(false))
+        {
+            libraryRebuildWindow.reset();
+            libraryRebuildProgress.reset();
+        }
+        return;
+    }
+    libraryRebuildFraction =
+        libraryRebuildProgress->fraction.load(std::memory_order_relaxed);
+    libraryRebuildWindow->setMessage(
+        libraryRebuildFraction < 0.0 ? "Scanning library folders..."
+        : libraryRebuildFraction < 0.95 ? "Validating library files..."
+                                       : "Saving library index...");
 }
 
 void MegaDSPAudioProcessorEditor::chooseLibraryRoot(int library)

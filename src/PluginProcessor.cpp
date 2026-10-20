@@ -4852,7 +4852,53 @@ juce::Result MegaDSPAudioProcessor::setImpulseResponseRootDirectory(
     return result;
 }
 
-juce::Result MegaDSPAudioProcessor::rebuildImpulseResponseLibrary()
+juce::Result MegaDSPAudioProcessor::rebuildLibraryAsync(
+    Library library,
+    const std::shared_ptr<LibraryRebuildProgress>& progress)
+{
+    if (progress == nullptr)
+        return juce::Result::fail("Library rebuild progress is required.");
+    const auto namModels = library == Library::namModels;
+    const auto root = namModels
+        ? namModelRootDirectory() : impulseResponseRootDirectory();
+    if (!root.isDirectory())
+        return juce::Result::fail(
+            namModels ? "Choose a NAM model root directory first."
+                      : "Choose an impulse response root directory first.");
+
+    auto& indexing = namModels
+        ? namModelIndexInProgress : impulseResponseIndexInProgress;
+    auto expected = false;
+    if (!indexing.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel))
+        return juce::Result::fail(
+            "This library is already being indexed. Please try again shortly.");
+
+    libraryIndexPool.addJob(std::function<void()> {
+        [this, namModels, progress]
+        {
+            const auto report = [progress](double fraction)
+            {
+                progress->fraction.store(
+                    fraction, std::memory_order_relaxed);
+            };
+            progress->result = namModels
+                ? rebuildNamModelLibrary(report)
+                : rebuildImpulseResponseLibrary(report);
+            if (progress->result.failed())
+                megadsp::Diagnostics::instance().log(
+                    "library-rebuild-failed",
+                    progress->result.getErrorMessage());
+            auto& inProgress = namModels
+                ? namModelIndexInProgress : impulseResponseIndexInProgress;
+            inProgress.store(false, std::memory_order_release);
+            progress->finished.store(true, std::memory_order_release);
+        } });
+    return juce::Result::ok();
+}
+
+juce::Result MegaDSPAudioProcessor::rebuildImpulseResponseLibrary(
+    const LibraryIndexProgress& progress)
 {
     const auto root = impulseResponseRootDirectory();
     if (!root.isDirectory())
@@ -4861,12 +4907,17 @@ juce::Result MegaDSPAudioProcessor::rebuildImpulseResponseLibrary()
 
     juce::Array<juce::File> files;
     root.findChildFiles(files, juce::File::findFiles, true);
+    if (progress)
+        progress(0.0);
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();
     std::vector<ImpulseResponseLibraryEntry> rebuilt;
     rebuilt.reserve(static_cast<size_t>(files.size()));
+    int checked = 0;
     for (const auto& file : files)
     {
+        if (progress)
+            progress(0.95 * checked++ / juce::jmax(1, files.size()));
         const auto extension = file.getFileExtension().toLowerCase();
         if (extension != ".wav" && extension != ".aif"
             && extension != ".aiff" && extension != ".flac")
@@ -4899,6 +4950,8 @@ juce::Result MegaDSPAudioProcessor::rebuildImpulseResponseLibrary()
                 : left.file.getFullPathName()
                       < right.file.getFullPathName();
         });
+    if (progress)
+        progress(0.95);
     {
         const juce::ScopedLock lock(impulseResponseLibraryLock);
         impulseResponseLibrary = std::move(rebuilt);
@@ -4915,6 +4968,8 @@ juce::Result MegaDSPAudioProcessor::rebuildImpulseResponseLibrary()
         persistImpulseResponseLibraryCache(root, cached);
     automaticLibraryCoordinator().publishImpulse(root, cached);
     libraryGeneration.fetch_add(1, std::memory_order_release);
+    if (progress && result.wasOk())
+        progress(1.0);
     return result;
 }
 
@@ -5356,7 +5411,8 @@ juce::Result MegaDSPAudioProcessor::setNamModelRootDirectory(
     return juce::Result::ok();
 }
 
-juce::Result MegaDSPAudioProcessor::rebuildNamModelLibrary()
+juce::Result MegaDSPAudioProcessor::rebuildNamModelLibrary(
+    const LibraryIndexProgress& progress)
 {
     const auto root = namModelRootDirectory();
     if (!root.isDirectory())
@@ -5365,10 +5421,15 @@ juce::Result MegaDSPAudioProcessor::rebuildNamModelLibrary()
 
     juce::Array<juce::File> files;
     root.findChildFiles(files, juce::File::findFiles, true);
+    if (progress)
+        progress(0.0);
     std::vector<NamModelLibraryEntry> rebuilt;
     rebuilt.reserve(static_cast<size_t>(files.size()));
+    int checked = 0;
     for (const auto& file : files)
     {
+        if (progress)
+            progress(0.95 * checked++ / juce::jmax(1, files.size()));
         if (!file.hasFileExtension("nam"))
             continue;
         if (const auto entry = inspectNamModel(file, root))
@@ -5385,6 +5446,8 @@ juce::Result MegaDSPAudioProcessor::rebuildNamModelLibrary()
                 : left.file.getFullPathName()
                       < right.file.getFullPathName();
         });
+    if (progress)
+        progress(0.95);
     {
         const juce::ScopedLock lock(namModelLibraryLock);
         namModelLibrary = std::move(rebuilt);
@@ -5400,6 +5463,8 @@ juce::Result MegaDSPAudioProcessor::rebuildNamModelLibrary()
     const auto result = persistNamModelLibraryCache(root, cached);
     automaticLibraryCoordinator().publishNam(root, cached);
     libraryGeneration.fetch_add(1, std::memory_order_release);
+    if (progress && result.wasOk())
+        progress(1.0);
     return result;
 }
 

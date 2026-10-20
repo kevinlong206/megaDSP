@@ -54,6 +54,18 @@ public:
     void visibilityChanged() override;
     bool keyPressed(const juce::KeyPress&) override;
 #if defined(MEGADSP_TESTS)
+    void rebuildLibraryForTesting(MegaDSPAudioProcessor::Library library)
+    {
+        rebuildLibrary(library);
+    }
+    juce::AlertWindow* libraryRebuildWindowForTesting() const
+    {
+        return libraryRebuildWindow.get();
+    }
+    void refreshLibraryRebuildProgressForTesting()
+    {
+        refreshLibraryRebuildProgress();
+    }
     void clickCloseButtonForTesting(int slot);
     void simulateFocusGainDuringRefreshForTesting(int slot);
     void simulateDescendantFocusForTesting(int slot);
@@ -126,6 +138,8 @@ private:
     void commitInstanceName();
     void showThemePalette();
     void showSettingsMenu();
+    void rebuildLibrary(MegaDSPAudioProcessor::Library);
+    void refreshLibraryRebuildProgress();
     void chooseLibraryRoot(int library);
     void refreshIdentityPresentation();
     void refreshSnapshots();
@@ -146,6 +160,10 @@ private:
     juce::TextEditor instanceName;
     juce::TextButton themeButton { "COLOR" };
     juce::TextButton settingsButton { "SETTINGS" };
+    double libraryRebuildFraction = -1.0;
+    std::shared_ptr<MegaDSPAudioProcessor::LibraryRebuildProgress>
+        libraryRebuildProgress;
+    std::unique_ptr<juce::AlertWindow> libraryRebuildWindow;
     juce::Label status;
     juce::TextButton saveButton { "Save" };
     juce::TextButton loadButton { "Load" };
