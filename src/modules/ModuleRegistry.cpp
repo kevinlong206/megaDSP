@@ -160,6 +160,27 @@ constexpr Metadata tremoloMetadata {{
       "Adjusts level after modulation." },
     unused
 }};
+constexpr Metadata envelopeConvolutionMetadata {{
+    { "Quiet Blend", ControlKind::horizontal, true, "Level to Blend",
+      "Sets wet percentage at and below Quiet Level. Drag the QUIET node vertically; dry is the complementary percentage." },
+    { "Loud Blend", ControlKind::horizontal, true, "Level to Blend",
+      "Sets wet percentage at and above Loud Level. REVERSE swaps the two blend endpoints without changing thresholds." },
+    { "Quiet Level", ControlKind::level, true, "Level to Blend",
+      "Sets the lower input threshold in dBFS. Drag the QUIET node horizontally." },
+    { "Loud Level", ControlKind::level, true, "Level to Blend",
+      "Sets the upper input threshold in dBFS. Crossed values are ordered without rewriting automation." },
+    { "Attack", ControlKind::horizontal, false, "Envelope",
+      "Sets how quickly the stereo-linked detector follows louder playing, from 1 to 200 ms." },
+    { "Release", ControlKind::horizontal, false, "Envelope",
+      "Sets how quickly the detector follows decaying notes, from 30 ms to 3 seconds." },
+    { "Low Cut", ControlKind::horizontal, false, "Wet Passband",
+      "Removes low frequencies from the completed wet field only." },
+    { "High Cut", ControlKind::horizontal, false, "Wet Passband",
+      "Removes high frequencies from the completed wet field only." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts the completed dry/wet blend. An unloaded IR falls back to dry." },
+    unused, unused, unused
+}};
 constexpr Metadata envelopeModulatorMetadata {{
     { "Mode", ControlKind::choice, true, "Modulation",
       "Selects amplitude tremolo, 700 Hz split-band harmonic tremolo, or pitch vibrato." },
@@ -1477,6 +1498,10 @@ constexpr Names envelopeModulatorNames {
     "Attack", "Release", "Tremolo Depth", "Pitch Depth", "Waveform",
     "Mix", "Output"
 };
+constexpr Names envelopeConvolutionNames {
+    "Quiet Blend", "Loud Blend", "Quiet Level", "Loud Level",
+    "Attack", "Release", "Low Cut", "High Cut", "Output", "-", "-", "-"
+};
 constexpr Names rotarySpeakerNames {
     "Speed", "Drive", "Rotor Balance", "Crossover", "Motion",
     "Mic Distance", "Mic Spread", "Spin-up", "Cabinet Color", "Ambience", "Mix",
@@ -2110,6 +2135,19 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                        linearNormalized(0.0f, 180.0f, 0.0f),
                        exponentialNormalized(100.0f, 4000.0f, 700.0f),
                        1.0f, linearNormalized(-12.0f, 12.0f, 0.0f), 0.5f };
+            break;
+        case ModuleType::envelopeConvolution:
+            values = {
+                0.40f, 0.10f,
+                linearNormalized(-72.0f, 0.0f, -48.0f),
+                linearNormalized(-72.0f, 0.0f, -12.0f),
+                exponentialNormalized(1.0f, 200.0f, 10.0f),
+                exponentialNormalized(30.0f, 3000.0f, 250.0f),
+                exponentialNormalized(20.0f, 1000.0f, 80.0f),
+                exponentialNormalized(2000.0f, 20000.0f, 12000.0f),
+                linearNormalized(-18.0f, 18.0f, 0.0f),
+                0.5f, 0.5f, 0.5f
+            };
             break;
         case ModuleType::envelopeModulator:
             values = {
@@ -2773,6 +2811,22 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 7) return juce::String(linear(0.0f, 180.0f, value), 0) + juce::String::charToString(0x00b0);
             if (control == 8) return formatFrequency(exponential(100.0f, 4000.0f, value));
             if (control == 10) return juce::String(linear(-12.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::envelopeConvolution:
+            if (control == 0 || control == 1)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 2 || control == 3)
+                return juce::String(linear(-72.0f, 0.0f, value), 1) + " dBFS";
+            if (control == 4)
+                return juce::String(exponential(1.0f, 200.0f, value), 1) + " ms";
+            if (control == 5)
+                return juce::String(exponential(30.0f, 3000.0f, value), 0) + " ms";
+            if (control == 6)
+                return formatFrequency(exponential(20.0f, 1000.0f, value));
+            if (control == 7)
+                return formatFrequency(exponential(2000.0f, 20000.0f, value));
+            if (control == 8)
+                return juce::String(linear(-18.0f, 18.0f, value), 1) + " dB";
             break;
         case ModuleType::envelopeModulator:
             if (control == 1 || control == 2)
@@ -3691,6 +3745,24 @@ std::optional<float> parseControlValue(ModuleType type, int control,
                 100.0f, 4000.0f, parsedFrequency(text, value));
             if (control == 10) return linearNormalized(-12.0f, 12.0f, value);
             break;
+        case ModuleType::envelopeConvolution:
+            if (control == 0 || control == 1)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 2 || control == 3)
+                return linearNormalized(-72.0f, 0.0f, value);
+            if (control == 4)
+                return exponentialNormalized(1.0f, 200.0f, value);
+            if (control == 5)
+                return exponentialNormalized(30.0f, 3000.0f, value);
+            if (control == 6)
+                return exponentialNormalized(
+                    20.0f, 1000.0f, parsedFrequency(text, value));
+            if (control == 7)
+                return exponentialNormalized(
+                    2000.0f, 20000.0f, parsedFrequency(text, value));
+            if (control == 8)
+                return linearNormalized(-18.0f, 18.0f, value);
+            break;
         case ModuleType::envelopeModulator:
             if (control == 1 || control == 2)
                 return exponentialNormalized(0.1f, 20.0f, value);
@@ -4531,6 +4603,7 @@ bool isControlContextuallyVisible(
         case ModuleType::stereoWidth:
         case ModuleType::rotarySpeaker:
         case ModuleType::convolutionReverb:
+        case ModuleType::envelopeConvolution:
         case ModuleType::algorithmicReverb:
         case ModuleType::stageVocal:
         case ModuleType::vinylSimulator:
@@ -5086,7 +5159,16 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "envelope dynamics guitar touch responsive modulation tremolo harmonic vibrato amplitude speed threshold reverse",
             envelopeModulatorNames, envelopeModulatorMetadata,
             &makeModule<EnvelopeModulatorModule>,
-            ModuleCapability::continuousTelemetry)
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::envelopeConvolution, "Envelope Convolution",
+            ModuleCategory::reverbAndSpace,
+            "Let playing dynamics move the dry/wet blend between two reversible endpoints without interrupting convolution tails.",
+            "envelope convolution impulse response ir guitar dynamics touch responsive reverb blend wet dry reverse",
+            envelopeConvolutionNames, envelopeConvolutionMetadata,
+            &makeModule<EnvelopeConvolutionModule>,
+            ModuleCapability::impulseResponse
+                | ModuleCapability::continuousTelemetry)
     }};
     return definitions;
 }
@@ -5164,6 +5246,7 @@ CompactVisualization compactVisualization(ModuleType type)
             return CompactVisualization::impulse;
 
         case ModuleType::convolutionReverb:
+        case ModuleType::envelopeConvolution:
             return CompactVisualization::wetSpectrum;
 
         case ModuleType::stereoWidth:

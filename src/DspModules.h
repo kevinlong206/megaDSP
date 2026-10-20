@@ -61,3 +61,4 @@
 #include "modules/IRMosaic.h"
 #include "modules/GuitarTuner.h"
 #include "modules/EnvelopeModulator.h"
+#include "modules/EnvelopeConvolution.h"

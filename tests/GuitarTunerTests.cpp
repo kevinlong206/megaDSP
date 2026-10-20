@@ -19,7 +19,7 @@ public:
         beginTest("Registry appends the stable tuner contract");
         expectEquals(static_cast<int>(ModuleType::irMosaic), 58);
         expectEquals(static_cast<int>(ModuleType::guitarTuner), 59);
-        expectEquals(moduleTypeCount, 61);
+        expectEquals(moduleTypeCount, 62);
         const auto& definition = moduleDefinition(ModuleType::guitarTuner);
         expect(definition.category == ModuleCategory::guitar);
         expect(definition.capabilities

@@ -3130,8 +3130,8 @@ void MegaDSPAudioProcessor::restoreSnapshotAssets(int index)
     auto& state = snapshotStates[static_cast<size_t>(index)];
     for (int slot = 0; slot < megadsp::slotCount; ++slot)
     {
-        if (rack.moduleType(slot)
-            == megadsp::ModuleType::convolutionReverb)
+        if (rack.moduleType(slot) == megadsp::ModuleType::convolutionReverb
+            || rack.moduleType(slot) == megadsp::ModuleType::envelopeConvolution)
         {
             auto& slotState =
                 state.slots[static_cast<size_t>(slot)];
@@ -4352,8 +4352,8 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
 {
     ScopedProcessorUndoTransaction undo(*this, "Load impulse response");
     if (lane == 0
-        && getRack().moduleType(slot)
-               == megadsp::ModuleType::convolutionReverb)
+        && (getRack().moduleType(slot) == megadsp::ModuleType::convolutionReverb
+            || getRack().moduleType(slot) == megadsp::ModuleType::envelopeConvolution))
         return loadConvolutionImpulseResponseBank(
             slot,
             getRack().activeConvolutionImpulseResponseBank(slot),
@@ -4429,8 +4429,8 @@ juce::Result MegaDSPAudioProcessor::loadImpulseResponseAsync(
     AssetLoadCallback callback)
 {
     if (lane == 0
-        && getRack().moduleType(slot)
-               == megadsp::ModuleType::convolutionReverb)
+        && (getRack().moduleType(slot) == megadsp::ModuleType::convolutionReverb
+            || getRack().moduleType(slot) == megadsp::ModuleType::envelopeConvolution))
         return loadConvolutionImpulseResponseBankAsync(
             slot, getRack().activeConvolutionImpulseResponseBank(slot),
             file, std::move(callback));

@@ -315,6 +315,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 |---|---|
 | **Tremolo** | Amplitude, Harmonic, and Vibrato algorithms; Rate syncs to host divisions; Vibrato shows depth in cents |
 | **Envelope Modulator** | Playing dynamics steer Tremolo, Harmonic Tremolo, or Vibrato between independent 0.10–20 Hz speeds. Drag QUIET/LOUD graph nodes for dBFS thresholds and speeds, or click REVERSE; measured level, rate, and recent motion show the response live. Attack/Release shape the follower, and inactive depth settings are retained. |
+| **Envelope Convolution** | A separate touch-responsive reverb sharing the original Convolution Reverb's IR engine and library. Drag QUIET/LOUD nodes to map dBFS thresholds to wet percentages; REVERSE swaps the blends. Attack/Release shape the stereo-linked follower, wet-only Low/High Cut shape the tail, and measured input/blend/tail traces show the response. Dry stays immediate with zero host PDC; convolution keeps running at 0% wet, and missing IRs fall back to dry. |
 | **Vintage Chorus** | Four distinct topologies (Vintage BBD, Dimension, Tri-Chorus, String Ensemble), animated voice-trajectory field, and six-tap Density |
 | **Rotary Speaker** | Dual-rotor Doppler model with one Brake/Chorale/Tremolo selector, consolidated left-side controls, and an unobstructed right-side rotor/microphone animation |
 | **Studio Phaser** | 2–12 stage all-pass sweeps with DSP-synchronized notch phases and topology crossfades |

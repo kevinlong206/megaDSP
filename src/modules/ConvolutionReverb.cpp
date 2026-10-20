@@ -376,6 +376,46 @@ bool ConvolutionReverbModule::readContinuousTelemetry(
     return telemetry.read(snapshot);
 }
 
+bool ConvolutionReverbModule::renderConvolution(
+    const juce::AudioBuffer<float>& buffer,
+    const ProcessEnvironment& environment)
+{
+    jassert(buffer.getNumChannels() <= wetBuffer.getNumChannels());
+    jassert(buffer.getNumSamples() <= wetBuffer.getNumSamples());
+    const auto impulseAvailable = hasCurrentImpulseResponse();
+    if (impulseAvailable)
+    {
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            wetBuffer.copyFrom(channel, 0, buffer, channel, 0,
+                               buffer.getNumSamples());
+        // Keep prepared stereo history coherent during a mono callback.
+        for (int channel = buffer.getNumChannels();
+             channel < wetBuffer.getNumChannels(); ++channel)
+            wetBuffer.copyFrom(channel, 0, buffer, 0, 0, buffer.getNumSamples());
+        if (buffer.getNumChannels() == 2
+            && banks[static_cast<size_t>(
+                activeBank.load(std::memory_order_relaxed))]
+                   ->isMono.load(std::memory_order_relaxed))
+        {
+            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            {
+                const auto mono = 0.5f
+                    * (wetBuffer.getSample(0, sample)
+                       + wetBuffer.getSample(1, sample));
+                wetBuffer.setSample(0, sample, mono);
+                wetBuffer.setSample(1, sample, mono);
+            }
+        }
+
+        banks[static_cast<size_t>(
+            activeBank.load(std::memory_order_acquire))]
+            ->engine->process(
+                wetBuffer, buffer.getNumSamples(),
+                environment.nonRealtime);
+    }
+    return impulseAvailable;
+}
+
 void ConvolutionReverbModule::process(
     juce::AudioBuffer<float>& buffer, const ControlValues& controls,
     const ProcessEnvironment& environment)
@@ -394,40 +434,13 @@ void ConvolutionReverbModule::process(
     }
     telemetryWasCapturing = environment.captureTelemetry;
 
-    jassert(buffer.getNumChannels() <= wetBuffer.getNumChannels());
-    jassert(buffer.getNumSamples() <= wetBuffer.getNumSamples());
-    const auto impulseAvailable = hasCurrentImpulseResponse();
-    auto wetAvailable = false;
-    if (impulseAvailable)
+    const auto wetAvailable = renderConvolution(buffer, environment);
+    if (wetAvailable)
     {
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
-            wetBuffer.copyFrom(channel, 0, buffer, channel, 0,
-                               buffer.getNumSamples());
-        if (buffer.getNumChannels() == 2
-            && banks[static_cast<size_t>(
-                activeBank.load(std::memory_order_relaxed))]
-                   ->isMono.load(std::memory_order_relaxed))
-        {
-            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-            {
-                const auto mono = 0.5f
-                    * (wetBuffer.getSample(0, sample)
-                       + wetBuffer.getSample(1, sample));
-                wetBuffer.setSample(0, sample, mono);
-                wetBuffer.setSample(1, sample, mono);
-            }
-        }
-
         juce::dsp::AudioBlock<float> preparedWetBlock(wetBuffer);
         auto wetBlock = preparedWetBlock.getSubBlock(
             0, static_cast<size_t>(buffer.getNumSamples()));
         juce::dsp::ProcessContextReplacing<float> wetContext(wetBlock);
-        banks[static_cast<size_t>(
-            activeBank.load(std::memory_order_acquire))]
-            ->engine->process(
-                wetBuffer, buffer.getNumSamples(),
-                environment.nonRealtime);
-        wetAvailable = true;
         lowCut.setCutoffFrequency(
             exponential(20.0f, 1000.0f, controls[0]));
         highCut.setCutoffFrequency(juce::jmin(

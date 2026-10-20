@@ -1427,7 +1427,7 @@ public:
         });
 
         beginTest("Host parameter contract remains fixed");
-        expectEquals(megadsp::moduleTypeCount, 61);
+        expectEquals(megadsp::moduleTypeCount, 62);
         expectEquals(megadsp::stateSchemaVersion, 13);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
@@ -1540,7 +1540,9 @@ public:
                          megadsp::ModuleType::guitarTuner), 59);
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::envelopeModulator), 60);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 61);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::envelopeConvolution), 61);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 62);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1573,7 +1575,7 @@ public:
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 61);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 62);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1587,6 +1589,7 @@ public:
             expectEquals(static_cast<int>(definition->type), stableType);
             const auto expectedCapabilities =
                 type == megadsp::ModuleType::convolutionReverb
+                    || type == megadsp::ModuleType::envelopeConvolution
                     || type == megadsp::ModuleType::portalPermuter
                     || type == megadsp::ModuleType::irMosaic
                     ? megadsp::ModuleCapability::impulseResponse

@@ -4,7 +4,7 @@
 
 namespace megadsp
 {
-class ConvolutionReverbModule final
+class ConvolutionReverbModule
     : public DspModule,
       public ImpulseResponseCapability,
       public ContinuousTelemetryCapability
@@ -104,6 +104,14 @@ public:
         continuousTelemetryCapability() noexcept override { return this; }
     const ContinuousTelemetryCapability*
         continuousTelemetryCapability() const noexcept override { return this; }
+
+protected:
+    bool renderConvolution(const juce::AudioBuffer<float>&,
+                           const ProcessEnvironment&);
+    const juce::AudioBuffer<float>& convolvedBuffer() const noexcept
+    {
+        return wetBuffer;
+    }
 
 private:
     struct Engine;

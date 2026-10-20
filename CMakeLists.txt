@@ -220,7 +220,8 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/PortalPermuter.cpp
     src/modules/IRMosaic.cpp
     src/modules/GuitarTuner.cpp
-    src/modules/EnvelopeModulator.cpp)
+    src/modules/EnvelopeModulator.cpp
+    src/modules/EnvelopeConvolution.cpp)
 
 set(MEGADSP_MODULE_HEADERS
     src/DspModules.h
@@ -289,7 +290,8 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/PortalPermuter.h
     src/modules/IRMosaic.h
     src/modules/GuitarTuner.h
-    src/modules/EnvelopeModulator.h)
+    src/modules/EnvelopeModulator.h
+    src/modules/EnvelopeConvolution.h)
 
 set(MEGADSP_UI_SOURCES
     src/ui/EffectGraph.cpp
@@ -376,6 +378,7 @@ juce_add_console_app(megaDSPTests PRODUCT_NAME "megaDSP Tests")
 target_sources(megaDSPTests PRIVATE
     tests/TestMain.cpp
     tests/DspModuleTests.cpp
+    tests/EnvelopeConvolutionTests.cpp
     tests/NeuralAmpModelerTests.cpp
     tests/SpectralAdaptiveModulesTests.cpp
     tests/SpectralHistoryPairTests.cpp

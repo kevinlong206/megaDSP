@@ -495,6 +495,54 @@ slots, twelve controls per slot, existing module values, or schema-13 state.
 
 ---
 
+## Envelope Convolution
+
+A separate dynamics-responsive convolution reverb, not a replacement or changed
+mode of **Convolution Reverb**. It shares the original asynchronous IR engine,
+bounded energy normalization, mono/stereo WAV/AIFF/FLAC support, indexed library,
+three persisted IR banks, and 256/512/1024/2048-sample wet-buffer settings.
+Existing Convolution Reverb projects and controls are unchanged.
+
+The upper graph maps detected input **dBFS** horizontally to **wet percentage**
+vertically. Drag **QUIET** and **LOUD** to set their thresholds and blend
+endpoints. Below the quiet threshold its blend holds; above the loud threshold
+the loud blend holds; between them the blend interpolates linearly in dBFS.
+**REVERSE** swaps only the blend endpoints in one undoable edit. Either direction
+is valid, and equal blend endpoints give a fixed blend. Crossed/equal threshold
+automation is ordered with a minimum effective 1 dB span without rewriting
+the saved parameters.
+
+Defaults are **40% wet at -48 dBFS** and **10% wet at -12 dBFS**: harder playing
+brings the direct sound forward, and decaying notes reveal more reverb.
+**Attack** (1-200 ms, default 10 ms) follows louder playing; **Release**
+(30 ms-3 seconds, default 250 ms) follows note decay. Detection uses the louder
+input channel, so hard-panned notes drive the same blend in both channels.
+The complementary linear law is `dry = 1 - blend`, `wet = blend`, without an
+automatic loudness boost. It controls the completed wet field, not just its send.
+Convolution continues at zero wet so raising the blend can reveal existing tails.
+
+**Low Cut** (20-1000 Hz, default 80 Hz) and **High Cut** (2-20 kHz, default 12 kHz)
+filter only the wet path. **Output** (-18 to +18 dB, default 0 dB) trims the
+completed blend. Continuous edits are smoothed. Dry remains immediate, convolution
+delay is wet pre-delay, and host PDC is always zero. An unloaded or unavailable
+IR falls back to dry rather than attenuating the guitar at a wet endpoint.
+Mono IR sends are centered; stereo IRs retain their encoded differences.
+
+The graph shows measured input, actual blend, and pre-blend wet-tail activity;
+the tail trace continues even at zero wet. Click the graph to edit it with
+**Q/L** selection, arrows, **Shift** fine adjustment, **Home** or double-click
+reset, and **R** to reverse. Below it, the familiar real text filter,
+**FAVORITES**, scrollable IR list, and asynchronous result activation remain
+available at every widget size. Click the library or its filter to use
+**Up/Down** selection and **Return** loading. Global root selection, automatic
+index updates, and explicit rebuild progress remain in **SETTINGS > Libraries**.
+
+Envelope Convolution appends stable module value **61**, preserving eight slots,
+twelve controls per slot, 114 host parameters, all older enum values, and
+schema-13 state compatibility.
+
+---
+
 ## Rotary Speaker
 
 Models a single dual-rotor cabinet. Horn and drum have independent physical Doppler paths, directivity, speed, and inertia. The dominant three-state **Speed** pills (Brake, Chorale, Tremolo) are the primary control. The rotor/microphone graphic owns Rotor Balance, Motion, microphone Distance/Spread, and Spin-up gestures. **Cabinet Color** and **Ambience** retain their exact DSP meanings. Mono input creates a stereo rotating field; stereo input retains its original side information.

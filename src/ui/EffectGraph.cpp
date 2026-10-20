@@ -7,6 +7,7 @@
 #include "../modules/ConvolutionReverb.h"
 #include "../modules/Delay.h"
 #include "../modules/EnvelopeModulator.h"
+#include "../modules/EnvelopeConvolution.h"
 #include "../modules/GuitarTuner.h"
 #include "../modules/MidnightCurrent.h"
 #include "../modules/ResonantSculpture.h"
@@ -50,6 +51,28 @@ EnvelopeModulatorLayout envelopeModulatorLayout(
     layout.reverse = layout.readout.removeFromRight(64.0f).reduced(1.0f);
     layout.motion = area.removeFromBottom(
         juce::jlimit(0.0f, 28.0f, area.getHeight() * 0.2f));
+    layout.plot = area.reduced(27.0f, 5.0f).withTrimmedBottom(12.0f);
+    layout.plot.setHeight(juce::jmax(1.0f, layout.plot.getHeight()));
+    return layout;
+}
+
+float envelopeConvolutionFieldHeight(juce::Rectangle<float> bounds)
+{
+    const auto height = bounds.reduced(8.0f, 3.0f).getHeight();
+    return juce::jmax(1.0f, juce::jmin(
+        juce::jlimit(112.0f, 180.0f, height * 0.52f), height - 68.0f));
+}
+
+EnvelopeModulatorLayout envelopeConvolutionLayout(
+    juce::Rectangle<float> bounds)
+{
+    auto area = bounds.reduced(8.0f, 3.0f);
+    area.setHeight(envelopeConvolutionFieldHeight(bounds));
+    EnvelopeModulatorLayout layout;
+    layout.endpoints = area.removeFromTop(15.0f);
+    layout.readout = area.removeFromBottom(21.0f);
+    layout.reverse = layout.readout.removeFromRight(58.0f).reduced(1.0f);
+    layout.motion = area.removeFromBottom(14.0f);
     layout.plot = area.reduced(27.0f, 5.0f).withTrimmedBottom(12.0f);
     layout.plot.setHeight(juce::jmax(1.0f, layout.plot.getHeight()));
     return layout;
@@ -107,7 +130,8 @@ EffectGraph::EffectGraph(
     const auto compactEqualizer = type == ModuleType::equalizer;
     const auto compactDelay = type == ModuleType::delay;
     const auto compactTuner = type == ModuleType::guitarTuner;
-    const auto compactEnvelope = type == ModuleType::envelopeModulator;
+    const auto compactEnvelope = type == ModuleType::envelopeModulator
+        || type == ModuleType::envelopeConvolution;
     const auto compactAssets = isCompactAssetLibrary();
     setWantsKeyboardFocus(
         compactCompressor || compactEqualizer || compactDelay || compactTuner
@@ -219,6 +243,17 @@ EffectGraph::EffectGraph(
         addAndMakeVisible(compactNamNewestSort);
         compactNamNewestSort.setVisible(isCompactNamLibrary());
     }
+    if (type == ModuleType::envelopeConvolution)
+    {
+        setTitle("Envelope convolution graph and IR library");
+        setDescription(
+            "Playing level controls wet percentage; dry is the complementary percentage.");
+        setHelpText(
+            "Drag QUIET or LOUD horizontally for dBFS and vertically for wet blend. "
+            "REVERSE swaps blends. Q/L select a node; arrows adjust it, Shift "
+            "is fine, Home or double-click resets. Click the library to browse; "
+            "type in its filter, use Up/Down and Return to load an IR.");
+    }
     inputSpectrum.fill(-100.0f);
     outputSpectrum.fill(-100.0f);
     inputLevels.fill(-60.0f);
@@ -243,7 +278,7 @@ void EffectGraph::resized()
 {
     if (isCompactAssetLibrary())
     {
-        auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
+        auto area = compactAssetLibraryArea();
         area.removeFromTop(compactAssetHeaderHeight);
         auto searchRow = area.removeFromTop(compactAssetSearchHeight);
         compactNamFavoriteFilter.setBounds(
@@ -266,7 +301,17 @@ bool EffectGraph::isCompactAssetLibrary() const
 {
     return isCompactNamLibrary()
         || type == ModuleType::convolutionReverb
+        || type == ModuleType::envelopeConvolution
         || type == ModuleType::guitarCabinet;
+}
+
+juce::Rectangle<float> EffectGraph::compactAssetLibraryArea() const
+{
+    auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
+    if (type == ModuleType::envelopeConvolution)
+        area.removeFromTop(
+            envelopeConvolutionFieldHeight(getLocalBounds().toFloat()) + 4.0f);
+    return area;
 }
 
 int EffectGraph::compactAssetCount() const
@@ -279,7 +324,7 @@ int EffectGraph::compactAssetCount() const
 int EffectGraph::compactAssetVisibleRowCount() const
 {
     const auto height =
-        getLocalBounds().toFloat().reduced(8.0f, 3.0f).getHeight()
+        compactAssetLibraryArea().getHeight()
         - compactAssetHeaderHeight - compactAssetSearchHeight
         - compactAssetSearchGap;
     return juce::jmax(
@@ -490,7 +535,7 @@ void EffectGraph::scrollCompactAssetLibrary(int rows)
 
 int EffectGraph::compactAssetAt(juce::Point<float> position) const
 {
-    auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
+    auto area = compactAssetLibraryArea();
     area.removeFromTop(
         compactAssetHeaderHeight + compactAssetSearchHeight
         + compactAssetSearchGap);
@@ -689,28 +734,36 @@ juce::String EffectGraph::compactAssetDisplayName(int index) const
 
 juce::Rectangle<float> EffectGraph::compactEnvelopePlotArea() const
 {
+    if (type == ModuleType::envelopeConvolution)
+        return envelopeConvolutionLayout(getLocalBounds().toFloat()).plot;
     return envelopeModulatorLayout(getLocalBounds().toFloat()).plot;
 }
 
 juce::Point<float> EffectGraph::compactEnvelopeNode(int node) const
 {
     const auto plot = compactEnvelopePlotArea();
+    const auto firstLevel = type == ModuleType::envelopeConvolution ? 2 : 3;
+    const auto firstBlend = type == ModuleType::envelopeConvolution ? 0 : 1;
     const auto thresholds = EnvelopeModulatorModule::orderedThresholds(
-        lerp(-72.0f, 0.0f, value(3)), lerp(-72.0f, 0.0f, value(4)));
+        lerp(-72.0f, 0.0f, value(firstLevel)),
+        lerp(-72.0f, 0.0f, value(firstLevel + 1)));
     const auto index = juce::jlimit(0, 1, node);
     return {
         plot.getX() + (thresholds[static_cast<size_t>(index)] + 72.0f)
             / 72.0f * plot.getWidth(),
-        plot.getBottom() - value(1 + index) * plot.getHeight()
+        plot.getBottom() - value(firstBlend + index) * plot.getHeight()
     };
 }
 
 void EffectGraph::setCompactEnvelopeNode(int node, juce::Point<float> point)
 {
     const auto plot = compactEnvelopePlotArea();
+    const auto firstLevel = type == ModuleType::envelopeConvolution ? 2 : 3;
+    const auto firstBlend = type == ModuleType::envelopeConvolution ? 0 : 1;
     const auto index = juce::jlimit(0, 1, node);
     const auto thresholds = EnvelopeModulatorModule::orderedThresholds(
-        lerp(-72.0f, 0.0f, value(3)), lerp(-72.0f, 0.0f, value(4)));
+        lerp(-72.0f, 0.0f, value(firstLevel)),
+        lerp(-72.0f, 0.0f, value(firstLevel + 1)));
     const auto level = juce::jlimit(
         0.0f, 1.0f, (point.x - plot.getX()) / juce::jmax(1.0f, plot.getWidth()));
     const auto other = (thresholds[static_cast<size_t>(1 - index)] + 72.0f)
@@ -718,23 +771,24 @@ void EffectGraph::setCompactEnvelopeNode(int node, juce::Point<float> point)
     const auto constrained = index == 0
         ? juce::jlimit(0.0f, other - 1.0f / 72.0f, level)
         : juce::jlimit(other + 1.0f / 72.0f, 1.0f, level);
-    setValue(3 + index, constrained);
-    setValue(1 + index, juce::jlimit(
+    setValue(firstLevel + index, constrained);
+    setValue(firstBlend + index, juce::jlimit(
         0.0f, 1.0f,
         (plot.getBottom() - point.y) / juce::jmax(1.0f, plot.getHeight())));
     dragReadout = juce::String(index == 0 ? "QUIET  " : "LOUD  ")
-        + formatControlValue(type, 3 + index, value(3 + index)) + " / "
-        + formatControlValue(type, 1 + index, value(1 + index));
+        + formatControlValue(type, firstLevel + index, value(firstLevel + index)) + " / "
+        + formatControlValue(type, firstBlend + index, value(firstBlend + index));
     repaint();
 }
 
 void EffectGraph::reverseCompactEnvelopeSpeeds()
 {
     endGestures();
-    const auto quiet = value(EnvelopeModulatorModule::quietSpeedControl);
-    const auto loud = value(EnvelopeModulatorModule::loudSpeedControl);
-    dragPrimary = EnvelopeModulatorModule::quietSpeedControl;
-    dragSecondary = EnvelopeModulatorModule::loudSpeedControl;
+    const auto first = type == ModuleType::envelopeConvolution ? 0 : 1;
+    const auto quiet = value(first);
+    const auto loud = value(first + 1);
+    dragPrimary = first;
+    dragSecondary = first + 1;
     beginGestures();
     setValue(dragPrimary, loud);
     setValue(dragSecondary, quiet);
@@ -742,9 +796,14 @@ void EffectGraph::reverseCompactEnvelopeSpeeds()
     repaint();
 }
 
-void EffectGraph::paintCompactEnvelopeModulator(juce::Graphics& graphics)
+void EffectGraph::paintCompactEnvelopeMapping(juce::Graphics& graphics)
 {
-    const auto layout = envelopeModulatorLayout(getLocalBounds().toFloat());
+    const auto convolution = type == ModuleType::envelopeConvolution;
+    const auto layout = convolution
+        ? envelopeConvolutionLayout(getLocalBounds().toFloat())
+        : envelopeModulatorLayout(getLocalBounds().toFloat());
+    const auto firstLevel = convolution ? 2 : 3;
+    const auto firstBlend = convolution ? 0 : 1;
     const auto colour = modulePaletteColour(type).brighter(0.18f);
     const auto drawPills = [&](juce::Rectangle<float> row, int control)
     {
@@ -765,8 +824,11 @@ void EffectGraph::paintCompactEnvelopeModulator(juce::Graphics& graphics)
                 juce::Justification::centred, 1, 0.8f);
         }
     };
-    drawPills(layout.modes, EnvelopeModulatorModule::modeControl);
-    drawPills(layout.waveforms, EnvelopeModulatorModule::waveformControl);
+    if (!convolution)
+    {
+        drawPills(layout.modes, EnvelopeModulatorModule::modeControl);
+        drawPills(layout.waveforms, EnvelopeModulatorModule::waveformControl);
+    }
     for (int node = 0; node < 2; ++node)
     {
         auto readout = layout.endpoints
@@ -775,12 +837,14 @@ void EffectGraph::paintCompactEnvelopeModulator(juce::Graphics& graphics)
         graphics.setColour(node == 0 ? inputColour : colour);
         graphics.setFont(juce::FontOptions(7.5f, juce::Font::bold));
         const auto thresholds = EnvelopeModulatorModule::orderedThresholds(
-            lerp(-72.0f, 0.0f, value(3)), lerp(-72.0f, 0.0f, value(4)));
+            lerp(-72.0f, 0.0f, value(firstLevel)),
+            lerp(-72.0f, 0.0f, value(firstLevel + 1)));
         graphics.drawFittedText(
             juce::String(node == 0 ? "QUIET " : "LOUD ")
                 + juce::String(thresholds[static_cast<size_t>(node)], 1)
                 + " dBFS / "
-                + formatControlValue(type, 1 + node, value(1 + node)),
+                + formatControlValue(type, firstBlend + node, value(firstBlend + node))
+                + (convolution ? " WET" : ""),
             readout.toNearestInt(), juce::Justification::centred, 1, 0.75f);
     }
 
@@ -799,17 +863,24 @@ void EffectGraph::paintCompactEnvelopeModulator(juce::Graphics& graphics)
             juce::Rectangle<float>(x - 14.0f, plot.getBottom() + 2.0f, 28.0f, 10.0f),
             juce::Justification::centred);
     }
-    for (const auto rate : { 0.1f, 1.0f, 10.0f, 20.0f })
+    const std::array<float, 4> ticks = convolution
+        ? std::array<float, 4> { 0.0f, 0.5f, 1.0f, -1.0f }
+        : std::array<float, 4> { 0.1f, 1.0f, 10.0f, 20.0f };
+    for (const auto rate : ticks)
     {
+        if (rate < 0.0f)
+            continue;
         if (rate == 10.0f && plot.getHeight() < 85.0f)
             continue;
-        const auto proportion = std::log(rate / 0.1f) / std::log(200.0f);
+        const auto proportion = convolution ? rate
+            : std::log(rate / 0.1f) / std::log(200.0f);
         const auto y = plot.getBottom() - proportion * plot.getHeight();
         graphics.setColour(juce::Colours::white.withAlpha(0.08f));
         graphics.drawHorizontalLine(juce::roundToInt(y), plot.getX(), plot.getRight());
         graphics.setColour(juce::Colours::white.withAlpha(0.50f));
         graphics.drawText(
-            juce::String(rate, rate < 1.0f ? 1 : 0),
+            convolution ? juce::String(rate * 100.0f, 0) + "%"
+                        : juce::String(rate, rate < 1.0f ? 1 : 0),
             juce::Rectangle<float>(plot.getX() - 25.0f, y - 5.0f, 21.0f, 10.0f),
             juce::Justification::centredRight);
     }
@@ -827,16 +898,21 @@ void EffectGraph::paintCompactEnvelopeModulator(juce::Graphics& graphics)
     const auto valid = !processor.isSlotBypassed(slot)
         && processor.readContinuousTelemetry(slot, snapshot)
         && snapshot.sequence != 0
-        && snapshot.valueCount >= EnvelopeModulatorModule::telemetryValueCount;
+        && snapshot.valueCount >= (convolution
+            ? static_cast<int>(EnvelopeConvolutionModule::telemetryValueCount)
+            : static_cast<int>(EnvelopeModulatorModule::telemetryValueCount));
     if (valid)
     {
         const auto level = snapshot.values[EnvelopeModulatorModule::inputLevelDb];
-        const auto rate = snapshot.values[EnvelopeModulatorModule::currentRateHz];
+        const auto rate = snapshot.values[convolution
+            ? static_cast<int>(EnvelopeConvolutionModule::currentBlend)
+            : static_cast<int>(EnvelopeModulatorModule::currentRateHz)];
         const auto x = plot.getX()
             + juce::jlimit(0.0f, 1.0f, (level + 72.0f) / 72.0f) * plot.getWidth();
         const auto y = plot.getBottom() - juce::jlimit(
-            0.0f, 1.0f, std::log(juce::jmax(0.1f, rate) / 0.1f)
-                / std::log(200.0f)) * plot.getHeight();
+            0.0f, 1.0f, convolution ? rate
+                : std::log(juce::jmax(0.1f, rate) / 0.1f)
+                    / std::log(200.0f)) * plot.getHeight();
         graphics.setColour(outputColour.withAlpha(0.3f));
         graphics.drawVerticalLine(juce::roundToInt(x), plot.getY(), plot.getBottom());
         graphics.setColour(outputColour);
@@ -851,7 +927,41 @@ void EffectGraph::paintCompactEnvelopeModulator(juce::Graphics& graphics)
         if (hasKeyboardFocus(false) && compactEnvelopeSelection == node)
             graphics.drawEllipse(point.x - 8.0f, point.y - 8.0f, 16.0f, 16.0f, 1.0f);
     }
-    if (valid && snapshot.historyCount > 1 && snapshot.historyValueCount >= 3)
+    if (valid && convolution && snapshot.historyCount > 1)
+    {
+        auto historyArea = layout.motion;
+        const auto tailReadout = historyArea.removeFromRight(90.0f);
+        for (int history = 0; history < 3; ++history)
+        {
+            juce::Path trace;
+            for (std::uint32_t index = 0; index < snapshot.historyCount; ++index)
+            {
+                const auto raw = continuousTelemetryHistoryValue(
+                    snapshot, static_cast<std::uint32_t>(history), index);
+                const auto proportion = history == EnvelopeConvolutionModule::blendHistory
+                    ? raw : juce::jlimit(0.0f, 1.0f, (raw + 72.0f) / 72.0f);
+                const auto x = historyArea.getX() + historyArea.getWidth()
+                    * static_cast<float>(index)
+                    / static_cast<float>(continuousTelemetryHistoryCapacity - 1);
+                const auto y = historyArea.getBottom() - proportion * historyArea.getHeight();
+                if (index == 0)
+                    trace.startNewSubPath(x, y);
+                else
+                    trace.lineTo(x, y);
+            }
+            graphics.setColour((history == 0 ? inputColour
+                : history == 1 ? colour : outputColour).withAlpha(0.65f));
+            graphics.strokePath(trace, juce::PathStrokeType(1.0f));
+        }
+        graphics.setColour(outputColour);
+        graphics.setFont(juce::FontOptions(7.5f));
+        graphics.drawFittedText(
+            "TAIL " + juce::String(snapshot.values[EnvelopeConvolutionModule::wetLevelDb], 0)
+                + " dBFS", tailReadout.toNearestInt(),
+            juce::Justification::centredRight, 1);
+    }
+    if (valid && !convolution && snapshot.historyCount > 1
+        && snapshot.historyValueCount >= 3)
     {
         juce::Path motion;
         for (std::uint32_t index = 0; index < snapshot.historyCount; ++index)
@@ -874,7 +984,14 @@ void EffectGraph::paintCompactEnvelopeModulator(juce::Graphics& graphics)
     graphics.setColour(juce::Colours::white.withAlpha(0.8f));
     graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
     graphics.drawFittedText(
-        valid
+        valid && convolution
+            ? snapshot.values[EnvelopeConvolutionModule::impulseReady] < 0.5f
+                ? "NO IR - DRY"
+                : juce::String(snapshot.values[EnvelopeConvolutionModule::inputLevelDb], 1)
+                    + " dBFS  /  "
+                    + juce::String(snapshot.values[EnvelopeConvolutionModule::currentBlend] * 100.0f, 0)
+                    + "% WET"
+            : valid
             ? juce::String(snapshot.values[EnvelopeModulatorModule::inputLevelDb], 1)
                 + " dBFS  /  "
                 + juce::String(snapshot.values[EnvelopeModulatorModule::currentRateHz], 2)
@@ -891,9 +1008,15 @@ void EffectGraph::paintCompactEnvelopeModulator(juce::Graphics& graphics)
 void EffectGraph::paintCompact(
     juce::Graphics& graphics, juce::Rectangle<float> area)
 {
+    if (type == ModuleType::envelopeConvolution)
+    {
+        paintCompactEnvelopeMapping(graphics);
+        paintCompactAssetLibrary(graphics, compactAssetLibraryArea());
+        return;
+    }
     if (type == ModuleType::envelopeModulator)
     {
-        paintCompactEnvelopeModulator(graphics);
+        paintCompactEnvelopeMapping(graphics);
         return;
     }
     if (isCompactAssetLibrary())
@@ -3011,6 +3134,32 @@ void EffectGraph::paint(juce::Graphics& graphics)
 
 void EffectGraph::mouseDown(const juce::MouseEvent& event)
 {
+    if (type == ModuleType::envelopeConvolution)
+    {
+        const auto layout = envelopeConvolutionLayout(getLocalBounds().toFloat());
+        if (layout.reverse.contains(event.position))
+        {
+            compactEnvelopeKeyboard = true;
+            grabKeyboardFocus();
+            reverseCompactEnvelopeSpeeds();
+            return;
+        }
+        if (layout.plot.expanded(10.0f).contains(event.position))
+        {
+            compactEnvelopeKeyboard = true;
+            grabKeyboardFocus();
+            compactEnvelopeSelection =
+                event.position.getDistanceFrom(compactEnvelopeNode(0))
+                    <= event.position.getDistanceFrom(compactEnvelopeNode(1)) ? 0 : 1;
+            dragPrimary = compactEnvelopeSelection;
+            dragSecondary = 2 + compactEnvelopeSelection;
+            beginGestures();
+            if (event.getNumberOfClicks() == 1)
+                setCompactEnvelopeNode(compactEnvelopeSelection, event.position);
+            return;
+        }
+        compactEnvelopeKeyboard = false;
+    }
     if (type == ModuleType::envelopeModulator)
     {
         grabKeyboardFocus();
@@ -3177,7 +3326,8 @@ void EffectGraph::mouseDown(const juce::MouseEvent& event)
 
 void EffectGraph::mouseDrag(const juce::MouseEvent& event)
 {
-    if (type == ModuleType::envelopeModulator && dragPrimary >= 0)
+    if ((type == ModuleType::envelopeModulator
+         || type == ModuleType::envelopeConvolution) && dragPrimary >= 0)
         setCompactEnvelopeNode(compactEnvelopeSelection, event.position);
     else if (type == ModuleType::compressor && dragPrimary == 0)
         setCompactCompressorThresholdFromY(event.position.y);
@@ -3203,14 +3353,15 @@ void EffectGraph::mouseUp(const juce::MouseEvent&)
 
 void EffectGraph::mouseDoubleClick(const juce::MouseEvent& event)
 {
-    if (type == ModuleType::envelopeModulator
+    if ((type == ModuleType::envelopeModulator
+         || type == ModuleType::envelopeConvolution)
         && compactEnvelopePlotArea().expanded(10.0f).contains(event.position))
     {
         endGestures();
         const auto defaults = moduleDefaults(type);
-        dragPrimary = EnvelopeModulatorModule::quietSpeedControl
+        dragPrimary = (type == ModuleType::envelopeConvolution ? 0 : 1)
             + compactEnvelopeSelection;
-        dragSecondary = EnvelopeModulatorModule::quietLevelControl
+        dragSecondary = (type == ModuleType::envelopeConvolution ? 2 : 3)
             + compactEnvelopeSelection;
         beginGestures();
         setValue(dragPrimary, defaults[static_cast<size_t>(dragPrimary)]);
@@ -3265,7 +3416,8 @@ void EffectGraph::mouseDoubleClick(const juce::MouseEvent& event)
 void EffectGraph::mouseWheelMove(
     const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
 {
-    if (isCompactAssetLibrary())
+    if (isCompactAssetLibrary()
+        && compactAssetLibraryArea().contains(event.position))
     {
         const auto movement =
             wheel.deltaY != 0.0f ? wheel.deltaY : wheel.deltaX;
@@ -3301,7 +3453,9 @@ void EffectGraph::mouseWheelMove(
 
 bool EffectGraph::keyPressed(const juce::KeyPress& key)
 {
-    if (type == ModuleType::envelopeModulator)
+    if (type == ModuleType::envelopeModulator
+        || (type == ModuleType::envelopeConvolution && compactEnvelopeKeyboard
+            && !compactAssetSearch.hasKeyboardFocus(true)))
     {
         if (key.getModifiers().isCommandDown()
             || key.getModifiers().isCtrlDown()
@@ -3322,8 +3476,9 @@ bool EffectGraph::keyPressed(const juce::KeyPress& key)
             reverseCompactEnvelopeSpeeds();
             return true;
         }
-        if (character == 'm' || character == 'M'
-            || character == 'w' || character == 'W')
+        if (type == ModuleType::envelopeModulator
+            && (character == 'm' || character == 'M'
+                || character == 'w' || character == 'W'))
         {
             dragPrimary = character == 'm' || character == 'M'
                 ? EnvelopeModulatorModule::modeControl
@@ -3348,9 +3503,9 @@ bool EffectGraph::keyPressed(const juce::KeyPress& key)
             point.y += plot.getHeight() * step;
         else if (key.getKeyCode() != juce::KeyPress::homeKey)
             return false;
-        dragPrimary = EnvelopeModulatorModule::quietSpeedControl
+        dragPrimary = (type == ModuleType::envelopeConvolution ? 0 : 1)
             + compactEnvelopeSelection;
-        dragSecondary = EnvelopeModulatorModule::quietLevelControl
+        dragSecondary = (type == ModuleType::envelopeConvolution ? 2 : 3)
             + compactEnvelopeSelection;
         beginGestures();
         if (key.getKeyCode() == juce::KeyPress::homeKey)
@@ -3553,7 +3708,8 @@ void EffectGraph::setVisualizationActive(bool active)
     const auto changed = visualizationActive != active;
     visualizationActive = active;
     const auto needsCapture =
-        active && !isCompactAssetLibrary();
+        active && (!isCompactAssetLibrary()
+                   || type == ModuleType::envelopeConvolution);
     processor.getVisualizationData().setSlotActive(slot, needsCapture);
     if (changed)
         repaint();
@@ -3612,7 +3768,7 @@ void EffectGraph::timerCallback()
         repaint();
     }
     if (visualizationActive
-        && !isCompactAssetLibrary()
+        && (!isCompactAssetLibrary() || type == ModuleType::envelopeConvolution)
         && !processor.getVisualizationData().isSlotActive(slot))
         processor.getVisualizationData().setSlotActive(slot, true);
     refreshVisualization();

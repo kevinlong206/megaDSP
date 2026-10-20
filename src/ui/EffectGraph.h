@@ -135,6 +135,7 @@ private:
     void scrollCompactAssetLibrary(int rows);
     bool isCompactAssetLibrary() const;
     bool isCompactNamLibrary() const;
+    juce::Rectangle<float> compactAssetLibraryArea() const;
     juce::String compactAssetLoadedPath() const;
     juce::String compactAssetDisplayName(int index) const;
     juce::Rectangle<float> compactCompressorLevelArea() const;
@@ -156,7 +157,7 @@ private:
     juce::Rectangle<float> compactDelayStereoArea() const;
     juce::Rectangle<float> compactDelayTimelineArea() const;
     void setCompactDelayFromPoint(juce::Point<float>);
-    void paintCompactEnvelopeModulator(juce::Graphics&);
+    void paintCompactEnvelopeMapping(juce::Graphics&);
     juce::Rectangle<float> compactEnvelopePlotArea() const;
     juce::Point<float> compactEnvelopeNode(int node) const;
     void setCompactEnvelopeNode(int node, juce::Point<float>);
@@ -201,6 +202,7 @@ private:
     int compactAssetFirstVisible = 0;
     int compactAssetSelected = -1;
     bool compactAssetLoadPending = false;
+    bool compactEnvelopeKeyboard = true;
     bool bypassVisualsSuspended = false;
     bool visualizationActive = false;
 };
