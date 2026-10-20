@@ -4258,7 +4258,8 @@ void MegaDSPAudioProcessor::moveSlot(int source, int destination)
         return;
     getRack().moveSlot(source, destination);
     publishSnapshotToParameters(getSelectedSnapshot());
-    finishTopologyMutation(false, true, true);
+    getRack().visualizationData().clear();
+    finishTopologyMutation(false, false, true);
 }
 
 void MegaDSPAudioProcessor::clearSlot(int slot)

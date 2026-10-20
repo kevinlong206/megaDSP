@@ -415,6 +415,30 @@ public:
         capabilityRack.clearSlot(1);
         capabilityRack.synchronizeModules();
 
+        beginTest("Reordering preserves the prepared convolution and its pending tail");
+        const auto* preparedConvolution = capabilityRack.activeModuleInstance(0);
+        rackConvolutionBlock.clear();
+        rackConvolutionBlock.setSample(0, 0, 1.0f);
+        rackConvolutionBlock.setSample(1, 0, 1.0f);
+        capabilityRack.process(rackConvolutionBlock, nullptr, 120.0);
+        capabilityRack.moveSlot(0, 1);
+        expect(!capabilityRack.synchronizeModules(),
+               "A move must not rebuild the prepared module.");
+        expect(capabilityRack.activeModuleInstance(1) == preparedConvolution);
+        auto movedWetMagnitude = 0.0f;
+        for (int block = 0; block < delayedWetBlocks; ++block)
+        {
+            rackConvolutionBlock.clear();
+            capabilityRack.process(rackConvolutionBlock, nullptr, 120.0);
+            movedWetMagnitude = juce::jmax(
+                movedWetMagnitude,
+                rackConvolutionBlock.getMagnitude(0, rackConvolutionBlock.getNumSamples()));
+        }
+        expect(movedWetMagnitude > 0.01f,
+               "The already queued wet tail must survive the move.");
+        capabilityRack.moveSlot(1, 0);
+        expect(!capabilityRack.synchronizeModules());
+
         capabilityRack.rebuildModules();
         expectEquals(capabilityRack.impulseResponseName(0),
                      rackImpulseFile.getFileName());

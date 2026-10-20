@@ -952,6 +952,18 @@ void EffectRack::moveSlot(int source, int destination)
             .namCabinetStateStored = movingNamCabinetStateStored;
     }
     writeNam(destination, movingNam);
+
+    const auto step = source < destination ? 1 : -1;
+    for (int index = source; index != destination; index += step)
+    {
+        auto& first = slots[static_cast<size_t>(index)];
+        auto& second = slots[static_cast<size_t>(index + step)];
+        std::swap(first, second);
+        // Host bindings belong to fixed slots; prepared DSP follows the module.
+        std::swap(first.type, second.type);
+        std::swap(first.bypass, second.bypass);
+        std::swap(first.controls, second.controls);
+    }
 }
 
 void EffectRack::clearSlot(int slot)

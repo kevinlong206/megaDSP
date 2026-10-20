@@ -1955,6 +1955,201 @@ public:
     }
 };
 
+class NamReorderTests final : public juce::UnitTest
+{
+public:
+    NamReorderTests() : juce::UnitTest("NAM reordering", "megaDSP") {}
+
+    void runTest() override
+    {
+        const juce::ScopedJuceInitialiser_GUI gui;
+        beginTest("Preparing isolated NAM and cabinet fixtures");
+        const auto root = juce::File::getSpecialLocation(
+            juce::File::tempDirectory).getNonexistentChildFile(
+                "megaDSP-nam-reordering", {}, true);
+        expect(root.createDirectory().wasOk());
+        const auto model = root.getChildFile("model.nam");
+        expect(model.replaceWithText(linearNamJson()));
+        const auto cabinet = writeImpulse(root.getChildFile("cabinet.wav"), 24);
+        const std::array<float, 5> gains { 0.35f, 0.45f, 0.55f, 0.60f, 0.40f };
+
+        for (const auto enabled : { false, true })
+        {
+            beginTest(enabled
+                ? "Moving across NAM preserves its enabled cabinet, controls, and audio"
+                : "Moving across NAM retains a disabled cabinet for later use");
+            MegaDSPAudioProcessor processor;
+            processor.prepareToPlay(48000.0, 256);
+            processor.addModule(ModuleType::guitarTuner);
+            processor.addModule(ModuleType::neuralAmpModeler);
+            processor.addModule(ModuleType::envelopeModulator);
+            expect(processor.loadNamModel(1, model).wasOk());
+            expect(processor.loadNamCabinetAsync(1, cabinet).wasOk());
+            processor.finishNamModelLoadForTesting();
+            expect(processor.setNamCabinetEnabled(1, enabled).wasOk());
+            for (int control = 0; control < 5; ++control)
+                processor.parameters.getParameter(controlParameterId(1, control))
+                    ->setValueNotifyingHost(gains[static_cast<size_t>(control)]);
+            processor.parameters.getParameter(controlParameterId(
+                2, EnvelopeModulatorModule::mixControl))->setValueNotifyingHost(0.0f);
+
+            const auto* nam = processor.getRack().activeModuleInstance(1);
+            const auto* envelope = processor.getRack().activeModuleInstance(2);
+            const auto* tuner = processor.getRack().activeModuleInstance(0);
+            const auto levelMatch = processor.namLevelMatchDb(1);
+            const auto baseline = render(processor, 24);
+            expect(baseline > 0.00001f);
+            struct Move { int source, destination, namSlot; };
+            for (const auto move : {
+                     Move { 2, 1, 2 }, Move { 1, 2, 1 },
+                     Move { 2, 0, 2 }, Move { 0, 2, 1 } })
+            {
+                processor.moveSlot(move.source, move.destination);
+                processor.flushPendingUpdatesForTesting();
+                const auto& rack = processor.getRack();
+                expect(rack.activeModuleInstance(move.namSlot) == nam,
+                       "Reordering must move the prepared NAM, not recreate it.");
+                expect(rack.hasNamCabinet(move.namSlot),
+                       "Reordering dropped the prepared cabinet.");
+                expect(processor.isNamCabinetEnabled(move.namSlot) == enabled);
+                expectEquals(processor.namModelPath(move.namSlot), model.getFullPathName());
+                expectEquals(processor.namCabinetPath(move.namSlot), cabinet.getFullPathName());
+                expectWithinAbsoluteError(
+                    processor.namLevelMatchDb(move.namSlot), levelMatch, 0.0001f);
+                for (int control = 0; control < 5; ++control)
+                    expectWithinAbsoluteError(
+                        processor.parameters.getParameter(
+                            controlParameterId(move.namSlot, control))->getValue(),
+                        gains[static_cast<size_t>(control)], 0.0001f);
+                for (int slot = 0; slot < 3; ++slot)
+                {
+                    if (rack.moduleType(slot) == ModuleType::envelopeModulator)
+                        expect(rack.activeModuleInstance(slot) == envelope);
+                    if (rack.moduleType(slot) == ModuleType::guitarTuner)
+                        expect(rack.activeModuleInstance(slot) == tuner);
+                }
+                expectWithinAbsoluteError(render(processor, 1), baseline,
+                                          baseline * 0.005f + 0.000001f,
+                                          "The first block after a move must retain its level.");
+                expectWithinAbsoluteError(render(processor, 24), baseline,
+                                          baseline * 0.005f + 0.000001f,
+                                          "Reordering a dry modulation path must not change NAM level.");
+            }
+
+            beginTest("Reorder undo, redo, and project restore retain the cabinet");
+            expect(processor.undo());
+            expect(processor.getRack().hasNamCabinet(2));
+            expect(processor.isNamCabinetEnabled(2) == enabled);
+            expectEquals(processor.namCabinetPath(2), cabinet.getFullPathName());
+            expect(processor.redo());
+            expect(processor.getRack().hasNamCabinet(1));
+            expect(processor.isNamCabinetEnabled(1) == enabled);
+            expectEquals(processor.namCabinetPath(1), cabinet.getFullPathName());
+            juce::MemoryBlock saved;
+            processor.getStateInformation(saved);
+            MegaDSPAudioProcessor restored;
+            restored.prepareToPlay(48000.0, 256);
+            restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+            expect(restored.getRack().hasNamCabinet(1));
+            expect(restored.isNamCabinetEnabled(1) == enabled);
+            expectEquals(restored.namCabinetPath(1), cabinet.getFullPathName());
+            expectWithinAbsoluteError(render(restored, 24), baseline,
+                                      baseline * 0.005f + 0.000001f);
+        }
+
+        beginTest("Two NAM instances keep independent cabinets and controls when swapped");
+        {
+            const auto secondCabinet = writeImpulse(root.getChildFile("second.wav"), 48);
+            MegaDSPAudioProcessor processor;
+            processor.prepareToPlay(48000.0, 256);
+            for (int slot = 0; slot < 2; ++slot)
+            {
+                processor.addModule(ModuleType::neuralAmpModeler);
+                expect(processor.loadNamModel(slot, model).wasOk());
+                expect(processor.loadNamCabinetAsync(
+                    slot, slot == 0 ? cabinet : secondCabinet).wasOk());
+                processor.finishNamModelLoadForTesting();
+                expect(processor.setNamCabinetEnabled(slot, slot == 1).wasOk());
+                processor.parameters.getParameter(controlParameterId(slot, 0))
+                    ->setValueNotifyingHost(slot == 0 ? 0.3f : 0.7f);
+            }
+            const auto* first = processor.getRack().activeModuleInstance(0);
+            const auto* second = processor.getRack().activeModuleInstance(1);
+            const auto baseline = render(processor, 24);
+            for (const auto source : { 0, 1 })
+            {
+                processor.moveSlot(source, 1 - source);
+                expect(processor.getRack().activeModuleInstance(1 - source) == first);
+                expect(processor.getRack().activeModuleInstance(source) == second);
+                expect(processor.getRack().hasNamCabinet(1 - source));
+                expect(processor.getRack().hasNamCabinet(source));
+                expect(!processor.isNamCabinetEnabled(1 - source));
+                expect(processor.isNamCabinetEnabled(source));
+                expectEquals(processor.namCabinetPath(1 - source), cabinet.getFullPathName());
+                expectEquals(processor.namCabinetPath(source), secondCabinet.getFullPathName());
+                expectWithinAbsoluteError(processor.parameters.getParameter(
+                    controlParameterId(1 - source, 0))->getValue(), 0.3f, 0.0001f);
+                expectWithinAbsoluteError(processor.parameters.getParameter(
+                    controlParameterId(source, 0))->getValue(), 0.7f, 0.0001f);
+                expectWithinAbsoluteError(render(processor, 24), baseline,
+                                          baseline * 0.005f + 0.000001f);
+            }
+        }
+
+        beginTest("Prepared NAM and cabinet move without their source files");
+        {
+            MegaDSPAudioProcessor processor;
+            processor.prepareToPlay(48000.0, 256);
+            processor.addModule(ModuleType::neuralAmpModeler);
+            processor.addModule(ModuleType::envelopeModulator);
+            expect(processor.loadNamModel(0, model).wasOk());
+            expect(processor.loadNamCabinetAsync(0, cabinet).wasOk());
+            processor.finishNamModelLoadForTesting();
+            expect(processor.setNamCabinetEnabled(0, true).wasOk());
+            processor.parameters.getParameter(controlParameterId(
+                1, EnvelopeModulatorModule::mixControl))->setValueNotifyingHost(0.0f);
+            const auto* nam = processor.getRack().activeModuleInstance(0);
+            const auto baseline = render(processor, 24);
+            expect(model.deleteFile());
+            expect(cabinet.deleteFile());
+            for (const auto source : { 1, 0, 1, 0 })
+            {
+                processor.moveSlot(source, 1 - source);
+                expect(processor.getRack().activeModuleInstance(source) == nam);
+                expect(processor.getRack().hasNamCabinet(source));
+                expect(processor.isNamCabinetEnabled(source));
+                expectWithinAbsoluteError(render(processor, 1), baseline,
+                                          baseline * 0.005f + 0.000001f);
+            }
+        }
+        expect(root.deleteRecursively());
+    }
+
+private:
+    float render(MegaDSPAudioProcessor& processor, int blocks)
+    {
+        juce::AudioBuffer<float> buffer(2, 256);
+        juce::MidiBuffer midi;
+        for (int block = 0; block < blocks; ++block)
+        {
+            juce::FloatVectorOperations::fill(buffer.getWritePointer(0), 0.2f, 256);
+            juce::FloatVectorOperations::fill(buffer.getWritePointer(1), 0.08f, 256);
+            processor.processBlock(buffer, midi);
+        }
+        bool finite = true;
+        for (int channel = 0; channel < 2; ++channel)
+            for (int sample = 0; sample < 256; ++sample)
+                finite = finite && std::isfinite(buffer.getSample(channel, sample));
+        expect(finite);
+        const auto rms = buffer.getRMSLevel(0, 0, 256);
+        const auto expectedRight = rms * 0.4f;
+        expectWithinAbsoluteError(buffer.getRMSLevel(1, 0, 256),
+                                  expectedRight, expectedRight * 0.001f + 0.000001f);
+        return rms;
+    }
+};
+
+NamReorderTests namReorderTests;
 NamRegistryTests namRegistryTests;
 NamDspTests namDspTests;
 LibraryRebuildTests libraryRebuildTests;

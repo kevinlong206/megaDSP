@@ -189,6 +189,9 @@ macOS or **Ctrl-Z** / **Ctrl-Shift-Z** elsewhere. Ordinary knob, graph, choice,
 toggle, and bypass gestures are single actions. Module insertion, removal,
 reordering and reset; preset and snapshot operations; theme and instance-name
 changes; and NAM/IR loading or clearing restore as atomic full-state actions.
+Reordering moves the prepared DSP with its controls, loaded assets, bypass
+transition, and processing history; it does not reload NAM models or cabinet
+IRs, reset gain smoothers, or discard effect tails.
 Host project-state restoration starts a fresh history, and MIDI/automation
 changes made on the audio thread are intentionally excluded from the internal
 history.
