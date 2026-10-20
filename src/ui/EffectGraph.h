@@ -42,6 +42,22 @@ public:
         int band, juce::Point<float>);
     void setCompactEqualizerOutputFromYForTesting(float);
     void setCompactDelayFromPointForTesting(juce::Point<float>);
+    juce::Rectangle<float> compactEnvelopePlotAreaForTesting() const
+    {
+        return compactEnvelopePlotArea();
+    }
+    juce::Point<float> compactEnvelopeNodeForTesting(int node) const
+    {
+        return compactEnvelopeNode(node);
+    }
+    void setCompactEnvelopeNodeForTesting(int node, juce::Point<float> point)
+    {
+        setCompactEnvelopeNode(node, point);
+    }
+    void reverseCompactEnvelopeSpeedsForTesting()
+    {
+        reverseCompactEnvelopeSpeeds();
+    }
     juce::Rectangle<float> compactEqualizerPlotAreaForTesting() const
     {
         return compactEqualizerPlotArea();
@@ -140,6 +156,11 @@ private:
     juce::Rectangle<float> compactDelayStereoArea() const;
     juce::Rectangle<float> compactDelayTimelineArea() const;
     void setCompactDelayFromPoint(juce::Point<float>);
+    void paintCompactEnvelopeModulator(juce::Graphics&);
+    juce::Rectangle<float> compactEnvelopePlotArea() const;
+    juce::Point<float> compactEnvelopeNode(int node) const;
+    void setCompactEnvelopeNode(int node, juce::Point<float>);
+    void reverseCompactEnvelopeSpeeds();
     void timerCallback() override;
     void refreshVisualization();
     void calculateSpectrum(
@@ -167,6 +188,7 @@ private:
     int dragPrimary = -1;
     int dragSecondary = -1;
     int compactEqualizerBand = -1;
+    int compactEnvelopeSelection = 0;
     uint64_t lastInputHistoryPosition = 0;
     uint64_t lastOutputHistoryPosition = 0;
     juce::String dragReadout;

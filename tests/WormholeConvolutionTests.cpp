@@ -56,7 +56,7 @@ public:
             static_cast<int>(ModuleType::velvetDrive), 54);
         expectEquals(
             static_cast<int>(ModuleType::wormholeConvolution), 55);
-        expectEquals(moduleTypeCount, 60);
+        expectEquals(moduleTypeCount, 61);
         const auto& definition =
             moduleDefinition(ModuleType::wormholeConvolution);
         expect(

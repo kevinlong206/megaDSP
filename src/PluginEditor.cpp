@@ -2205,6 +2205,9 @@ public:
                 continue;
             if (type == megadsp::ModuleType::equalizer)
                 continue;
+            if (type == megadsp::ModuleType::envelopeModulator
+                && (control <= 4 || control == 9))
+                continue;
             const auto& metadata = megadsp::controlMetadata(type, control);
             if (metadata.essential)
             {
@@ -2542,9 +2545,14 @@ public:
             const auto graphOwnedEqualizerControl =
                 type == megadsp::ModuleType::equalizer
                 && controlVisible[index] && !controlPresented[index];
+            const auto graphOwnedEnvelopeControl =
+                type == megadsp::ModuleType::envelopeModulator
+                && (control <= 4 || control == 9)
+                && controlVisible[index] && !controlPresented[index];
             if (unavailableCompressorDetector
                 || graphOwnedCompressorThreshold
-                || graphOwnedEqualizerControl)
+                || graphOwnedEqualizerControl
+                || graphOwnedEnvelopeControl)
                 continue;
             if (controlVisible[index] != controlPresented[index])
                 return false;

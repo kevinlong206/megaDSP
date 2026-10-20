@@ -1432,6 +1432,84 @@ public:
                 gainReduction->release();
         }
 
+        beginTest("Envelope Modulator graph edits a reversible level-to-speed window");
+        {
+            using Module = megadsp::EnvelopeModulatorModule;
+            MegaDSPAudioProcessor modulationProcessor;
+            modulationProcessor.prepareToPlay(48000.0, 256);
+            modulationProcessor.addModule(megadsp::ModuleType::envelopeModulator);
+            expect(dynamic_cast<const Module*>(
+                modulationProcessor.getRack().activeModuleInstance(0)) != nullptr);
+            megadsp::ui::EffectGraph graph(
+                modulationProcessor, 0, megadsp::ModuleType::envelopeModulator);
+            for (const auto width : { 280, 420, 620 })
+            {
+                graph.setBounds(0, 0, width, 190);
+                const auto plot = graph.compactEnvelopePlotAreaForTesting();
+                graph.setCompactEnvelopeNodeForTesting(
+                    0, { plot.getX() + plot.getWidth() * 0.25f,
+                         plot.getBottom() - plot.getHeight() * 0.3f });
+                graph.setCompactEnvelopeNodeForTesting(
+                    1, { plot.getX() + plot.getWidth() * 0.8f,
+                         plot.getBottom() - plot.getHeight() * 0.85f });
+                expectWithinAbsoluteError(graph.value(Module::quietLevelControl), 0.25f, 0.0001f);
+                expectWithinAbsoluteError(graph.value(Module::loudLevelControl), 0.8f, 0.0001f);
+                expectWithinAbsoluteError(graph.value(Module::quietSpeedControl), 0.3f, 0.0001f);
+                expectWithinAbsoluteError(graph.value(Module::loudSpeedControl), 0.85f, 0.0001f);
+                graph.reverseCompactEnvelopeSpeedsForTesting();
+                expectWithinAbsoluteError(graph.value(Module::quietSpeedControl), 0.85f, 0.0001f);
+                expectWithinAbsoluteError(graph.value(Module::loudSpeedControl), 0.3f, 0.0001f);
+                expect(modulationProcessor.undo());
+                expectWithinAbsoluteError(graph.value(Module::quietSpeedControl), 0.3f, 0.0001f);
+                expectWithinAbsoluteError(graph.value(Module::loudSpeedControl), 0.85f, 0.0001f);
+            }
+            graph.setValue(Module::tremoloDepthControl, 0.37f);
+            graph.setValue(Module::pitchDepthControl, 0.42f);
+            expect(graph.keyPressed(juce::KeyPress('m')));
+            expect(graph.keyPressed(juce::KeyPress('m')));
+            expectEquals(megadsp::discreteIndex(graph.value(Module::modeControl), 3), 2);
+            expectWithinAbsoluteError(graph.value(Module::tremoloDepthControl), 0.37f, 0.0001f);
+            expectWithinAbsoluteError(graph.value(Module::pitchDepthControl), 0.42f, 0.0001f);
+            expect(!graph.keyPressed(juce::KeyPress(
+                'z', juce::ModifierKeys::commandModifier, 'z')));
+            const auto defaults = megadsp::moduleDefaults(megadsp::ModuleType::envelopeModulator);
+            expect(graph.keyPressed(juce::KeyPress(juce::KeyPress::homeKey)));
+            expectWithinAbsoluteError(
+                graph.value(Module::quietSpeedControl), defaults[Module::quietSpeedControl], 0.0001f);
+            expectWithinAbsoluteError(
+                graph.value(Module::quietLevelControl), defaults[Module::quietLevelControl], 0.0001f);
+            graph.setCompactEnvelopeNodeForTesting(
+                0, graph.compactEnvelopePlotAreaForTesting().getTopRight());
+            expect(graph.value(Module::quietLevelControl)
+                       <= graph.value(Module::loudLevelControl) - 1.0f / 72.0f + 0.000001f);
+
+            MegaDSPAudioProcessorEditor editor(modulationProcessor, 1100, 720);
+            for (const auto size : {
+                     megadsp::ui::WidgetSize::small,
+                     megadsp::ui::WidgetSize::medium,
+                     megadsp::ui::WidgetSize::large })
+            {
+                editor.setWidgetSizeForTesting(size);
+                editor.refreshCardsForTesting();
+                expect(editor.cardPresentsAllActiveControlsForTesting());
+                expect(editor.cardChildrenFitForTesting());
+                expect(editor.cardGraphsAvoidControlsForTesting());
+                graph.setSize(editor.cardGraphWidthForTesting(0),
+                              editor.cardGraphHeightForTesting(0));
+                expect(graph.compactEnvelopePlotAreaForTesting().getHeight() >= 40.0f);
+            }
+            juce::MemoryBlock state;
+            modulationProcessor.getStateInformation(state);
+            MegaDSPAudioProcessor restored;
+            restored.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+            restored.flushPendingUpdatesForTesting();
+            expectEquals(static_cast<int>(restored.getRack().moduleType(0)), 60);
+            expectWithinAbsoluteError(
+                restored.parameters.getRawParameterValue(
+                    megadsp::controlParameterId(0, Module::pitchDepthControl))->load(),
+                0.42f, 0.0001f);
+        }
+
         beginTest("Telemetry-rich compact views render measured state");
         {
             constexpr std::array telemetryTypes {
@@ -1441,6 +1519,7 @@ public:
                 megadsp::ModuleType::midnightCurrent,
                 megadsp::ModuleType::resonantSculpture,
                 megadsp::ModuleType::guitarTuner,
+                megadsp::ModuleType::envelopeModulator,
                 megadsp::ModuleType::analogTape,
                 megadsp::ModuleType::vinylSimulator,
                 megadsp::ModuleType::chaosField

@@ -6,6 +6,7 @@
 #include "../modules/ChaosField.h"
 #include "../modules/ConvolutionReverb.h"
 #include "../modules/Delay.h"
+#include "../modules/EnvelopeModulator.h"
 #include "../modules/GuitarTuner.h"
 #include "../modules/MidnightCurrent.h"
 #include "../modules/ResonantSculpture.h"
@@ -25,6 +26,34 @@ constexpr auto compactAssetHeaderHeight = 14.0f;
 constexpr auto compactAssetSearchHeight = 21.0f;
 constexpr auto compactAssetSearchGap = 3.0f;
 constexpr auto compactAssetRowHeight = 26.0f;
+
+struct EnvelopeModulatorLayout
+{
+    juce::Rectangle<float> modes;
+    juce::Rectangle<float> waveforms;
+    juce::Rectangle<float> endpoints;
+    juce::Rectangle<float> plot;
+    juce::Rectangle<float> motion;
+    juce::Rectangle<float> readout;
+    juce::Rectangle<float> reverse;
+};
+
+EnvelopeModulatorLayout envelopeModulatorLayout(
+    juce::Rectangle<float> bounds)
+{
+    auto area = bounds.reduced(8.0f, 3.0f);
+    EnvelopeModulatorLayout layout;
+    layout.modes = area.removeFromTop(22.0f);
+    layout.waveforms = area.removeFromTop(20.0f);
+    layout.endpoints = area.removeFromTop(15.0f);
+    layout.readout = area.removeFromBottom(22.0f);
+    layout.reverse = layout.readout.removeFromRight(64.0f).reduced(1.0f);
+    layout.motion = area.removeFromBottom(
+        juce::jlimit(0.0f, 28.0f, area.getHeight() * 0.2f));
+    layout.plot = area.reduced(27.0f, 5.0f).withTrimmedBottom(12.0f);
+    layout.plot.setHeight(juce::jmax(1.0f, layout.plot.getHeight()));
+    return layout;
+}
 
 juce::Path starPath(juce::Rectangle<float> bounds)
 {
@@ -78,10 +107,22 @@ EffectGraph::EffectGraph(
     const auto compactEqualizer = type == ModuleType::equalizer;
     const auto compactDelay = type == ModuleType::delay;
     const auto compactTuner = type == ModuleType::guitarTuner;
+    const auto compactEnvelope = type == ModuleType::envelopeModulator;
     const auto compactAssets = isCompactAssetLibrary();
     setWantsKeyboardFocus(
         compactCompressor || compactEqualizer || compactDelay || compactTuner
-        || compactAssets);
+        || compactAssets || compactEnvelope);
+    if (compactEnvelope)
+    {
+        setTitle("Envelope modulation level-to-speed graph");
+        setDescription(
+            "Quiet and loud input levels set two independently adjustable modulation speeds.");
+        setHelpText(
+            "Drag QUIET or LOUD horizontally for dBFS and vertically for Hz. "
+            "Q or L selects a node; arrows edit it, Shift is fine adjustment, "
+            "and Home resets it. R reverses speeds, M changes mode, "
+            "and W changes waveform. Inactive depths retain their values.");
+    }
     if (compactCompressor)
     {
         setTitle("Compressor threshold");
@@ -646,9 +687,215 @@ juce::String EffectGraph::compactAssetDisplayName(int index) const
                ? entry.displayName : entry.file.getFileNameWithoutExtension());
 }
 
+juce::Rectangle<float> EffectGraph::compactEnvelopePlotArea() const
+{
+    return envelopeModulatorLayout(getLocalBounds().toFloat()).plot;
+}
+
+juce::Point<float> EffectGraph::compactEnvelopeNode(int node) const
+{
+    const auto plot = compactEnvelopePlotArea();
+    const auto thresholds = EnvelopeModulatorModule::orderedThresholds(
+        lerp(-72.0f, 0.0f, value(3)), lerp(-72.0f, 0.0f, value(4)));
+    const auto index = juce::jlimit(0, 1, node);
+    return {
+        plot.getX() + (thresholds[static_cast<size_t>(index)] + 72.0f)
+            / 72.0f * plot.getWidth(),
+        plot.getBottom() - value(1 + index) * plot.getHeight()
+    };
+}
+
+void EffectGraph::setCompactEnvelopeNode(int node, juce::Point<float> point)
+{
+    const auto plot = compactEnvelopePlotArea();
+    const auto index = juce::jlimit(0, 1, node);
+    const auto thresholds = EnvelopeModulatorModule::orderedThresholds(
+        lerp(-72.0f, 0.0f, value(3)), lerp(-72.0f, 0.0f, value(4)));
+    const auto level = juce::jlimit(
+        0.0f, 1.0f, (point.x - plot.getX()) / juce::jmax(1.0f, plot.getWidth()));
+    const auto other = (thresholds[static_cast<size_t>(1 - index)] + 72.0f)
+        / 72.0f;
+    const auto constrained = index == 0
+        ? juce::jlimit(0.0f, other - 1.0f / 72.0f, level)
+        : juce::jlimit(other + 1.0f / 72.0f, 1.0f, level);
+    setValue(3 + index, constrained);
+    setValue(1 + index, juce::jlimit(
+        0.0f, 1.0f,
+        (plot.getBottom() - point.y) / juce::jmax(1.0f, plot.getHeight())));
+    dragReadout = juce::String(index == 0 ? "QUIET  " : "LOUD  ")
+        + formatControlValue(type, 3 + index, value(3 + index)) + " / "
+        + formatControlValue(type, 1 + index, value(1 + index));
+    repaint();
+}
+
+void EffectGraph::reverseCompactEnvelopeSpeeds()
+{
+    endGestures();
+    const auto quiet = value(EnvelopeModulatorModule::quietSpeedControl);
+    const auto loud = value(EnvelopeModulatorModule::loudSpeedControl);
+    dragPrimary = EnvelopeModulatorModule::quietSpeedControl;
+    dragSecondary = EnvelopeModulatorModule::loudSpeedControl;
+    beginGestures();
+    setValue(dragPrimary, loud);
+    setValue(dragSecondary, quiet);
+    endGestures();
+    repaint();
+}
+
+void EffectGraph::paintCompactEnvelopeModulator(juce::Graphics& graphics)
+{
+    const auto layout = envelopeModulatorLayout(getLocalBounds().toFloat());
+    const auto colour = modulePaletteColour(type).brighter(0.18f);
+    const auto drawPills = [&](juce::Rectangle<float> row, int control)
+    {
+        const auto options = controlOptions(type, control);
+        for (int index = 0; index < options.size(); ++index)
+        {
+            auto pill = row.withWidth(row.getWidth() / 3.0f)
+                .translated(row.getWidth() / 3.0f * static_cast<float>(index), 0.0f)
+                .reduced(1.5f, 1.0f);
+            const auto active = discreteIndex(value(control), 3) == index;
+            graphics.setColour(active ? colour.withAlpha(0.30f)
+                                     : juce::Colours::black.withAlpha(0.20f));
+            graphics.fillRoundedRectangle(pill, 4.0f);
+            graphics.setColour(active ? colour : juce::Colours::white.withAlpha(0.65f));
+            graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
+            graphics.drawFittedText(
+                options[index].toUpperCase(), pill.toNearestInt(),
+                juce::Justification::centred, 1, 0.8f);
+        }
+    };
+    drawPills(layout.modes, EnvelopeModulatorModule::modeControl);
+    drawPills(layout.waveforms, EnvelopeModulatorModule::waveformControl);
+    for (int node = 0; node < 2; ++node)
+    {
+        auto readout = layout.endpoints
+            .withWidth(layout.endpoints.getWidth() * 0.5f)
+            .translated(layout.endpoints.getWidth() * 0.5f * static_cast<float>(node), 0.0f);
+        graphics.setColour(node == 0 ? inputColour : colour);
+        graphics.setFont(juce::FontOptions(7.5f, juce::Font::bold));
+        const auto thresholds = EnvelopeModulatorModule::orderedThresholds(
+            lerp(-72.0f, 0.0f, value(3)), lerp(-72.0f, 0.0f, value(4)));
+        graphics.drawFittedText(
+            juce::String(node == 0 ? "QUIET " : "LOUD ")
+                + juce::String(thresholds[static_cast<size_t>(node)], 1)
+                + " dBFS / "
+                + formatControlValue(type, 1 + node, value(1 + node)),
+            readout.toNearestInt(), juce::Justification::centred, 1, 0.75f);
+    }
+
+    const auto plot = layout.plot;
+    graphics.setColour(juce::Colours::black.withAlpha(0.18f));
+    graphics.fillRoundedRectangle(plot.expanded(3.0f), 4.0f);
+    graphics.setFont(juce::FontOptions(7.0f));
+    for (const auto level : { -72.0f, -48.0f, -24.0f, 0.0f })
+    {
+        const auto x = plot.getX() + (level + 72.0f) / 72.0f * plot.getWidth();
+        graphics.setColour(juce::Colours::white.withAlpha(0.08f));
+        graphics.drawVerticalLine(juce::roundToInt(x), plot.getY(), plot.getBottom());
+        graphics.setColour(juce::Colours::white.withAlpha(0.50f));
+        graphics.drawText(
+            juce::String(juce::roundToInt(level)),
+            juce::Rectangle<float>(x - 14.0f, plot.getBottom() + 2.0f, 28.0f, 10.0f),
+            juce::Justification::centred);
+    }
+    for (const auto rate : { 0.1f, 1.0f, 10.0f, 20.0f })
+    {
+        if (rate == 10.0f && plot.getHeight() < 85.0f)
+            continue;
+        const auto proportion = std::log(rate / 0.1f) / std::log(200.0f);
+        const auto y = plot.getBottom() - proportion * plot.getHeight();
+        graphics.setColour(juce::Colours::white.withAlpha(0.08f));
+        graphics.drawHorizontalLine(juce::roundToInt(y), plot.getX(), plot.getRight());
+        graphics.setColour(juce::Colours::white.withAlpha(0.50f));
+        graphics.drawText(
+            juce::String(rate, rate < 1.0f ? 1 : 0),
+            juce::Rectangle<float>(plot.getX() - 25.0f, y - 5.0f, 21.0f, 10.0f),
+            juce::Justification::centredRight);
+    }
+    const auto quiet = compactEnvelopeNode(0);
+    const auto loud = compactEnvelopeNode(1);
+    juce::Path mapping;
+    mapping.startNewSubPath(plot.getX(), quiet.y);
+    mapping.lineTo(quiet);
+    mapping.lineTo(loud);
+    mapping.lineTo(plot.getRight(), loud.y);
+    graphics.setColour(colour.withAlpha(0.85f));
+    graphics.strokePath(mapping, juce::PathStrokeType(2.0f));
+
+    ContinuousTelemetrySnapshot snapshot;
+    const auto valid = !processor.isSlotBypassed(slot)
+        && processor.readContinuousTelemetry(slot, snapshot)
+        && snapshot.sequence != 0
+        && snapshot.valueCount >= EnvelopeModulatorModule::telemetryValueCount;
+    if (valid)
+    {
+        const auto level = snapshot.values[EnvelopeModulatorModule::inputLevelDb];
+        const auto rate = snapshot.values[EnvelopeModulatorModule::currentRateHz];
+        const auto x = plot.getX()
+            + juce::jlimit(0.0f, 1.0f, (level + 72.0f) / 72.0f) * plot.getWidth();
+        const auto y = plot.getBottom() - juce::jlimit(
+            0.0f, 1.0f, std::log(juce::jmax(0.1f, rate) / 0.1f)
+                / std::log(200.0f)) * plot.getHeight();
+        graphics.setColour(outputColour.withAlpha(0.3f));
+        graphics.drawVerticalLine(juce::roundToInt(x), plot.getY(), plot.getBottom());
+        graphics.setColour(outputColour);
+        graphics.fillEllipse(x - 4.0f, y - 4.0f, 8.0f, 8.0f);
+    }
+    for (int node = 0; node < 2; ++node)
+    {
+        const auto point = node == 0 ? quiet : loud;
+        const auto nodeColour = node == 0 ? inputColour : colour;
+        graphics.setColour(nodeColour);
+        graphics.fillEllipse(point.x - 5.0f, point.y - 5.0f, 10.0f, 10.0f);
+        if (hasKeyboardFocus(false) && compactEnvelopeSelection == node)
+            graphics.drawEllipse(point.x - 8.0f, point.y - 8.0f, 16.0f, 16.0f, 1.0f);
+    }
+    if (valid && snapshot.historyCount > 1 && snapshot.historyValueCount >= 3)
+    {
+        juce::Path motion;
+        for (std::uint32_t index = 0; index < snapshot.historyCount; ++index)
+        {
+            const auto x = layout.motion.getX() + layout.motion.getWidth()
+                * static_cast<float>(index)
+                / static_cast<float>(continuousTelemetryHistoryCapacity - 1);
+            const auto lfo = continuousTelemetryHistoryValue(
+                snapshot, EnvelopeModulatorModule::lfoHistory, index);
+            const auto y = layout.motion.getCentreY()
+                - lfo * layout.motion.getHeight() * 0.4f;
+            if (index == 0)
+                motion.startNewSubPath(x, y);
+            else
+                motion.lineTo(x, y);
+        }
+        graphics.setColour(colour.withAlpha(0.65f));
+        graphics.strokePath(motion, juce::PathStrokeType(1.2f));
+    }
+    graphics.setColour(juce::Colours::white.withAlpha(0.8f));
+    graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+    graphics.drawFittedText(
+        valid
+            ? juce::String(snapshot.values[EnvelopeModulatorModule::inputLevelDb], 1)
+                + " dBFS  /  "
+                + juce::String(snapshot.values[EnvelopeModulatorModule::currentRateHz], 2)
+                + " Hz"
+            : "PLAY TO FOLLOW LEVEL",
+        layout.readout.toNearestInt(), juce::Justification::centredLeft, 1);
+    graphics.setColour(colour.withAlpha(0.18f));
+    graphics.fillRoundedRectangle(layout.reverse, 4.0f);
+    graphics.setColour(colour);
+    graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
+    graphics.drawText("REVERSE", layout.reverse, juce::Justification::centred);
+}
+
 void EffectGraph::paintCompact(
     juce::Graphics& graphics, juce::Rectangle<float> area)
 {
+    if (type == ModuleType::envelopeModulator)
+    {
+        paintCompactEnvelopeModulator(graphics);
+        return;
+    }
     if (isCompactAssetLibrary())
     {
         paintCompactAssetLibrary(graphics, area);
@@ -2764,6 +3011,52 @@ void EffectGraph::paint(juce::Graphics& graphics)
 
 void EffectGraph::mouseDown(const juce::MouseEvent& event)
 {
+    if (type == ModuleType::envelopeModulator)
+    {
+        grabKeyboardFocus();
+        const auto layout =
+            envelopeModulatorLayout(getLocalBounds().toFloat());
+        for (const auto control : {
+                 EnvelopeModulatorModule::modeControl,
+                 EnvelopeModulatorModule::waveformControl })
+        {
+            const auto row = control == EnvelopeModulatorModule::modeControl
+                ? layout.modes : layout.waveforms;
+            if (row.contains(event.position))
+            {
+                const auto option = juce::jlimit(
+                    0, 2, static_cast<int>(
+                        (event.position.x - row.getX())
+                        / juce::jmax(1.0f, row.getWidth()) * 3.0f));
+                dragPrimary = control;
+                beginGestures();
+                setValue(control, discreteValue(option, 3));
+                endGestures();
+                repaint();
+                return;
+            }
+        }
+        if (layout.reverse.contains(event.position))
+        {
+            reverseCompactEnvelopeSpeeds();
+            return;
+        }
+        if (layout.plot.expanded(10.0f).contains(event.position))
+        {
+            compactEnvelopeSelection =
+                event.position.getDistanceFrom(compactEnvelopeNode(0))
+                    <= event.position.getDistanceFrom(compactEnvelopeNode(1))
+                ? 0 : 1;
+            dragPrimary = EnvelopeModulatorModule::quietSpeedControl
+                + compactEnvelopeSelection;
+            dragSecondary = EnvelopeModulatorModule::quietLevelControl
+                + compactEnvelopeSelection;
+            beginGestures();
+            if (event.getNumberOfClicks() == 1)
+                setCompactEnvelopeNode(compactEnvelopeSelection, event.position);
+        }
+        return;
+    }
     if (isCompactAssetLibrary())
     {
         grabKeyboardFocus();
@@ -2884,7 +3177,9 @@ void EffectGraph::mouseDown(const juce::MouseEvent& event)
 
 void EffectGraph::mouseDrag(const juce::MouseEvent& event)
 {
-    if (type == ModuleType::compressor && dragPrimary == 0)
+    if (type == ModuleType::envelopeModulator && dragPrimary >= 0)
+        setCompactEnvelopeNode(compactEnvelopeSelection, event.position);
+    else if (type == ModuleType::compressor && dragPrimary == 0)
         setCompactCompressorThresholdFromY(event.position.y);
     else if (type == ModuleType::equalizer
              && dragPrimary >= 0)
@@ -2908,7 +3203,22 @@ void EffectGraph::mouseUp(const juce::MouseEvent&)
 
 void EffectGraph::mouseDoubleClick(const juce::MouseEvent& event)
 {
-    if (type == ModuleType::compressor
+    if (type == ModuleType::envelopeModulator
+        && compactEnvelopePlotArea().expanded(10.0f).contains(event.position))
+    {
+        endGestures();
+        const auto defaults = moduleDefaults(type);
+        dragPrimary = EnvelopeModulatorModule::quietSpeedControl
+            + compactEnvelopeSelection;
+        dragSecondary = EnvelopeModulatorModule::quietLevelControl
+            + compactEnvelopeSelection;
+        beginGestures();
+        setValue(dragPrimary, defaults[static_cast<size_t>(dragPrimary)]);
+        setValue(dragSecondary, defaults[static_cast<size_t>(dragSecondary)]);
+        endGestures();
+        repaint();
+    }
+    else if (type == ModuleType::compressor
         && compactCompressorLevelArea().contains(event.position))
     {
         setValue(0, moduleDefaults(type)[0]);
@@ -2991,6 +3301,71 @@ void EffectGraph::mouseWheelMove(
 
 bool EffectGraph::keyPressed(const juce::KeyPress& key)
 {
+    if (type == ModuleType::envelopeModulator)
+    {
+        if (key.getModifiers().isCommandDown()
+            || key.getModifiers().isCtrlDown()
+            || key.getModifiers().isAltDown())
+            return false;
+        const auto character = juce::CharacterFunctions::toLowerCase(
+            static_cast<juce::juce_wchar>(key.getKeyCode()));
+        if (character == 'q' || character == 'Q'
+            || character == 'l' || character == 'L')
+        {
+            compactEnvelopeSelection =
+                character == 'q' || character == 'Q' ? 0 : 1;
+            repaint();
+            return true;
+        }
+        if (character == 'r' || character == 'R')
+        {
+            reverseCompactEnvelopeSpeeds();
+            return true;
+        }
+        if (character == 'm' || character == 'M'
+            || character == 'w' || character == 'W')
+        {
+            dragPrimary = character == 'm' || character == 'M'
+                ? EnvelopeModulatorModule::modeControl
+                : EnvelopeModulatorModule::waveformControl;
+            beginGestures();
+            setValue(dragPrimary, discreteValue(
+                (discreteIndex(value(dragPrimary), 3) + 1) % 3, 3));
+            endGestures();
+            repaint();
+            return true;
+        }
+        auto point = compactEnvelopeNode(compactEnvelopeSelection);
+        const auto plot = compactEnvelopePlotArea();
+        const auto step = key.getModifiers().isShiftDown() ? 0.0025f : 0.01f;
+        if (key.getKeyCode() == juce::KeyPress::leftKey)
+            point.x -= plot.getWidth() * step;
+        else if (key.getKeyCode() == juce::KeyPress::rightKey)
+            point.x += plot.getWidth() * step;
+        else if (key.getKeyCode() == juce::KeyPress::upKey)
+            point.y -= plot.getHeight() * step;
+        else if (key.getKeyCode() == juce::KeyPress::downKey)
+            point.y += plot.getHeight() * step;
+        else if (key.getKeyCode() != juce::KeyPress::homeKey)
+            return false;
+        dragPrimary = EnvelopeModulatorModule::quietSpeedControl
+            + compactEnvelopeSelection;
+        dragSecondary = EnvelopeModulatorModule::quietLevelControl
+            + compactEnvelopeSelection;
+        beginGestures();
+        if (key.getKeyCode() == juce::KeyPress::homeKey)
+        {
+            const auto defaults = moduleDefaults(type);
+            setValue(dragPrimary, defaults[static_cast<size_t>(dragPrimary)]);
+            setValue(dragSecondary, defaults[static_cast<size_t>(dragSecondary)]);
+        }
+        else
+            setCompactEnvelopeNode(compactEnvelopeSelection, point);
+        endGestures();
+        dragReadout.clear();
+        repaint();
+        return true;
+    }
     if (isCompactAssetLibrary())
     {
         if (key.getKeyCode() == juce::KeyPress::upKey

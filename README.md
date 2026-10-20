@@ -311,6 +311,7 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 | Module | What it does |
 |---|---|
 | **Tremolo** | Amplitude, Harmonic, and Vibrato algorithms; Rate syncs to host divisions; Vibrato shows depth in cents |
+| **Envelope Modulator** | Playing dynamics steer Tremolo, Harmonic Tremolo, or Vibrato between independent 0.10–20 Hz speeds. Drag QUIET/LOUD graph nodes for dBFS thresholds and speeds, or click REVERSE; measured level, rate, and recent motion show the response live. Attack/Release shape the follower, and inactive depth settings are retained. |
 | **Vintage Chorus** | Four distinct topologies (Vintage BBD, Dimension, Tri-Chorus, String Ensemble), animated voice-trajectory field, and six-tap Density |
 | **Rotary Speaker** | Dual-rotor Doppler model with one Brake/Chorale/Tremolo selector, consolidated left-side controls, and an unobstructed right-side rotor/microphone animation |
 | **Studio Phaser** | 2–12 stage all-pass sweeps with DSP-synchronized notch phases and topology crossfades |

@@ -60,3 +60,4 @@
 #include "modules/PortalPermuter.h"
 #include "modules/IRMosaic.h"
 #include "modules/GuitarTuner.h"
+#include "modules/EnvelopeModulator.h"

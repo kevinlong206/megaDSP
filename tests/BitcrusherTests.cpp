@@ -20,7 +20,7 @@ public:
         beginTest("Bitcrusher appends the stable module contract");
         expectEquals(static_cast<int>(ModuleType::wormholeConvolution), 55);
         expectEquals(static_cast<int>(ModuleType::bitcrusher), 56);
-        expectEquals(moduleTypeCount, 60);
+        expectEquals(moduleTypeCount, 61);
         expect(moduleDefinition(ModuleType::bitcrusher).category
                == ModuleCategory::saturationAndColor);
         expect(moduleDefinition(ModuleType::guitarCabinet).category

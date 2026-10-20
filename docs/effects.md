@@ -452,6 +452,49 @@ Three independent algorithms:
 
 ---
 
+## Envelope Modulator
+
+A touch-responsive modulation effect for guitar or any incoming audio. **Tremolo**
+modulates amplitude, **Harmonic** alternates complementary bands around 700 Hz,
+and **Vibrato** modulates pitch through a prepared cubic-interpolated delay.
+
+The graph maps input amplitude in **dBFS** horizontally to modulation speed in
+**Hz** vertically. Drag **QUIET** or **LOUD** horizontally to set the detector's
+two level thresholds, and vertically to set their independent **0.10–20 Hz**
+speeds. Below Quiet Level the quiet speed holds; above Loud Level the loud speed
+holds. Between thresholds, speed follows a logarithmic musical interpolation.
+Either speed may be higher: **REVERSE** swaps the two speeds in one undoable edit.
+Equal speeds give fixed-rate modulation. Thresholds have an effective minimum
+1 dB separation; crossed automation values are ordered for processing without
+rewriting either host parameter.
+
+The default response moves from **1.50 Hz at -48 dBFS** to **8.00 Hz at -12 dBFS**.
+**Attack** (1–200 ms, default 10 ms) follows louder playing; **Release**
+(30 ms–3 seconds, default 250 ms) follows a note's decay. Detection is stereo-linked,
+so hard-panned playing drives the same modulation on both channels without adding
+crossfeed or synthetic stereo content.
+
+Choose **Sine**, **Triangle**, or **Rounded Pulse** in the graph. **Tremolo Depth**
+sets 0–100% amplitude/harmonic intensity; **Pitch Depth** bounds vibrato deviation
+at 0–100 cents, including during rate changes. Only the relevant depth is shown,
+and switching modes never changes the hidden depth's retained value. Mode and
+waveform changes crossfade without restarting the oscillator.
+
+A live graph marker and numeric readout show the measured detector level and
+actual rate. The short motion trace comes from DSP-captured LFO history, not an
+editor clock. The graph supports **Q/L** node selection, arrow-key threshold/speed
+edits, **Shift** fine adjustment, **Home** or double-click node reset, **R** to
+reverse, **M** to cycle modes, and **W** to cycle waveforms.
+
+**Mix** is an immediate dry/wet blend, with exact dry at zero apart from the
+smoothed **Output** trim (-12 to +12 dB). Neutral depth is also dry. Vibrato delay
+belongs only to the wet path; the module adds **zero host PDC** in every mode.
+All delay storage is allocated during preparation, and telemetry is capture-gated.
+Envelope Modulator appends stable module value **60** without changing the eight
+slots, twelve controls per slot, existing module values, or schema-13 state.
+
+---
+
 ## Rotary Speaker
 
 Models a single dual-rotor cabinet. Horn and drum have independent physical Doppler paths, directivity, speed, and inertia. The dominant three-state **Speed** pills (Brake, Chorale, Tremolo) are the primary control. The rotor/microphone graphic owns Rotor Balance, Motion, microphone Distance/Spread, and Spin-up gestures. **Cabinet Color** and **Ambience** retain their exact DSP meanings. Mono input creates a stereo rotating field; stereo input retains its original side information.

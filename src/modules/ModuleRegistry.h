@@ -13,7 +13,7 @@ namespace megadsp
 constexpr int slotCount = 8;
 constexpr int controlsPerSlot = 12;
 constexpr int stateSchemaVersion = 13;
-constexpr int moduleTypeCount = 60;
+constexpr int moduleTypeCount = 61;
 
 enum class ModuleType
 {
@@ -76,7 +76,8 @@ enum class ModuleType
     bitcrusher = 56,
     portalPermuter = 57,
     irMosaic = 58,
-    guitarTuner = 59
+    guitarTuner = 59,
+    envelopeModulator = 60
 };
 
 enum class ModuleCategory
@@ -94,7 +95,7 @@ enum class ModuleCategory
 };
 
 static_assert(
-    static_cast<int>(ModuleType::guitarTuner) + 1 == moduleTypeCount);
+    static_cast<int>(ModuleType::envelopeModulator) + 1 == moduleTypeCount);
 
 enum class CompactVisualization
 {

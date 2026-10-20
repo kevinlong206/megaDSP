@@ -219,7 +219,8 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/Bitcrusher.cpp
     src/modules/PortalPermuter.cpp
     src/modules/IRMosaic.cpp
-    src/modules/GuitarTuner.cpp)
+    src/modules/GuitarTuner.cpp
+    src/modules/EnvelopeModulator.cpp)
 
 set(MEGADSP_MODULE_HEADERS
     src/DspModules.h
@@ -287,7 +288,8 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/Bitcrusher.h
     src/modules/PortalPermuter.h
     src/modules/IRMosaic.h
-    src/modules/GuitarTuner.h)
+    src/modules/GuitarTuner.h
+    src/modules/EnvelopeModulator.h)
 
 set(MEGADSP_UI_SOURCES
     src/ui/EffectGraph.cpp

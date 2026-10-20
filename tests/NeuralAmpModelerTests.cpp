@@ -185,7 +185,7 @@ public:
     {
         beginTest("Stable appended enum and module count");
         expectEquals(static_cast<int>(ModuleType::neuralAmpModeler), 47);
-        expectEquals(moduleTypeCount, 60);
+        expectEquals(moduleTypeCount, 61);
 
         beginTest("Host parameter count");
         MegaDSPAudioProcessor proc;

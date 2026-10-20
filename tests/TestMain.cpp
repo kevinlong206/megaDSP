@@ -981,6 +981,17 @@ public:
             exponentialDefault(100.0f, 4000.0f, 700.0f),
             1.0f, linearDefault(-12.0f, 12.0f, 0.0f), 0.5f
         });
+        expectDefaults(megadsp::ModuleType::envelopeModulator, {
+            megadsp::discreteValue(0, 3),
+            exponentialDefault(0.1f, 20.0f, 1.5f),
+            exponentialDefault(0.1f, 20.0f, 8.0f),
+            linearDefault(-72.0f, 0.0f, -48.0f),
+            linearDefault(-72.0f, 0.0f, -12.0f),
+            exponentialDefault(1.0f, 200.0f, 10.0f),
+            exponentialDefault(30.0f, 3000.0f, 250.0f),
+            0.65f, 0.25f, megadsp::discreteValue(0, 3), 1.0f,
+            linearDefault(-12.0f, 12.0f, 0.0f)
+        });
         expectDefaults(megadsp::ModuleType::rotarySpeaker, {
             megadsp::discreteValue(1, 3),
             linearDefault(0.0f, 24.0f, 6.0f), 0.5f,
@@ -1392,7 +1403,7 @@ public:
         });
 
         beginTest("Host parameter contract remains fixed");
-        expectEquals(megadsp::moduleTypeCount, 60);
+        expectEquals(megadsp::moduleTypeCount, 61);
         expectEquals(megadsp::stateSchemaVersion, 13);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
@@ -1503,7 +1514,9 @@ public:
                          megadsp::ModuleType::irMosaic), 58);
         expectEquals(static_cast<int>(
                          megadsp::ModuleType::guitarTuner), 59);
-        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 60);
+        expectEquals(static_cast<int>(
+                         megadsp::ModuleType::envelopeModulator), 60);
+        expectEquals(static_cast<int>(megadsp::moduleDescriptors().size()), 61);
         juce::AudioProcessorGraph contractOwner;
         juce::AudioProcessorValueTreeState contractState(
             contractOwner, nullptr, "contractState",
@@ -1536,7 +1549,7 @@ public:
         beginTest("Immutable module registry is complete and valid");
         const auto registryErrors = megadsp::validateModuleRegistry();
         expect(registryErrors.isEmpty(), registryErrors.joinIntoString("\n"));
-        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 60);
+        expectEquals(static_cast<int>(megadsp::moduleRegistry().size()), 61);
         std::array<std::unique_ptr<megadsp::DspModule>,
                    megadsp::moduleTypeCount> factoryProducts {};
         for (int stableType = 0; stableType < megadsp::moduleTypeCount;
@@ -1594,6 +1607,7 @@ public:
                               || type == megadsp::ModuleType::autoWah
                               || type == megadsp::ModuleType::resonantSculpture
                               || type == megadsp::ModuleType::guitarTuner
+                              || type == megadsp::ModuleType::envelopeModulator
                               || type == megadsp::ModuleType::stageVocal
                               || type == megadsp::ModuleType::vinylSimulator
                               || type == megadsp::ModuleType::optoLeveler

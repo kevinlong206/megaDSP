@@ -243,6 +243,7 @@ juce::String compactTabName(ModuleType type)
         case ModuleType::stereoWidth: return "Width";
         case ModuleType::midSideDecoder: return "M/S";
         case ModuleType::tremolo: return "Trem";
+        case ModuleType::envelopeModulator: return "Env Mod";
         case ModuleType::rotarySpeaker: return "Rot";
         case ModuleType::convolutionReverb: return "CRev";
         case ModuleType::dynamicEqualizer: return "DynEQ";
@@ -410,6 +411,7 @@ std::vector<int> keyboardControlOrder(
         case ModuleType::stereoWidth:
         case ModuleType::midSideDecoder:
         case ModuleType::tremolo:
+        case ModuleType::envelopeModulator:
         case ModuleType::rotarySpeaker:
         case ModuleType::dynamicEqualizer:
         case ModuleType::frequencyLab:

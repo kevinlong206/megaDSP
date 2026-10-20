@@ -22,7 +22,7 @@ public:
         controls.fill(0.5f);
         ProcessEnvironment environment;
         environment.nonRealtime = true;
-        std::array<std::unique_ptr<DspModule>, 41> modules {
+        std::array<std::unique_ptr<DspModule>, 42> modules {
             std::make_unique<EqualizerModule>(),
             std::make_unique<CompressorModule>(),
             std::make_unique<SaturatorModule>(),
@@ -63,7 +63,8 @@ public:
             std::make_unique<ChaosFieldModule>(),
             std::make_unique<TimeMosaicModule>(),
             std::make_unique<GuitarCabinetModule>(),
-            std::make_unique<VelvetDriveModule>()
+            std::make_unique<VelvetDriveModule>(),
+            std::make_unique<EnvelopeModulatorModule>()
         };
 
         for (auto& module : modules)
@@ -3607,7 +3608,397 @@ private:
     }
 };
 
+class EnvelopeModulatorTests final : public juce::UnitTest
+{
+public:
+    EnvelopeModulatorTests()
+        : juce::UnitTest("Envelope Modulator", "megaDSP") {}
+
+    void runTest() override
+    {
+        using Module = EnvelopeModulatorModule;
+        constexpr ProcessEnvironment capture { nullptr, 120.0, true };
+        constexpr juce::dsp::ProcessSpec spec { 48000.0, 256, 2 };
+        auto controls = moduleDefaults(ModuleType::envelopeModulator);
+        const auto measureRate = [&](float amplitude, const ControlValues& values)
+        {
+            Module module;
+            module.prepare(spec);
+            juce::AudioBuffer<float> block(2, 48000);
+            for (int channel = 0; channel < 2; ++channel)
+                juce::FloatVectorOperations::fill(
+                    block.getWritePointer(channel), amplitude, block.getNumSamples());
+            module.process(block, values, capture);
+            ContinuousTelemetrySnapshot snapshot;
+            expect(module.readContinuousTelemetry(snapshot));
+            expectEquals(static_cast<int>(snapshot.valueCount),
+                         static_cast<int>(Module::telemetryValueCount));
+            return snapshot.values[Module::currentRateHz];
+        };
+
+        beginTest("Quiet, intermediate, and loud levels select musical speeds");
+        expectWithinAbsoluteError(measureRate(0.0f, controls), 1.5f, 0.01f);
+        expectWithinAbsoluteError(measureRate(0.8f, controls), 8.0f, 0.01f);
+        expectWithinAbsoluteError(
+            measureRate(juce::Decibels::decibelsToGain(-30.0f), controls),
+            std::sqrt(1.5f * 8.0f), 0.01f);
+
+        beginTest("Audible tremolo cycles follow the configured endpoint speeds");
+        for (const auto amplitude : { 0.001f, 0.8f })
+        {
+            Module module;
+            module.prepare(spec);
+            juce::AudioBuffer<float> block(1, 96000);
+            juce::FloatVectorOperations::fill(
+                block.getWritePointer(0), amplitude, block.getNumSamples());
+            module.process(block, controls, {});
+            const auto middle = amplitude
+                * (1.0f - 0.5f * controls[Module::tremoloDepthControl]);
+            float firstCrossing = -1.0f, lastCrossing = -1.0f;
+            int crossings = 0;
+            for (int sample = 24001; sample < block.getNumSamples(); ++sample)
+            {
+                const auto before = block.getSample(0, sample - 1) - middle;
+                const auto after = block.getSample(0, sample) - middle;
+                if (before <= 0.0f && after > 0.0f)
+                {
+                    lastCrossing = static_cast<float>(sample - 1)
+                        - before / (after - before);
+                    if (crossings++ == 0)
+                        firstCrossing = lastCrossing;
+                }
+            }
+            expect(crossings >= 2);
+            if (crossings >= 2)
+                expectWithinAbsoluteError(
+                    48000.0f * static_cast<float>(crossings - 1)
+                        / (lastCrossing - firstCrossing),
+                    amplitude < 0.01f ? 1.5f : 8.0f, 0.03f);
+        }
+
+        beginTest("Response reverses without changing the threshold window");
+        std::swap(controls[Module::quietSpeedControl], controls[Module::loudSpeedControl]);
+        expectWithinAbsoluteError(measureRate(0.0f, controls), 8.0f, 0.01f);
+        expectWithinAbsoluteError(measureRate(0.8f, controls), 1.5f, 0.01f);
+        controls[Module::quietSpeedControl] = controls[Module::loudSpeedControl];
+        expectWithinAbsoluteError(measureRate(0.0f, controls), 1.5f, 0.01f);
+        expectWithinAbsoluteError(measureRate(0.8f, controls), 1.5f, 0.01f);
+        controls = moduleDefaults(ModuleType::envelopeModulator);
+
+        beginTest("Crossed and coincident thresholds remain finite and ordered");
+        std::swap(controls[Module::quietLevelControl], controls[Module::loudLevelControl]);
+        expectWithinAbsoluteError(
+            measureRate(juce::Decibels::decibelsToGain(-30.0f), controls),
+            std::sqrt(12.0f), 0.01f);
+        for (const auto threshold : { 0.0f, 0.5f, 1.0f })
+        {
+            controls[Module::quietLevelControl] = threshold;
+            controls[Module::loudLevelControl] = threshold;
+            const auto rate = measureRate(0.2f, controls);
+            expect(std::isfinite(rate) && rate >= 1.49f && rate <= 8.01f);
+        }
+
+        beginTest("Attack and Release independently follow performance dynamics");
+        const auto responseRate = [&](float attack, float release, bool falling)
+        {
+            Module module;
+            module.prepare(spec);
+            auto values = moduleDefaults(ModuleType::envelopeModulator);
+            values[Module::attackControl] = attack;
+            values[Module::releaseControl] = release;
+            if (falling)
+            {
+                juce::AudioBuffer<float> held(2, 48000);
+                for (int channel = 0; channel < 2; ++channel)
+                    juce::FloatVectorOperations::fill(
+                        held.getWritePointer(channel), 0.8f, held.getNumSamples());
+                module.process(held, values, capture);
+            }
+            juce::AudioBuffer<float> block(2, falling ? 7200 : 48);
+            for (int channel = 0; channel < 2; ++channel)
+                juce::FloatVectorOperations::fill(
+                    block.getWritePointer(channel), falling ? 0.0f : 0.8f,
+                    block.getNumSamples());
+            module.process(block, values, capture);
+            ContinuousTelemetrySnapshot snapshot;
+            module.readContinuousTelemetry(snapshot);
+            return snapshot.values[Module::currentRateHz];
+        };
+        expect(responseRate(0.0f, 0.5f, false)
+                   > responseRate(1.0f, 0.5f, false) + 4.0f);
+        expect(responseRate(0.5f, 1.0f, true)
+                   > responseRate(0.5f, 0.0f, true) + 4.0f);
+
+        beginTest("Every mode preserves exact immediate dry and neutral depth");
+        for (const auto sampleRate : { 8000.0, 44100.0, 48000.0, 96000.0, 192000.0 })
+            for (int mode = 0; mode < 3; ++mode)
+                for (const auto channels : { 1, 2 })
+                    for (const auto dryMix : { false, true })
+                    {
+                        Module module;
+                        module.prepare({ sampleRate, 256,
+                                         static_cast<juce::uint32>(channels) });
+                        auto values = moduleDefaults(ModuleType::envelopeModulator);
+                        values[Module::modeControl] = discreteValue(mode, 3);
+                        if (dryMix)
+                            values[Module::mixControl] = 0.0f;
+                        else
+                        {
+                            values[Module::tremoloDepthControl] = 0.0f;
+                            values[Module::pitchDepthControl] = 0.0f;
+                        }
+                        auto reference = signal(channels, 2048, sampleRate);
+                        auto rendered = reference;
+                        module.process(rendered, values, {});
+                        expect(maximumDifference(reference, rendered) < 0.0000001f);
+                        expectEquals(module.latencySamples(), 0);
+                        expect(module.dryPathTiming() == DryPathTiming::immediate);
+                    }
+
+        beginTest("Shared modulation preserves stereo balance and mono fold-down");
+        for (int mode = 0; mode < 3; ++mode)
+        {
+            auto values = moduleDefaults(ModuleType::envelopeModulator);
+            values[Module::modeControl] = discreteValue(mode, 3);
+            values[Module::loudSpeedControl] = values[Module::quietSpeedControl];
+            Module stereo, mono, hardPanned;
+            stereo.prepare(spec);
+            mono.prepare({ 48000.0, 256, 1 });
+            hardPanned.prepare(spec);
+            auto block = signal(2, 24000, 48000.0);
+            for (int sample = 0; sample < block.getNumSamples(); ++sample)
+                block.setSample(1, sample,
+                    0.13f * std::sin(static_cast<float>(sample) * 0.08f));
+            juce::AudioBuffer<float> fold(1, block.getNumSamples());
+            for (int sample = 0; sample < block.getNumSamples(); ++sample)
+                fold.setSample(0, sample,
+                    0.5f * (block.getSample(0, sample) + block.getSample(1, sample)));
+            stereo.process(block, values, {});
+            mono.process(fold, values, {});
+            float foldError = 0.0f;
+            for (int sample = 0; sample < block.getNumSamples(); ++sample)
+                foldError = juce::jmax(foldError, std::abs(
+                    0.5f * (block.getSample(0, sample) + block.getSample(1, sample))
+                    - fold.getSample(0, sample)));
+            expect(foldError < 0.000001f);
+            auto panned = signal(2, 24000, 48000.0);
+            panned.clear(1, 0, panned.getNumSamples());
+            hardPanned.process(panned, values, {});
+            expectEquals(panned.getMagnitude(1, 0, panned.getNumSamples()), 0.0f);
+            Module duplicated;
+            duplicated.prepare(spec);
+            auto matched = signal(2, 144000, 48000.0);
+            duplicated.process(matched, values, {});
+            float stereoError = 0.0f;
+            for (int sample = 0; sample < matched.getNumSamples(); ++sample)
+                stereoError = juce::jmax(stereoError, std::abs(
+                    matched.getSample(0, sample) - matched.getSample(1, sample)));
+            expectEquals(stereoError, 0.0f);
+        }
+
+        beginTest("Maximum vibrato excursion stays inside prepared history at every sample rate");
+        for (const auto sampleRate : { 8000.0, 44100.0, 48000.0, 96000.0, 192000.0 })
+            for (int waveform = 0; waveform < 3; ++waveform)
+            {
+                Module module;
+                module.prepare({ sampleRate, 256, 2 });
+                auto values = moduleDefaults(ModuleType::envelopeModulator);
+                values[Module::modeControl] = discreteValue(2, 3);
+                values[Module::waveformControl] = discreteValue(waveform, 3);
+                values[Module::quietSpeedControl] = 0.0f;
+                values[Module::loudSpeedControl] = 0.0f;
+                values[Module::pitchDepthControl] = 1.0f;
+                auto block = signal(2, static_cast<int>(sampleRate * 5.5), sampleRate);
+                module.process(block, values, capture);
+                bool finite = true;
+                float stereoError = 0.0f;
+                for (int sample = 0; sample < block.getNumSamples(); ++sample)
+                {
+                    const auto left = block.getSample(0, sample);
+                    const auto right = block.getSample(1, sample);
+                    finite = finite && std::isfinite(left) && std::isfinite(right);
+                    stereoError = juce::jmax(stereoError, std::abs(left - right));
+                }
+                expect(finite);
+                expect(block.getMagnitude(0, block.getNumSamples()) < 0.4f);
+                expectEquals(stereoError, 0.0f);
+                ContinuousTelemetrySnapshot snapshot;
+                module.readContinuousTelemetry(snapshot);
+                expect(std::abs(snapshot.values[Module::pitchShiftCents]) <= 100.05f);
+            }
+
+        beginTest("Either input channel drives the stereo-linked follower");
+        for (int activeChannel = 0; activeChannel < 2; ++activeChannel)
+        {
+            Module module;
+            module.prepare(spec);
+            auto values = moduleDefaults(ModuleType::envelopeModulator);
+            juce::AudioBuffer<float> block(2, 48000);
+            block.clear();
+            juce::FloatVectorOperations::fill(
+                block.getWritePointer(activeChannel), 0.8f, block.getNumSamples());
+            module.process(block, values, capture);
+            ContinuousTelemetrySnapshot snapshot;
+            module.readContinuousTelemetry(snapshot);
+            expectWithinAbsoluteError(snapshot.values[Module::currentRateHz], 8.0f, 0.01f);
+            expectEquals(block.getMagnitude(1 - activeChannel, 0, block.getNumSamples()), 0.0f);
+        }
+
+        beginTest("Modes and waveforms have distinct audible results");
+        std::array<juce::AudioBuffer<float>, 3> modeOutputs, waveformOutputs;
+        for (int index = 0; index < 3; ++index)
+        {
+            Module modeModule, waveformModule;
+            modeModule.prepare(spec);
+            waveformModule.prepare(spec);
+            auto modeValues = moduleDefaults(ModuleType::envelopeModulator);
+            auto waveformValues = modeValues;
+            modeValues[Module::modeControl] = discreteValue(index, 3);
+            waveformValues[Module::waveformControl] = discreteValue(index, 3);
+            modeOutputs[static_cast<size_t>(index)] = signal(2, 24000, 48000.0);
+            waveformOutputs[static_cast<size_t>(index)] = signal(2, 24000, 48000.0);
+            modeModule.process(modeOutputs[static_cast<size_t>(index)], modeValues, {});
+            waveformModule.process(waveformOutputs[static_cast<size_t>(index)], waveformValues, {});
+        }
+        for (int first = 0; first < 3; ++first)
+            for (int second = first + 1; second < 3; ++second)
+            {
+                expect(maximumDifference(modeOutputs[static_cast<size_t>(first)],
+                                         modeOutputs[static_cast<size_t>(second)]) > 0.01f);
+                expect(maximumDifference(waveformOutputs[static_cast<size_t>(first)],
+                                         waveformOutputs[static_cast<size_t>(second)]) > 0.001f);
+            }
+
+        beginTest("Vibrato shifts pitch in cents rather than just changing gain");
+        Module vibrato;
+        vibrato.prepare(spec);
+        controls = moduleDefaults(ModuleType::envelopeModulator);
+        controls[Module::modeControl] = discreteValue(2, 3);
+        controls[Module::quietSpeedControl] =
+            std::log(4.0f / 0.1f) / std::log(200.0f);
+        controls[Module::loudSpeedControl] = controls[Module::quietSpeedControl];
+        controls[Module::pitchDepthControl] = 0.5f;
+        auto pitched = signal(1, 96000, 48000.0);
+        vibrato.process(pitched, controls, capture);
+        float previousCrossing = -1.0f;
+        float minimumCents = 1000.0f, maximumCents = -1000.0f;
+        for (int sample = 24001; sample < pitched.getNumSamples(); ++sample)
+        {
+            const auto before = pitched.getSample(0, sample - 1);
+            const auto after = pitched.getSample(0, sample);
+            if (before <= 0.0f && after > 0.0f)
+            {
+                const auto crossing = static_cast<float>(sample - 1)
+                    - before / (after - before);
+                if (previousCrossing >= 0.0f)
+                {
+                    const auto cents = 1200.0f * std::log2(
+                        48000.0f / ((crossing - previousCrossing) * 440.0f));
+                    minimumCents = juce::jmin(minimumCents, cents);
+                    maximumCents = juce::jmax(maximumCents, cents);
+                }
+                previousCrossing = crossing;
+            }
+        }
+        expect(minimumCents < -35.0f && minimumCents > -52.0f);
+        expect(maximumCents > 35.0f && maximumCents < 52.0f);
+
+        beginTest("Mode, waveform, rate, and depth steps are bounded and continuous");
+        Module automated;
+        automated.prepare(spec);
+        controls = moduleDefaults(ModuleType::envelopeModulator);
+        float previous = 0.0f, maximumStep = 0.0f;
+        for (int blockIndex = 0; blockIndex < 256; ++blockIndex)
+        {
+            if (blockIndex >= 64 && blockIndex % 16 == 0)
+            {
+                controls[Module::modeControl] = discreteValue((blockIndex / 16) % 3, 3);
+                controls[Module::waveformControl] = discreteValue((blockIndex / 32) % 3, 3);
+                controls[Module::quietSpeedControl] = blockIndex % 32 == 0 ? 0.0f : 1.0f;
+                controls[Module::loudSpeedControl] = 1.0f - controls[Module::quietSpeedControl];
+                controls[Module::pitchDepthControl] = blockIndex % 48 == 0 ? 0.0f : 1.0f;
+            }
+            juce::AudioBuffer<float> block(2, 256);
+            for (int channel = 0; channel < 2; ++channel)
+                juce::FloatVectorOperations::fill(block.getWritePointer(channel), 0.4f, 256);
+            automated.process(block, controls, capture);
+            for (int sample = 0; sample < block.getNumSamples(); ++sample)
+            {
+                const auto value = block.getSample(0, sample);
+                expect(std::isfinite(value) && std::abs(value) <= 0.41f);
+                if (blockIndex > 0)
+                    maximumStep = juce::jmax(maximumStep, std::abs(value - previous));
+                previous = value;
+            }
+            ContinuousTelemetrySnapshot snapshot;
+            automated.readContinuousTelemetry(snapshot);
+            expect(std::abs(snapshot.values[Module::pitchShiftCents]) <= 100.1f);
+        }
+        expect(maximumStep < 0.01f, juce::String(maximumStep));
+
+        beginTest("Telemetry is measured, bounded, and capture-gated");
+        Module telemetryModule;
+        telemetryModule.prepare(spec);
+        auto source = signal(2, 24000, 48000.0);
+        controls = moduleDefaults(ModuleType::envelopeModulator);
+        telemetryModule.process(source, controls, {});
+        ContinuousTelemetrySnapshot before, after;
+        expect(telemetryModule.readContinuousTelemetry(before));
+        expectEquals(static_cast<int>(before.sequence), 0);
+        source = signal(2, 24000, 48000.0);
+        telemetryModule.process(source, controls, capture);
+        telemetryModule.readContinuousTelemetry(before);
+        expect(before.sequence != 0);
+        expect(before.historyCount > 1 && before.historyCount <= 64);
+        expectEquals(static_cast<int>(before.historyValueCount), 3);
+        source = signal(2, 24000, 48000.0);
+        telemetryModule.process(source, controls, {});
+        telemetryModule.readContinuousTelemetry(after);
+        expectEquals(static_cast<int>(after.sequence), static_cast<int>(before.sequence));
+
+        beginTest("Reset is deterministic and non-finite input cannot poison state");
+        const auto reference = signal(2, 4096, 48000.0);
+        auto first = reference, second = reference;
+        Module resettable;
+        resettable.prepare(spec);
+        resettable.process(first, controls, {});
+        resettable.reset();
+        resettable.process(second, controls, {});
+        expectEquals(maximumDifference(first, second), 0.0f);
+        controls.fill(std::numeric_limits<float>::quiet_NaN());
+        second.setSample(0, 0, std::numeric_limits<float>::infinity());
+        resettable.process(second, controls, {});
+        for (int channel = 0; channel < 2; ++channel)
+            for (int sample = 0; sample < second.getNumSamples(); ++sample)
+                expect(std::isfinite(second.getSample(channel, sample)));
+    }
+
+private:
+    static juce::AudioBuffer<float> signal(int channels, int samples, double sampleRate)
+    {
+        juce::AudioBuffer<float> buffer(channels, samples);
+        for (int channel = 0; channel < channels; ++channel)
+            for (int sample = 0; sample < samples; ++sample)
+                buffer.setSample(channel, sample, static_cast<float>(0.25 * std::sin(
+                    juce::MathConstants<double>::twoPi * 440.0
+                    * static_cast<double>(sample) / sampleRate)));
+        return buffer;
+    }
+
+    static float maximumDifference(
+        const juce::AudioBuffer<float>& first, const juce::AudioBuffer<float>& second)
+    {
+        float maximum = 0.0f;
+        for (int channel = 0; channel < first.getNumChannels(); ++channel)
+            for (int sample = 0; sample < first.getNumSamples(); ++sample)
+                maximum = juce::jmax(maximum, std::abs(
+                    first.getSample(channel, sample) - second.getSample(channel, sample)));
+        return maximum;
+    }
+};
+
 DspSanityTests dspSanityTests;
+EnvelopeModulatorTests envelopeModulatorTests;
 NextTenDspAcceptanceTests nextTenDspAcceptanceTests;
 } // namespace
 } // namespace megadsp

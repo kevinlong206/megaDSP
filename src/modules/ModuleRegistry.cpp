@@ -160,6 +160,32 @@ constexpr Metadata tremoloMetadata {{
       "Adjusts level after modulation." },
     unused
 }};
+constexpr Metadata envelopeModulatorMetadata {{
+    { "Mode", ControlKind::choice, true, "Modulation",
+      "Selects amplitude tremolo, 700 Hz split-band harmonic tremolo, or pitch vibrato." },
+    { "Quiet Speed", ControlKind::horizontal, true, "Level to Speed",
+      "Sets modulation speed at and below Quiet Level. Drag the QUIET graph node vertically; this can be faster than Loud Speed for reverse response." },
+    { "Loud Speed", ControlKind::horizontal, true, "Level to Speed",
+      "Sets modulation speed at and above Loud Level. Drag the LOUD graph node vertically. REVERSE swaps the two speeds." },
+    { "Quiet Level", ControlKind::level, true, "Level to Speed",
+      "Sets the lower input-level threshold in dBFS. Drag the QUIET graph node horizontally." },
+    { "Loud Level", ControlKind::level, true, "Level to Speed",
+      "Sets the upper input-level threshold in dBFS. Drag the LOUD graph node horizontally. Crossed host values are ordered without changing automation." },
+    { "Attack", ControlKind::horizontal, false, "Envelope",
+      "Sets how quickly the detector follows a louder pick or phrase, from 1 to 200 ms." },
+    { "Release", ControlKind::horizontal, false, "Envelope",
+      "Sets how quickly the detector follows a decaying note, from 30 ms to 3 seconds." },
+    { "Tremolo Depth", ControlKind::horizontal, true, "Modulation",
+      "Sets the amount of amplitude or harmonic tremolo. Its retained value is unchanged in Vibrato mode." },
+    { "Pitch Depth", ControlKind::horizontal, true, "Modulation",
+      "Bounds vibrato pitch deviation from 0 to 100 cents, including while the modulation speed changes. Its retained value is unchanged in tremolo modes." },
+    { "Waveform", ControlKind::choice, true, "Modulation",
+      "Selects Sine, Triangle, or Rounded Pulse with a continuous waveform crossfade." },
+    { "Mix", ControlKind::horizontal, true, "Output",
+      "Blends immediate dry audio with the modulation. Zero is exactly dry apart from Output." },
+    { "Output", ControlKind::level, true, "Output",
+      "Adjusts level after modulation from -12 to +12 dB." }
+}};
 constexpr Metadata rotarySpeakerMetadata {{
     { "Speed", ControlKind::choice, true, "Main",
       "Selects Brake, slow Chorale, or fast Tremolo rotor speed." },
@@ -1446,6 +1472,11 @@ constexpr Names tremoloNames {
     "Mode", "Rate", "Sync", "Division", "Tremolo Depth", "Pitch Depth",
     "Shape", "Stereo Phase", "Crossover", "Mix", "Output", "-"
 };
+constexpr Names envelopeModulatorNames {
+    "Mode", "Quiet Speed", "Loud Speed", "Quiet Level", "Loud Level",
+    "Attack", "Release", "Tremolo Depth", "Pitch Depth", "Waveform",
+    "Mix", "Output"
+};
 constexpr Names rotarySpeakerNames {
     "Speed", "Drive", "Rotor Balance", "Crossover", "Motion",
     "Mic Distance", "Mic Spread", "Spin-up", "Cabinet Color", "Ambience", "Mix",
@@ -1864,6 +1895,10 @@ ControlOptions optionsFor(ModuleType type, int control)
         return { { "Hall", "Chamber", "Plate" }, 3 };
     if (type == ModuleType::tremolo && control == 0)
         return { { "Amplitude", "Harmonic", "Vibrato" }, 3 };
+    if (type == ModuleType::envelopeModulator && control == 0)
+        return { { "Tremolo", "Harmonic", "Vibrato" }, 3 };
+    if (type == ModuleType::envelopeModulator && control == 9)
+        return { { "Sine", "Triangle", "Rounded Pulse" }, 3 };
     if (type == ModuleType::tremolo && control == 3)
         return { { "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8",
                    "1/8.", "1/16" }, 8 };
@@ -2075,6 +2110,19 @@ std::array<float, controlsPerSlot> defaultsFor(ModuleType type)
                        linearNormalized(0.0f, 180.0f, 0.0f),
                        exponentialNormalized(100.0f, 4000.0f, 700.0f),
                        1.0f, linearNormalized(-12.0f, 12.0f, 0.0f), 0.5f };
+            break;
+        case ModuleType::envelopeModulator:
+            values = {
+                discreteValue(0, 3),
+                exponentialNormalized(0.1f, 20.0f, 1.5f),
+                exponentialNormalized(0.1f, 20.0f, 8.0f),
+                linearNormalized(-72.0f, 0.0f, -48.0f),
+                linearNormalized(-72.0f, 0.0f, -12.0f),
+                exponentialNormalized(1.0f, 200.0f, 10.0f),
+                exponentialNormalized(30.0f, 3000.0f, 250.0f),
+                0.65f, 0.25f, discreteValue(0, 3), 1.0f,
+                linearNormalized(-12.0f, 12.0f, 0.0f)
+            };
             break;
         case ModuleType::rotarySpeaker:
             values = { discreteValue(1, 3),
@@ -2725,6 +2773,22 @@ juce::String formatControlValue(ModuleType type, int control, float value)
             if (control == 7) return juce::String(linear(0.0f, 180.0f, value), 0) + juce::String::charToString(0x00b0);
             if (control == 8) return formatFrequency(exponential(100.0f, 4000.0f, value));
             if (control == 10) return juce::String(linear(-12.0f, 12.0f, value), 1) + " dB";
+            break;
+        case ModuleType::envelopeModulator:
+            if (control == 1 || control == 2)
+                return juce::String(exponential(0.1f, 20.0f, value), 2) + " Hz";
+            if (control == 3 || control == 4)
+                return juce::String(linear(-72.0f, 0.0f, value), 1) + " dBFS";
+            if (control == 5)
+                return juce::String(exponential(1.0f, 200.0f, value), 1) + " ms";
+            if (control == 6)
+                return juce::String(exponential(30.0f, 3000.0f, value), 0) + " ms";
+            if (control == 7 || control == 10)
+                return juce::String(value * 100.0f, 0) + "%";
+            if (control == 8)
+                return juce::String(value * 100.0f, 1) + " cents";
+            if (control == 11)
+                return juce::String(linear(-12.0f, 12.0f, value), 1) + " dB";
             break;
         case ModuleType::rotarySpeaker:
             if (control == 1) return "+" + juce::String(linear(0.0f, 24.0f, value), 1) + " dB";
@@ -3627,6 +3691,20 @@ std::optional<float> parseControlValue(ModuleType type, int control,
                 100.0f, 4000.0f, parsedFrequency(text, value));
             if (control == 10) return linearNormalized(-12.0f, 12.0f, value);
             break;
+        case ModuleType::envelopeModulator:
+            if (control == 1 || control == 2)
+                return exponentialNormalized(0.1f, 20.0f, value);
+            if (control == 3 || control == 4)
+                return linearNormalized(-72.0f, 0.0f, value);
+            if (control == 5)
+                return exponentialNormalized(1.0f, 200.0f, value);
+            if (control == 6)
+                return exponentialNormalized(30.0f, 3000.0f, value);
+            if (control == 7 || control == 8 || control == 10)
+                return juce::jlimit(0.0f, 1.0f, value / 100.0f);
+            if (control == 11)
+                return linearNormalized(-12.0f, 12.0f, value);
+            break;
         case ModuleType::rotarySpeaker:
             if (control == 1) return linearNormalized(0.0f, 24.0f, value);
             if (control == 2)
@@ -4379,6 +4457,12 @@ bool isControlContextuallyVisible(
 
     switch (type)
     {
+        case ModuleType::envelopeModulator:
+            if (control == EnvelopeModulatorModule::tremoloDepthControl)
+                return discreteIndex(values[0], 3) != 2;
+            if (control == EnvelopeModulatorModule::pitchDepthControl)
+                return discreteIndex(values[0], 3) == 2;
+            break;
         case ModuleType::compressor:
             if (control == 5)
                 return values[8] < 0.5f || values[5] > 0.0f;
@@ -4994,6 +5078,14 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
             "guitar bass chromatic tuner precision cents pitch calibration",
             guitarTunerNames, guitarTunerMetadata,
             &makeModule<GuitarTunerModule>,
+            ModuleCapability::continuousTelemetry),
+        makeDefinition(
+            ModuleType::envelopeModulator, "Envelope Modulator",
+            ModuleCategory::modulation,
+            "Let playing dynamics steer tremolo, harmonic tremolo, or vibrato between two reversible speeds.",
+            "envelope dynamics guitar touch responsive modulation tremolo harmonic vibrato amplitude speed threshold reverse",
+            envelopeModulatorNames, envelopeModulatorMetadata,
+            &makeModule<EnvelopeModulatorModule>,
             ModuleCapability::continuousTelemetry)
     }};
     return definitions;
@@ -5081,6 +5173,7 @@ CompactVisualization compactVisualization(ModuleType type)
             return CompactVisualization::stereo;
 
         case ModuleType::tremolo:
+        case ModuleType::envelopeModulator:
         case ModuleType::rotarySpeaker:
         case ModuleType::vintageChorus:
         case ModuleType::studioPhaser:
