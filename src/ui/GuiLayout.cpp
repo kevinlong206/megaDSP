@@ -479,6 +479,40 @@ std::vector<int> keyboardControlOrder(
     return result;
 }
 
+std::vector<int> ultraCompactControlOrder(
+    ModuleType type, const std::array<float, controlsPerSlot>& values,
+    bool hasStereoOutput, bool hasExternalSidechain)
+{
+    auto candidates = keyboardControlOrder(
+        type, values, hasStereoOutput, hasExternalSidechain);
+    std::stable_partition(
+        candidates.begin(), candidates.end(),
+        [type](int control) { return controlMetadata(type, control).essential; });
+    if (type == ModuleType::equalizer)
+        candidates = {
+            equalizerLowIsHighPass(values[10]) ? 0 : 1, 4,
+            equalizerHighIsLowPass(values[11]) ? 6 : 7, 9
+        };
+    else if (type == ModuleType::limiter)
+        candidates = { 0, 1, 2, 4 };
+    else if (type == ModuleType::neuralAmpModeler)
+        candidates = { 0, 4, 1, 2, 3 };
+    else if (type == ModuleType::envelopeModulator)
+        candidates = { 0, 1, 2, 7, 8, 10 };
+    else if (type == ModuleType::convolutionReverb)
+        candidates = { 4, 2, 5, 3, 0, 1 };
+
+    std::erase_if(candidates, [&](int control)
+    {
+        return !isControlContextuallyVisible(type, control, values)
+            || !isControlContextuallyEnabled(
+                type, control, values, hasStereoOutput, hasExternalSidechain);
+    });
+    if (candidates.size() > 5)
+        candidates.resize(5);
+    return candidates;
+}
+
 ControlKind keyboardControlKind(ModuleType type, int control)
 {
     if (isEqualizerModeControl(type, control))

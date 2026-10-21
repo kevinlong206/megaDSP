@@ -37,6 +37,11 @@ public:
     {
     }
 
+    void setShowPowerStateText(bool show)
+    {
+        showPowerStateText = show;
+    }
+
     void paintButton(
         juce::Graphics& graphics, bool highlighted, bool down) override
     {
@@ -53,6 +58,15 @@ public:
                 : background.withAlpha(0.35f));
         graphics.fillRoundedRectangle(
             getLocalBounds().toFloat(), 5.0f);
+        if (icon == Icon::power && showPowerStateText)
+        {
+            graphics.setColour(bypassed ? reductionColour : accent);
+            graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
+            graphics.drawText(
+                bypassed ? "BYP" : "ON", getLocalBounds(),
+                juce::Justification::centred);
+            return;
+        }
 
         auto bounds = getLocalBounds().toFloat().reduced(6.0f);
         const auto centre = bounds.getCentre();
@@ -127,6 +141,7 @@ public:
 
 private:
     Icon icon;
+    bool showPowerStateText = false;
 };
 
 class ThemePalette final : public juce::Component
@@ -531,6 +546,11 @@ public:
         setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     }
 
+    void setCompactFineDraggingEnabled(bool enabled)
+    {
+        compactFineDragging = enabled;
+    }
+
     void setMeterSource(std::function<float()> source)
     {
         meterSource = std::move(source);
@@ -579,7 +599,9 @@ public:
     {
         juce::Slider::mouseDown(event);
         dragStartValue = getValue();
-        showPrecisionOverlay();
+        if (compactFineDragging
+            && getSliderStyle() == juce::Slider::RotaryHorizontalVerticalDrag)
+            showPrecisionOverlay();
     }
 
     void mouseDrag(const juce::MouseEvent& event) override
@@ -1690,10 +1712,19 @@ public:
           controlsOverlay(processor)
     {
         moduleName = megadsp::moduleDefinition(type).displayName;
+        moduleInstance = processor.getRack().activeModuleInstance(slot);
         name.setText(moduleName, juce::dontSendNotification);
         name.setFont(juce::FontOptions(16.0f, juce::Font::bold));
         name.setColour(juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible(name);
+        dragHandle.setText("::", juce::dontSendNotification);
+        dragHandle.setJustificationType(juce::Justification::centred);
+        dragHandle.setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+        dragHandle.setTooltip("Drag to reorder this module.");
+        addChildComponent(dragHandle);
+        expandCollapse.setTitle("Expand " + moduleName);
+        expandCollapse.onClick = [this] { toggleUltraExpansion(); };
+        addChildComponent(expandCollapse);
 
         bypass.onClick = [this]
         {
@@ -1949,13 +1980,14 @@ public:
         setTitle(moduleName + " module widget, slot " + juce::String(slot + 1));
         setDescription(
             "Signal-flow position " + juce::String(slot + 1)
-            + (isUltraCompact()
+            + (isVerticalRack()
                    ? ". Use Up and Down to select adjacent modules."
                    : ". Use Left and Right to select adjacent module widgets."));
         setHelpText(
-            isUltraCompact()
-                ? "Space or B toggles bypass. Drag to reorder, or use "
-                  "Alt+Up and Alt+Down. Switch to S, M, or L to edit controls."
+            isVerticalRack()
+                ? "Edit the key controls directly. Click + or press Return to "
+                  "expand to the last full height. Drag the handle or title to "
+                  "reorder, or use Alt+Up and Alt+Down. Space or B toggles bypass."
                 : "All module controls are available in this widget. Use Left and "
                   "Right for adjacent widgets. Space or B toggles bypass. Drag the "
                   "widget header to reorder.");
@@ -2057,8 +2089,7 @@ public:
             }
         }
         updateContext(true);
-        if (!isUltraCompact())
-            startTimerHz(2);
+        startTimerHz(2);
     }
 
     ~ModuleCard() override
@@ -2083,7 +2114,7 @@ public:
         if (dragOver)
         {
             graphics.setColour(moduleColour.brighter(0.2f));
-            if (isUltraCompact())
+            if (isVerticalRack())
                 graphics.fillRect(
                     8.0f, dropAfter ? cardBounds.getBottom() - 4.0f : 1.0f,
                     cardBounds.getWidth() - 16.0f, 3.0f);
@@ -2096,18 +2127,102 @@ public:
 
     void resized() override
     {
+        if (getWidth() <= 0 || getHeight() <= 0)
+            return;
+        bypass.setShowPowerStateText(isVerticalRack());
         if (isUltraCompact())
         {
             for (auto* child : getChildren())
-                child->setVisible(child == &name || child == &bypass);
+                child->setVisible(child == &name || child == &bypass
+                                  || child == &expandCollapse || child == &dragHandle);
+            wasUltraCompact = true;
             auto row = getLocalBounds().reduced(8, 3);
             bypass.setBounds(row.removeFromRight(30));
-            name.setBounds(row);
+            expandCollapse.setBounds(row.removeFromRight(30).reduced(1));
+            expandCollapse.setButtonText("+");
+            expandCollapse.setTitle("Expand " + moduleName);
+            expandCollapse.setTooltip("Expand to the last non-compact height.");
+            dragHandle.setBounds(row.removeFromLeft(20));
+            name.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+            name.setBounds(row.removeFromLeft(
+                juce::jmin(190, row.getWidth() / 3)));
+            controlPresented.fill(false);
+            const auto values = currentValues();
+            auto controls = megadsp::ui::ultraCompactControlOrder(
+                type, values, processor.hasStereoOutput(),
+                processor.hasExternalSidechain());
+            const auto capacity = juce::jlimit(1, 5, row.getWidth() / 90);
+            if (static_cast<int>(controls.size()) > capacity)
+                controls.resize(static_cast<size_t>(capacity));
+            for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+            {
+                const auto index = static_cast<size_t>(control);
+                sliders[index].setWantsKeyboardFocus(false);
+                choices[index].setWantsKeyboardFocus(false);
+                toggles[index].setWantsKeyboardFocus(false);
+            }
+            for (int position = 0; position < static_cast<int>(controls.size()); ++position)
+            {
+                const auto index = static_cast<size_t>(controls[static_cast<size_t>(position)]);
+                controlPresented[index] = true;
+                auto field = row.withX(row.getX() + position * row.getWidth()
+                    / static_cast<int>(controls.size()));
+                field.setRight(row.getX() + (position + 1) * row.getWidth()
+                    / static_cast<int>(controls.size()));
+                field.reduce(3, 0);
+                const auto toggle = toggleAttachments[index] != nullptr;
+                labels[index].setVisible(!toggle);
+                labels[index].setBounds(toggle ? juce::Rectangle<int>()
+                                               : field.removeFromTop(11));
+                if (toggle)
+                {
+                    updateToggle(controls[static_cast<size_t>(position)], values[index] >= 0.5f);
+                    toggles[index].setVisible(true);
+                    toggles[index].setWantsKeyboardFocus(true);
+                    toggles[index].setBounds(field.reduced(1, 2));
+                }
+                else if (choiceAttachments[index] != nullptr)
+                {
+                    choices[index].setVisible(true);
+                    choices[index].setWantsKeyboardFocus(true);
+                    choices[index].setBounds(field);
+                }
+                else
+                {
+                    auto& slider = sliders[index];
+                    slider.setCompactFineDraggingEnabled(false);
+                    slider.setSliderStyle(juce::Slider::LinearHorizontal);
+                    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 58, 20);
+                    slider.setVisible(true);
+                    slider.setWantsKeyboardFocus(true);
+                    slider.setBounds(field);
+                    slider.updateText();
+                }
+            }
             setEditorVisible(false);
             return;
         }
+        if (wasUltraCompact)
+        {
+            for (auto* child : getChildren())
+                child->setVisible(true);
+            wasUltraCompact = false;
+        }
+        if (!isVerticalRack() && getHeight() > 0)
+            lastNonCompactHeight = getHeight();
+        name.setFont(juce::FontOptions(16.0f, juce::Font::bold));
+        expandCollapse.setVisible(isVerticalRack());
+        dragHandle.setVisible(isVerticalRack());
         auto bounds = getLocalBounds().reduced(8);
         auto heading = bounds.removeFromTop(28);
+        if (isVerticalRack())
+        {
+            dragHandle.setBounds(heading.removeFromLeft(20));
+            expandCollapse.setButtonText("-");
+            expandCollapse.setTitle("Collapse " + moduleName);
+            expandCollapse.setTooltip("Collapse to an Ultra row.");
+            expandCollapse.setBounds(heading.removeFromRight(28).reduced(2));
+        }
         remove.setBounds(heading.removeFromRight(28).reduced(2));
         reset.setBounds(heading.removeFromRight(28).reduced(2));
         bypass.setBounds(heading.removeFromRight(28).reduced(2));
@@ -2374,7 +2489,35 @@ public:
 
     int preferredHeight() const
     {
-        return megadsp::ui::moduleCardHeight;
+        return isUltraCompact() ? megadsp::ui::ultraCompactRowHeight
+                                : lastNonCompactHeight;
+    }
+
+    void collapseUltraPresentation()
+    {
+        expandedInUltraCompact = false;
+    }
+
+    void presentationChanged()
+    {
+        updateContext(true);
+        syncBypassState();
+        if (!isUltraCompact())
+            syncAssetName();
+        setEditorVisible(editor.isShowing());
+    }
+
+    void restorePresentationFrom(const ModuleCard& previous)
+    {
+        lastNonCompactHeight = previous.lastNonCompactHeight;
+        expandedInUltraCompact = previous.expandedInUltraCompact;
+        presentationChanged();
+    }
+
+    bool representsModule(const megadsp::DspModule* instance,
+                          megadsp::ModuleType candidateType) const
+    {
+        return moduleInstance == instance && type == candidateType;
     }
 
     int graphHeightForTesting() const
@@ -2391,10 +2534,7 @@ public:
     {
         const auto changed = selected != shouldBeSelected;
         selected = shouldBeSelected;
-        if (isUltraCompact())
-            stopTimer();
-        else
-            startTimerHz(selected ? 10 : 2);
+        startTimerHz(selected ? 10 : 2);
         if (changed)
             repaint();
     }
@@ -2416,11 +2556,10 @@ public:
     void syncBypassState()
     {
         const auto isBypassed = processor.isSlotBypassed(slot);
-        if (isUltraCompact())
-            name.setText(
-                juce::String(slot + 1) + "  " + moduleName
-                    + (isBypassed ? "  BYPASSED" : "  ON"),
-                juce::dontSendNotification);
+        name.setText(isVerticalRack()
+                ? juce::String(slot + 1) + "  " + moduleName
+                    + (isBypassed ? "  BYPASSED" : "  ON")
+                  : moduleName, juce::dontSendNotification);
         bypass.setToggleState(isBypassed, juce::dontSendNotification);
         bypass.setTitle(
             juce::String(isBypassed ? "Enable " : "Bypass ")
@@ -2658,10 +2797,18 @@ public:
     {
         editor.selectSlot(slot);
         const auto* source = event.originalComponent;
-        canStartDrag = source == this || source == &name;
+        canStartDrag = source == this || source == &name || source == &dragHandle;
         dragStart = event.getEventRelativeTo(this).position;
-        if (source == this)
+        if (canStartDrag)
             grabKeyboardFocus();
+    }
+
+    void mouseDoubleClick(const juce::MouseEvent& event) override
+    {
+        if (isVerticalRack()
+            && (event.originalComponent == &name
+                || event.originalComponent == &dragHandle))
+            toggleUltraExpansion();
     }
 
     void mouseDrag(const juce::MouseEvent& event) override
@@ -2685,7 +2832,12 @@ public:
 
     bool keyPressed(const juce::KeyPress& key) override
     {
-        if (isUltraCompact()
+        if (isVerticalRack() && key.getKeyCode() == juce::KeyPress::returnKey)
+        {
+            toggleUltraExpansion();
+            return true;
+        }
+        if (isVerticalRack()
             && (key.getKeyCode() == juce::KeyPress::upKey
                 || key.getKeyCode() == juce::KeyPress::downKey))
         {
@@ -2754,7 +2906,21 @@ private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     bool isUltraCompact() const
     {
+        return isVerticalRack() && !expandedInUltraCompact;
+    }
+
+    bool isVerticalRack() const
+    {
         return editor.widgetSize == megadsp::ui::WidgetSize::ultraCompact;
+    }
+
+    void toggleUltraExpansion()
+    {
+        expandedInUltraCompact = !expandedInUltraCompact;
+        editor.resized();
+        presentationChanged();
+        editor.selectSlot(slot);
+        editor.revealSelectedCard(false);
     }
 
     bool acceptsAssetFile(const juce::File& file) const
@@ -3059,11 +3225,6 @@ private:
 
     void updateContext(bool forceLayout = false)
     {
-        if (isUltraCompact())
-        {
-            resized();
-            return;
-        }
         const auto values = currentValues();
         const auto stereo = processor.hasStereoOutput();
         const auto sidechain = processor.hasExternalSidechain();
@@ -3122,10 +3283,9 @@ private:
 
     void timerCallback() override
     {
-        if (isUltraCompact())
-            return;
         updateContext();
-        syncAssetName();
+        if (!isUltraCompact())
+            syncAssetName();
     }
 
     bool selectAdjacent(int direction)
@@ -3138,7 +3298,7 @@ private:
         editor.selectSlot(target);
         auto* card = editor.cards[static_cast<size_t>(target)].get();
         card->grabKeyboardFocus();
-        if (isUltraCompact())
+        if (isVerticalRack())
         {
             editor.revealSelectedCard(false);
             return true;
@@ -3157,7 +3317,7 @@ private:
 
     void updateDropPosition(const SourceDetails& details)
     {
-        const auto after = isUltraCompact()
+        const auto after = isVerticalRack()
             ? details.localPosition.y > getHeight() / 2
             : details.localPosition.x > getWidth() / 2;
         if (after != dropAfter)
@@ -3202,6 +3362,7 @@ private:
             {
                 sliders[index].setSliderStyle(
                     juce::Slider::RotaryHorizontalVerticalDrag);
+                sliders[index].setCompactFineDraggingEnabled(true);
                 sliders[index].setTextBoxStyle(
                     juce::Slider::NoTextBox, false, 0, 0);
                 sliders[index].setBounds(controlArea);
@@ -3214,6 +3375,10 @@ private:
     MegaDSPAudioProcessor& processor;
     int slot;
     megadsp::ModuleType type;
+    const megadsp::DspModule* moduleInstance = nullptr;
+    int lastNonCompactHeight = megadsp::ui::moduleCardHeight;
+    bool expandedInUltraCompact = false;
+    bool wasUltraCompact = false;
     juce::String moduleName;
     bool supportsImpulseResponse = false;
     bool isWormhole = false;
@@ -3222,6 +3387,8 @@ private:
     bool namCabinetLoadPending = false;
     bool impulseResponseLoadPending = false;
     juce::Label name;
+    juce::Label dragHandle;
+    juce::TextButton expandCollapse;
     WidgetActionButton bypass { WidgetActionButton::Icon::power };
     juce::Label assetName;
     WidgetActionButton reset { WidgetActionButton::Icon::reset };
@@ -3666,8 +3833,8 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     smallWidgetsButton.setTooltip(
         "Use compact 300-pixel module widgets.");
     ultraCompactButton.setTooltip(
-        "Stack modules top to bottom with bypass and drag-to-reorder only. "
-        "Up/Down selects a module; Alt+Up/Down reorders it.");
+        "Stack modules with key controls, bypass, and vertical reordering. "
+        "Use each row's + button to expand it to its last full height.");
     ultraCompactButton.onClick = [this]
     {
         setWidgetSize(megadsp::ui::WidgetSize::ultraCompact, true);
@@ -3959,10 +4126,12 @@ void MegaDSPAudioProcessorEditor::resized()
                      : "Modules process audio from left to right.");
     if (ultraCompact)
     {
-        const auto contentHeight =
-            static_cast<int>(cards.size())
-                * (megadsp::ui::ultraCompactRowHeight + 4)
-            + rackPadding * 2;
+        const auto contentHeight = std::accumulate(
+            cards.begin(), cards.end(), rackPadding * 2,
+            [](int height, const auto& card)
+            {
+                return height + card->preferredHeight() + 4;
+            });
         rackContent.setSize(
             juce::jmax(
                 1, rackViewport.getWidth()
@@ -3976,9 +4145,11 @@ void MegaDSPAudioProcessorEditor::resized()
         for (auto& card : cards)
         {
             card->setBounds(
-                rows.removeFromTop(megadsp::ui::ultraCompactRowHeight));
+                rows.removeFromTop(card->preferredHeight()));
             rows.removeFromTop(4);
         }
+        for (auto& card : cards)
+            card->reassertVisualizationCapture();
         return;
     }
     const auto showAddButton =
@@ -4166,10 +4337,21 @@ void MegaDSPAudioProcessorEditor::refreshCards(
     {
         const juce::ScopedValueSetter<bool> refreshing(
             refreshingCards, true);
+        auto previousCards = std::move(cards);
         cards.clear();
         for (int slot = 0; slot < active; ++slot)
         {
             auto card = std::make_unique<ModuleCard>(*this, slot);
+            const auto previous = std::find_if(
+                previousCards.begin(), previousCards.end(),
+                [&](const auto& candidate)
+                {
+                    return candidate->representsModule(
+                        audioProcessor.getRack().activeModuleInstance(slot),
+                        audioProcessor.getRack().moduleType(slot));
+                });
+            if (previous != previousCards.end())
+                card->restorePresentationFrom(**previous);
             rackContent.addAndMakeVisible(*card);
             card->setEditorVisible(isShowing());
             cards.push_back(std::move(card));
@@ -4250,7 +4432,8 @@ void MegaDSPAudioProcessorEditor::revealSelectedCard(bool focus)
     if (widgetSize == megadsp::ui::WidgetSize::ultraCompact)
     {
         const auto top = rackViewport.getViewPositionY();
-        if (card->getY() < top)
+        if (card->getHeight() > rackViewport.getViewHeight()
+            || card->getY() < top)
             rackViewport.setViewPosition(0, card->getY());
         else if (card->getBottom() > top + rackViewport.getViewHeight())
             rackViewport.setViewPosition(
@@ -4280,16 +4463,19 @@ void MegaDSPAudioProcessorEditor::setWidgetSize(
 {
     if (widgetSize == size)
         return;
-    const auto rebuild =
+    const auto presentationChanged =
         widgetSize == megadsp::ui::WidgetSize::ultraCompact
         || size == megadsp::ui::WidgetSize::ultraCompact;
     widgetSize = size;
     refreshWidgetSizeButtons();
     rackViewport.setViewPosition(0, 0);
-    if (rebuild)
-        refreshCards();
-    else
-        resized();
+    if (size == megadsp::ui::WidgetSize::ultraCompact)
+        for (auto& card : cards)
+            card->collapseUltraPresentation();
+    resized();
+    if (presentationChanged)
+        for (auto& card : cards)
+            card->presentationChanged();
     revealSelectedCard(false);
     if (persist)
     {

@@ -268,6 +268,7 @@ public:
 
     void runTest() override
     {
+        juce::ScopedJuceInitialiser_GUI gui;
         const auto setType = [](MegaDSPAudioProcessor& processor,
                                 int slot, megadsp::ModuleType type)
         {
@@ -521,7 +522,7 @@ public:
                 (1 << megadsp::slotCount) - 1);
         }
 
-        beginTest("Ultra compact stacks bypass-only rows in signal order");
+        beginTest("Ultra compact keeps primary controls, expansion and vertical reordering");
         {
             MegaDSPAudioProcessor processor;
             processor.prepareToPlay(48000.0, 512);
@@ -531,6 +532,8 @@ public:
             processor.parameters.getParameter(
                 megadsp::controlParameterId(0, 0))->setValueNotifyingHost(0.37f);
             MegaDSPAudioProcessorEditor editor(processor, 820, 280);
+            const auto fullHeight = editor.cardHeightForTesting(0);
+            const auto* preparedCompressor = processor.getRack().activeModuleInstance(0);
             editor.setWidgetSizeForTesting(
                 megadsp::ui::WidgetSize::ultraCompact);
             expectEquals(editor.cardCountForTesting(), 8);
@@ -553,9 +556,54 @@ public:
                     {
                         ++visible;
                         expect(dynamic_cast<juce::Label*>(child) != nullptr
-                               || dynamic_cast<juce::Button*>(child) != nullptr);
+                               || dynamic_cast<juce::Button*>(child) != nullptr
+                               || dynamic_cast<juce::Slider*>(child) != nullptr
+                               || dynamic_cast<juce::ComboBox*>(child) != nullptr);
                     }
-                expectEquals(visible, 2);
+                expect(visible >= 6, "Ultra must expose controls as well as title, grip, expansion and bypass.");
+            }
+            const auto toggleExpansion = [&](int slot)
+            {
+                auto* card = editor.cardForTesting(slot);
+                juce::Button* expansion = nullptr;
+                for (auto* child : card->getChildren())
+                    if (auto* button = dynamic_cast<juce::Button*>(child))
+                        if (button->isVisible()
+                            && (button->getButtonText() == "+"
+                                || button->getButtonText() == "-"))
+                            expansion = button;
+                expect(expansion != nullptr, "Every Ultra module needs an expansion button.");
+                if (expansion != nullptr)
+                    expansion->onClick();
+            };
+            for (int slot = 0; slot < 8; ++slot)
+            {
+                toggleExpansion(slot);
+                expectEquals(editor.cardHeightForTesting(slot), fullHeight);
+                expect(editor.cardChildrenFitForTesting());
+            }
+            editor.setCardsEditorVisibleForTesting(true);
+            expectEquals(editor.activeVisualizationCardCountForTesting(), 8);
+            editor.refreshCardsForTesting();
+            for (int slot = 0; slot < 8; ++slot)
+            {
+                expectEquals(editor.cardHeightForTesting(slot), fullHeight);
+                expect(editor.cardForTesting(slot)->keyPressed(
+                    juce::KeyPress(juce::KeyPress::returnKey)));
+                expectEquals(editor.cardHeightForTesting(slot), 36);
+            }
+            auto* ratio = static_cast<juce::Slider*>(nullptr);
+            for (auto* child : editor.cardForTesting(0)->getChildren())
+                if (child->isVisible() && child->getTitle() == "Ratio")
+                    ratio = dynamic_cast<juce::Slider*>(child);
+            expect(ratio != nullptr);
+            if (ratio != nullptr)
+            {
+                expect(ratio->getSliderStyle() == juce::Slider::LinearHorizontal);
+                ratio->setValue(0.63f, juce::sendNotificationSync);
+                expectWithinAbsoluteError(
+                    processor.parameters.getRawParameterValue(
+                        megadsp::controlParameterId(0, 1))->load(), 0.63f, 0.0001f);
             }
             auto* first = editor.cardForTesting(0);
             expect(first->keyPressed(juce::KeyPress(juce::KeyPress::spaceKey)));
@@ -567,6 +615,7 @@ public:
             editor.applyPendingCardMutationForTesting();
             expect(processor.getRack().moduleType(1)
                    == megadsp::ModuleType::compressor);
+            toggleExpansion(1);
             auto* target = editor.cardForTesting(7);
             auto* dropTarget = dynamic_cast<juce::DragAndDropTarget*>(target);
             expect(dropTarget != nullptr);
@@ -582,6 +631,8 @@ public:
             }
             expect(processor.getRack().moduleType(7)
                    == megadsp::ModuleType::compressor);
+            expect(processor.getRack().activeModuleInstance(7) == preparedCompressor);
+            expectEquals(editor.cardHeightForTesting(7), fullHeight);
             expectWithinAbsoluteError(
                 processor.parameters.getParameter(
                     megadsp::controlParameterId(7, 0))->getValue(),
@@ -599,6 +650,8 @@ public:
             }
             expect(processor.getRack().moduleType(0)
                    == megadsp::ModuleType::compressor);
+            expectEquals(editor.cardHeightForTesting(0), fullHeight);
+            toggleExpansion(0);
             editor.clickChainNavigatorForTesting(7);
             expect(editor.selectedCardVisibleForTesting());
             expect(editor.cardForTesting(7)->keyPressed(
@@ -620,6 +673,47 @@ public:
                 megadsp::ui::WidgetSize::ultraCompact);
             editor.refreshCardsForTesting();
             expectEquals(editor.cardHeightForTesting(7), 36);
+        }
+
+        beginTest("Ultra contextual controls retain hidden settings and edit without topology changes");
+        {
+            MegaDSPAudioProcessor processor;
+            processor.prepareToPlay(48000.0, 512);
+            processor.addModule(megadsp::ModuleType::envelopeModulator);
+            processor.parameters.getParameter(megadsp::controlParameterId(0, 7))
+                ->setValueNotifyingHost(0.37f);
+            processor.parameters.getParameter(megadsp::controlParameterId(0, 8))
+                ->setValueNotifyingHost(0.42f);
+            MegaDSPAudioProcessorEditor editor(processor, 820, 400);
+            editor.setWidgetSizeForTesting(megadsp::ui::WidgetSize::ultraCompact);
+            const auto topology = processor.getTopologyGeneration();
+            juce::ComboBox* mode = nullptr;
+            for (auto* child : editor.cardForTesting(0)->getChildren())
+                if (child->isVisible() && child->getTitle() == "Mode")
+                    mode = dynamic_cast<juce::ComboBox*>(child);
+            expect(mode != nullptr);
+            if (mode != nullptr)
+                mode->setSelectedId(3, juce::sendNotificationSync);
+            expectEquals(megadsp::discreteIndex(
+                processor.parameters.getRawParameterValue(
+                    megadsp::controlParameterId(0, 0))->load(), 3), 2);
+            auto pitchVisible = false;
+            auto tremoloVisible = false;
+            for (auto* child : editor.cardForTesting(0)->getChildren())
+            {
+                pitchVisible = pitchVisible
+                    || (child->isVisible() && child->getTitle() == "Pitch Depth");
+                tremoloVisible = tremoloVisible
+                    || (child->isVisible() && child->getTitle() == "Tremolo Depth");
+            }
+            expect(pitchVisible);
+            expect(!tremoloVisible);
+            expectWithinAbsoluteError(processor.parameters.getRawParameterValue(
+                megadsp::controlParameterId(0, 7))->load(), 0.37f, 0.0001f);
+            expectWithinAbsoluteError(processor.parameters.getRawParameterValue(
+                megadsp::controlParameterId(0, 8))->load(), 0.42f, 0.0001f);
+            expectEquals(processor.getTopologyGeneration(), topology);
+            expect(editor.cardChildrenFitForTesting());
         }
 
         beginTest("Widget size is global and absent from project state");
@@ -739,6 +833,12 @@ public:
                 expect(editor->cardGraphsAvoidControlsForTesting());
                 expect(editor->cardPresentsAllActiveControlsForTesting());
             }
+            std::array<float, megadsp::controlsPerSlot> retainedValues {};
+            for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+                retainedValues[static_cast<size_t>(control)] =
+                    moduleProcessor->parameters.getRawParameterValue(
+                        megadsp::controlParameterId(0, control))->load();
+            const auto* preparedModule = moduleProcessor->getRack().activeModuleInstance(0);
             editor->setWidgetSizeForTesting(
                 megadsp::ui::WidgetSize::ultraCompact);
             expectEquals(editor->cardHeightForTesting(0), 36);
@@ -748,7 +848,37 @@ public:
             for (auto* child : editor->cardForTesting(0)->getChildren())
                 if (child->isVisible())
                     ++ultraControls;
-            expectEquals(ultraControls, 2);
+            expect(ultraControls >= 4);
+            const auto primaryControls = megadsp::ui::ultraCompactControlOrder(
+                static_cast<megadsp::ModuleType>(rawType),
+                megadsp::moduleDefaults(static_cast<megadsp::ModuleType>(rawType)),
+                true, false);
+            for (const auto control : primaryControls)
+            {
+                const juce::String label = megadsp::controlMetadata(
+                    static_cast<megadsp::ModuleType>(rawType), control).label;
+                expect(std::any_of(
+                    editor->cardForTesting(0)->getChildren().begin(),
+                    editor->cardForTesting(0)->getChildren().end(),
+                    [&](const auto* child)
+                    {
+                        return child->isVisible() && child->getTitle() == label;
+                    }), "Missing Ultra primary control: " + label);
+            }
+            expect(editor->cardForTesting(0)->keyPressed(
+                juce::KeyPress(juce::KeyPress::returnKey)));
+            expect(editor->cardHeightForTesting(0) > 36);
+            expect(editor->cardChildrenFitForTesting());
+            expect(editor->cardGraphsAvoidControlsForTesting());
+            expect(editor->cardPresentsAllActiveControlsForTesting());
+            editor->refreshCardsForTesting();
+            expect(editor->cardHeightForTesting(0) > 36);
+            expect(moduleProcessor->getRack().activeModuleInstance(0) == preparedModule);
+            for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+                expectWithinAbsoluteError(
+                    moduleProcessor->parameters.getRawParameterValue(
+                        megadsp::controlParameterId(0, control))->load(),
+                    retainedValues[static_cast<size_t>(control)], 0.000001f);
         }
         expect(std::all_of(
             compactVisualizationKinds.begin(),

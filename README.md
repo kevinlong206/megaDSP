@@ -23,13 +23,19 @@ The loaded model and validated library rows identify the **A1** or **A2**
 architecture generation. Filename-only entries omit this label until metadata
 validation completes.
 
-Choose **ULTRA** beside **S / M / L** for a bypass-only rack: 36-pixel module rows
-stack from top to bottom in signal-flow order. Drag a row above or below another
-to reorder; click its power button or press **Space / B** to bypass. **Up / Down**
-select rows and **Alt+Up / Alt+Down** reorder them. The list scrolls vertically
-when needed. Controls, asset loading, reset, insertion, and removal remain in
-the S/M/L views; ULTRA leaves their values intact and suspends visualizations.
-The selected view uses the existing global widget preference.
+Choose **ULTRA** beside **S / M / L** for 36-pixel module rows stacked in
+top-to-bottom signal-flow order. Each row exposes up to five prioritized,
+contextual controls with musical values, alongside bypass and a visible drag
+handle. Drag the handle or title above/below another row to reorder;
+**Alt+Up / Alt+Down** also reorder, and **Up / Down** select rows.
+Click **+**, double-click the title, or press **Return** to expand any module
+in place to its last non-compact height; **-** or Return collapses it again.
+Multiple modules can stay expanded, and their remembered heights and expansion
+follow them when reordered or the cards refresh. Expanded cards expose the
+complete editor, including asset loading, reset, and removal. Collapsed rows
+suspend visualization capture without changing hidden parameter values.
+**Space / B** toggles bypass. The list scrolls vertically when needed, and the
+selected view uses the existing global widget preference.
 
 Eight complete **Snapshots** let one instance hold multiple racks. Click a
 snapshot to recall it; clicking an unused snapshot activates a fresh blank rack

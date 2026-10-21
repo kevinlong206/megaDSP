@@ -106,6 +106,41 @@ public:
             widgetSizeId(widgetSizeFromId("MEDIUM")),
             juce::String("medium"));
 
+        beginTest("Ultra prioritizes only relevant editable controls without mutating values");
+        for (int rawType = 1; rawType < moduleTypeCount; ++rawType)
+        {
+            const auto type = static_cast<ModuleType>(rawType);
+            const auto values = moduleDefaults(type);
+            const auto original = values;
+            for (const auto stereo : { false, true })
+            {
+                const auto controls = ultraCompactControlOrder(type, values, stereo, false);
+                expect(!controls.empty());
+                expect(controls.size() <= 5);
+                expectEquals(static_cast<int>(std::set<int>(
+                    controls.begin(), controls.end()).size()), static_cast<int>(controls.size()));
+                for (const auto control : controls)
+                {
+                    expect(isControlContextuallyVisible(type, control, values));
+                    expect(isControlContextuallyEnabled(type, control, values, stereo, false));
+                }
+            }
+            expect(values == original);
+        }
+        auto envelopeValues = moduleDefaults(ModuleType::envelopeModulator);
+        envelopeValues[0] = 1.0f;
+        const auto vibratoControls = ultraCompactControlOrder(
+            ModuleType::envelopeModulator, envelopeValues, true, false);
+        expect(std::find(vibratoControls.begin(), vibratoControls.end(), 8)
+               != vibratoControls.end());
+        expect(std::find(vibratoControls.begin(), vibratoControls.end(), 7)
+               == vibratoControls.end());
+        auto eqValues = moduleDefaults(ModuleType::equalizer);
+        eqValues[10] = eqValues[11] = 1.0f;
+        const auto cutControls = ultraCompactControlOrder(
+            ModuleType::equalizer, eqValues, true, false);
+        expect(cutControls == std::vector<int>({ 0, 4, 6, 9 }));
+
         beginTest("Editor limits follow logical display bounds");
         const auto limits = calculateEditorResizeLimits(
             { 0, 0, 3840, 2160 });

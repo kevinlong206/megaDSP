@@ -101,6 +101,9 @@ StereoBalanceMeasurement measureStereoBalance(
 std::vector<int> keyboardControlOrder(
     ModuleType, const std::array<float, controlsPerSlot>& values,
     bool hasStereoOutput, bool hasExternalSidechain);
+std::vector<int> ultraCompactControlOrder(
+    ModuleType, const std::array<float, controlsPerSlot>& values,
+    bool hasStereoOutput, bool hasExternalSidechain);
 ControlKind keyboardControlKind(ModuleType, int control);
 int keyboardControlOptionCount(ModuleType, int control);
 juce::String keyboardControlLabel(ModuleType, int control);
