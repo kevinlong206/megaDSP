@@ -67,7 +67,13 @@ struct PluginPerformanceSnapshot
     bool offline = false;
     bool liveSafe = false;
     bool hostBypassed = false;
+    bool callbacksActive = false;
     bool backgroundActivity = false;
+
+    bool effectDspActive() const noexcept
+    {
+        return callbacksActive && !hostBypassed;
+    }
 };
 
 namespace megadsp
@@ -447,8 +453,7 @@ private:
     void recordRealtimeDiagnostics(
         std::int64_t elapsedMicros, int blockSamples) noexcept;
     void recordPerformanceMetrics(
-        std::uint64_t elapsedTicks, int blockSamples,
-        bool hostBypassed) noexcept;
+        std::uint64_t elapsedTicks, int blockSamples) noexcept;
     void mixLiveSafeSpills(juce::AudioBuffer<float>& main);
     void addSpillSnapshot(int index) noexcept;
     void processSpillSnapshots(
@@ -629,6 +634,7 @@ private:
     megadsp::RealtimeProcessProfile realtimeProfile;
     megadsp::RealtimeProcessProfile accumulatedRealtimeProfile;
     static constexpr int performanceHistogramBins = 401;
+    std::atomic<std::uint64_t> performanceCallbackTicks { 0 };
     std::atomic<float> performanceCurrentLoad { 0.0f };
     std::atomic<float> performanceAverageLoad { 0.0f };
     std::atomic<float> performancePeakLoad { 0.0f };

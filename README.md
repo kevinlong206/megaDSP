@@ -64,6 +64,16 @@ offline rendering, LIVE SAFE, host bypass, and background NAM/IR work
 separately; **RESET** clears its local history and statistics. This measures
 megaDSP's real-time processing deadline rather than whole-system CPU, so it
 remains useful in hosts that do not attribute CPU to individual plug-ins.
+If the DAW stops audio callbacks, the header switches to **DSP IDLE / NO
+CALLBACKS** instead of freezing its last load. Inactivity is detected after
+250 ms or three block durations, whichever is longer; an executing callback
+never counts as idle. The panel shows zero current load and labels retained
+statistics as historical. Hosts do not always distinguish bypass from stopped
+or suspended audio, so **IDLE** does not pretend to identify the cause.
+If the host still requests bypass callbacks, **HOST BYPASS / FX 0% / DRY**
+confirms the effect graphs are skipped; necessary dry routing, latency
+alignment, and callback bookkeeping can still use a small amount of CPU.
+UI and background library/asset work are separate and can continue in either state.
 
 Creative spectral effects keep the live dry signal immediate: **Spectral
 Prism**, **Pitch Bloom**, **Spectral Delay Canvas**, **Harmonic Mirage**,

@@ -1173,7 +1173,7 @@ public:
         setTitle("megaDSP real-time DSP performance");
         setDescription(
             "Current and historical audio callback deadline usage.");
-        setSize(620, 450);
+        setSize(620, 474);
         metrics = processor.performanceSnapshot();
         startTimerHz(15);
     }
@@ -1218,6 +1218,10 @@ public:
             juce::Justification::centredRight);
 
         auto modes = bounds.removeFromTop(22);
+        if (!metrics.callbacksActive)
+            drawModePill(
+                graphics, modes, "NO CALLBACKS",
+                juce::Colour(0xff9ba6b5));
         drawModePill(
             graphics, modes,
             metrics.offline ? "OFFLINE" : "REALTIME",
@@ -1226,7 +1230,7 @@ public:
             drawModePill(
                 graphics, modes, "LIVE SAFE",
                 juce::Colour(0xff62b6cb));
-        if (metrics.hostBypassed)
+        if (metrics.hostBypassed && metrics.callbacksActive)
             drawModePill(
                 graphics, modes, "HOST BYPASS",
                 juce::Colour(0xff9ba6b5));
@@ -1235,24 +1239,36 @@ public:
                 graphics, modes, "BG LOAD",
                 juce::Colour(0xffffa85b));
 
+        graphics.setColour(juce::Colour(0xffa8b3c0));
+        graphics.setFont(juce::FontOptions(10.0f));
+        graphics.drawFittedText(
+            !metrics.callbacksActive
+                ? "No recent audio callbacks. DSP idle; host bypass and stopped audio are indistinguishable."
+                : metrics.hostBypassed
+                    ? "Effect DSP suspended. Callback cost is dry routing / latency alignment, not effects."
+                    : "Audio callbacks active. UI and background CPU are separate from this DSP meter.",
+            bounds.removeFromTop(24), juce::Justification::centredLeft, 2);
+
         auto cards = bounds.removeFromTop(56);
         constexpr int cardCount = 6;
         const auto cardWidth = cards.getWidth() / cardCount;
         drawMetricCard(
             graphics, cards.removeFromLeft(cardWidth),
-            "CURRENT", percent(metrics.currentLoad),
+            metrics.hostBypassed && metrics.callbacksActive ? "DRY CALLBACK" : "CURRENT",
+            percent(metrics.currentLoad),
             loadColour(metrics.currentLoad));
         drawMetricCard(
             graphics, cards.removeFromLeft(cardWidth),
-            "AVERAGE", percent(metrics.averageLoad),
+            metrics.effectDspActive() ? "AVERAGE" : "HIST AVG",
+            percent(metrics.averageLoad),
             loadColour(metrics.averageLoad));
         drawMetricCard(
             graphics, cards.removeFromLeft(cardWidth),
-            "PEAK", percent(metrics.peakLoad),
+            "HELD PEAK", percent(metrics.peakLoad),
             loadColour(metrics.peakLoad));
         drawMetricCard(
             graphics, cards.removeFromLeft(cardWidth),
-            "P95 / P99",
+            "HIST P95 / P99",
             percent(metrics.percentile95) + " / "
                 + percent(metrics.percentile99),
             loadColour(metrics.percentile99));
@@ -1260,7 +1276,7 @@ public:
             0.0f, 1.0f - metrics.currentLoad);
         drawMetricCard(
             graphics, cards.removeFromLeft(cardWidth),
-            "HEADROOM", percent(headroom),
+            "HEADROOM", metrics.callbacksActive ? percent(headroom) : "--",
             headroom < 0.1f ? juce::Colour(0xffff4f55)
                            : headroom < 0.25f
                                ? juce::Colour(0xffffa85b)
@@ -1279,7 +1295,7 @@ public:
         graphics.setColour(juce::Colour(0xff8f9baa));
         auto slotHeading = bounds.removeFromTop(17);
         graphics.drawText(
-            "SELECTED SNAPSHOT MODULES",
+            metrics.effectDspActive() ? "SELECTED SNAPSHOT MODULES" : "MODULE DSP IDLE",
             slotHeading.removeFromLeft(230),
             juce::Justification::centredLeft);
         graphics.drawText(
@@ -1387,7 +1403,8 @@ private:
             "-10s", plot.getX(), plot.getBottom() - 14, 32, 14,
             juce::Justification::centredLeft);
         graphics.drawText(
-            "NOW", plot.getRight() - 32, plot.getBottom() - 14, 32, 14,
+            metrics.callbacksActive ? "NOW" : "LAST",
+            plot.getRight() - 32, plot.getBottom() - 14, 32, 14,
             juce::Justification::centredRight);
         if (metrics.historyCount < 2)
             return;
@@ -1504,6 +1521,11 @@ public:
     void setPerformance(const PluginPerformanceSnapshot& next)
     {
         performance = next;
+        setTitle(!performance.callbacksActive
+            ? "DSP idle: no recent audio callbacks"
+            : performance.hostBypassed
+                ? "Host bypass: effect DSP suspended; dry routing only"
+                : "DSP performance: audio callbacks active");
         repaint();
     }
 
@@ -1609,16 +1631,20 @@ private:
         graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
         graphics.setColour(juce::Colour(0xffa8b3c0));
         graphics.drawText(
-            performance.offline ? "DSP OFFLINE" : "DSP LOAD",
+            !performance.callbacksActive ? "DSP IDLE"
+                : performance.hostBypassed ? "HOST BYPASS"
+                : performance.offline ? "DSP OFFLINE" : "DSP LOAD",
             label, juce::Justification::centredLeft);
         graphics.setFont(juce::FontOptions(11.0f, juce::Font::bold));
         graphics.setColour(PerformancePanel::loadColour(
-            performance.peakLoad));
+            performance.effectDspActive() ? performance.peakLoad : 0.0f));
         graphics.drawText(
-            juce::String(performance.averageLoad * 100.0f, 0)
-                + "%  P "
-                + juce::String(performance.peakLoad * 100.0f, 0)
-                + "%",
+            !performance.callbacksActive ? "NO CALLBACKS"
+                : performance.hostBypassed ? "FX 0% / DRY"
+                : juce::String(performance.averageLoad * 100.0f, 0)
+                    + "%  P "
+                    + juce::String(performance.peakLoad * 100.0f, 0)
+                    + "%",
             bounds, juce::Justification::centredLeft);
     }
 

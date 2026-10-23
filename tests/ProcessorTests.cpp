@@ -8,6 +8,7 @@
 #include <juce_core/juce_core.h>
 
 #include <vector>
+#include <thread>
 
 namespace
 {
@@ -3524,6 +3525,8 @@ public:
         expect(!performance.offline);
         expect(!performance.liveSafe);
         expect(!performance.hostBypassed);
+        expect(performance.callbacksActive);
+        expect(performance.effectDspActive());
 
         performanceProcessor.setLiveSafeSnapshotsEnabled(true);
         performanceProcessor.setNonRealtime(true);
@@ -3540,6 +3543,16 @@ public:
         performance =
             performanceProcessor.performanceSnapshot();
         expect(performance.hostBypassed);
+        expect(performance.callbacksActive);
+        expect(!performance.effectDspActive());
+        expect(performance.currentLoad >= 0.0f);
+        for (int slot = 0; slot < megadsp::slotCount; ++slot)
+        {
+            expectEquals(performance.slotAverageLoad[static_cast<size_t>(slot)], 0.0f);
+            expectEquals(performance.slotPeakLoad[static_cast<size_t>(slot)], 0.0f);
+        }
+        expectEquals(performance.otherSnapshotsAverageLoad, 0.0f);
+        expectEquals(performance.otherSnapshotsPeakLoad, 0.0f);
 
         performanceProcessor.resetPerformanceMetrics();
         performance =
@@ -3550,6 +3563,144 @@ public:
             static_cast<juce::int64>(0));
         expectWithinAbsoluteError(
             performance.averageLoad, 0.0f, 0.000001f);
+
+        beginTest("Stopped callbacks show idle without discarding historical measurements");
+        {
+            MegaDSPAudioProcessor idleProcessor;
+            expect(!idleProcessor.performanceSnapshot().callbacksActive);
+            idleProcessor.prepareToPlay(48000.0, 64);
+            idleProcessor.addModule(megadsp::ModuleType::delay);
+            expect(!idleProcessor.performanceSnapshot().callbacksActive);
+            juce::AudioBuffer<float> block(2, 64);
+            juce::MidiBuffer idleMidi;
+            for (int index = 0; index < 90; ++index)
+            {
+                block.clear();
+                idleProcessor.processBlock(block, idleMidi);
+            }
+            const auto before = idleProcessor.performanceSnapshot();
+            expect(before.callbacksActive);
+            expect(before.averageLoad > 0.0f);
+            expect(before.slotAverageLoad[0] > 0.0f);
+            expect(before.historyCount > 0);
+
+            MegaDSPAudioProcessor largeBlockProcessor;
+            largeBlockProcessor.prepareToPlay(48000.0, 32768);
+            juce::AudioBuffer<float> largeBlock(2, 32768);
+            largeBlock.clear();
+            largeBlockProcessor.processBlock(largeBlock, idleMidi);
+            juce::Thread::sleep(350);
+
+            const auto idle = idleProcessor.performanceSnapshot();
+            expect(!idle.callbacksActive);
+            expect(!idle.hostBypassed, "Inactivity must not invent a host bypass notification.");
+            expect(!idle.effectDspActive());
+            expectEquals(idle.currentLoad, 0.0f);
+            expectEquals(idle.averageLoad, before.averageLoad);
+            expectEquals(idle.peakLoad, before.peakLoad);
+            expectEquals(idle.percentile99, before.percentile99);
+            expectEquals(idle.historyCount, before.historyCount);
+            expect(idle.history == before.history);
+            expectEquals(idle.slotAverageLoad[0], 0.0f);
+            expectEquals(idle.slotPeakLoad[0], 0.0f);
+            expectEquals(idle.otherSnapshotsAverageLoad, 0.0f);
+            expectEquals(idle.otherSnapshotsPeakLoad, 0.0f);
+            expect(largeBlockProcessor.performanceSnapshot().callbacksActive,
+                   "A legitimate large block must not time out after only 250 ms.");
+
+            block.clear();
+            idleProcessor.processBlockBypassed(block, idleMidi);
+            expect(idleProcessor.performanceSnapshot().callbacksActive);
+            expect(idleProcessor.performanceSnapshot().hostBypassed);
+            expect(!idleProcessor.performanceSnapshot().effectDspActive());
+            juce::Thread::sleep(350);
+            expect(!idleProcessor.performanceSnapshot().callbacksActive);
+            expectEquals(idleProcessor.performanceSnapshot().currentLoad, 0.0f);
+            block.clear();
+            idleProcessor.processBlock(block, idleMidi);
+            expect(idleProcessor.performanceSnapshot().effectDspActive());
+            expect(!idleProcessor.performanceSnapshot().hostBypassed);
+            idleProcessor.releaseResources();
+            expect(!idleProcessor.performanceSnapshot().callbacksActive);
+            expectEquals(idleProcessor.performanceSnapshot().currentLoad, 0.0f);
+            idleProcessor.prepareToPlay(48000.0, 64);
+            expect(!idleProcessor.performanceSnapshot().callbacksActive);
+        }
+
+        beginTest("An executing callback never becomes idle even when overdue");
+        {
+            class PausingPlayHead final : public juce::AudioPlayHead
+            {
+            public:
+                juce::Optional<PositionInfo> getPosition() const override
+                {
+                    entered.signal();
+                    resume.wait(5000);
+                    return {};
+                }
+
+                mutable juce::WaitableEvent entered;
+                mutable juce::WaitableEvent resume;
+            };
+            PausingPlayHead playHead;
+            MegaDSPAudioProcessor busyProcessor;
+            busyProcessor.prepareToPlay(48000.0, 64);
+            busyProcessor.setPlayHead(&playHead);
+            juce::AudioBuffer<float> block(2, 64);
+            block.clear();
+            juce::MidiBuffer busyMidi;
+            std::thread callback([&] { busyProcessor.processBlock(block, busyMidi); });
+            expect(playHead.entered.wait(2000));
+            juce::Thread::sleep(350);
+            expect(busyProcessor.performanceSnapshot().callbacksActive);
+            expect(busyProcessor.performanceSnapshot().effectDspActive());
+            playHead.resume.signal();
+            callback.join();
+            busyProcessor.setPlayHead(nullptr);
+            expect(busyProcessor.performanceSnapshot().callbacksActive);
+        }
+
+        beginTest("Host bypass leaves effect capture unchanged while routing dry audio");
+        {
+            MegaDSPAudioProcessor bypassedProcessor;
+            bypassedProcessor.prepareToPlay(48000.0, 64);
+            bypassedProcessor.addModule(megadsp::ModuleType::delay);
+            bypassedProcessor.setLiveSafeSnapshotsEnabled(true);
+            bypassedProcessor.getVisualizationData().setSlotActive(0, true);
+            juce::AudioBuffer<float> block(2, 64);
+            juce::MidiBuffer hostBypassMidi;
+            block.clear();
+            bypassedProcessor.processBlock(block, hostBypassMidi);
+            std::array<float, 1024> capture {};
+            const auto capturedBefore = bypassedProcessor.getVisualizationData()
+                .slotData(0).input.copyLatest(capture);
+            expectEquals(capturedBefore, size_t { 64 });
+            for (int index = 0; index < 12; ++index)
+            {
+                juce::FloatVectorOperations::fill(block.getWritePointer(0), 0.25f, 64);
+                juce::FloatVectorOperations::fill(block.getWritePointer(1), -0.1f, 64);
+                bypassedProcessor.processBlockBypassed(block, hostBypassMidi);
+                for (int sample = 0; sample < 64; ++sample)
+                {
+                    expectEquals(block.getSample(0, sample), 0.25f);
+                    expectEquals(block.getSample(1, sample), -0.1f);
+                }
+                const auto bypassed = bypassedProcessor.performanceSnapshot();
+                expect(bypassed.callbacksActive);
+                expect(bypassed.hostBypassed);
+                expect(!bypassed.effectDspActive());
+                expectEquals(bypassed.slotAverageLoad[0], 0.0f);
+                expectEquals(bypassed.slotPeakLoad[0], 0.0f);
+            }
+            expectEquals(bypassedProcessor.getVisualizationData()
+                             .slotData(0).input.copyLatest(capture),
+                         capturedBefore);
+            block.clear();
+            bypassedProcessor.processBlock(block, hostBypassMidi);
+            expect(bypassedProcessor.performanceSnapshot().effectDspActive());
+            expect(bypassedProcessor.getVisualizationData()
+                       .slotData(0).input.copyLatest(capture) > capturedBefore);
+        }
     }
 };
 

@@ -10,6 +10,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <string_view>
 
@@ -18,6 +19,32 @@ thread_local bool
 
 namespace
 {
+constexpr auto performanceCallbackRunning =
+    std::numeric_limits<std::uint64_t>::max();
+
+class PerformanceCallbackScope final
+{
+public:
+    PerformanceCallbackScope(
+        std::atomic<std::uint64_t>& ticksToUse,
+        std::atomic<bool>& bypassFlag, bool bypassed) noexcept
+        : ticks(ticksToUse)
+    {
+        bypassFlag.store(bypassed, std::memory_order_release);
+        ticks.store(performanceCallbackRunning, std::memory_order_release);
+    }
+
+    ~PerformanceCallbackScope()
+    {
+        ticks.store(
+            static_cast<std::uint64_t>(juce::Time::getHighResolutionTicks()),
+            std::memory_order_release);
+    }
+
+private:
+    std::atomic<std::uint64_t>& ticks;
+};
+
 class ProcessorStateUndoAction final : public juce::UndoableAction
 {
 public:
@@ -2077,6 +2104,8 @@ void MegaDSPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
     observedAudioCallbackGeneration = 0;
     audioIdlePollCount = 0;
     audioStreamActive.store(false, std::memory_order_release);
+    performanceCallbackTicks.store(0, std::memory_order_release);
+    performanceHostBypassed.store(false, std::memory_order_release);
     megadsp::Diagnostics::instance().log(
         "prepare",
         "instance=" + juce::String(diagnosticInstanceId)
@@ -2087,6 +2116,7 @@ void MegaDSPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
 
 void MegaDSPAudioProcessor::releaseResources()
 {
+    performanceCallbackTicks.store(0, std::memory_order_release);
     for (auto& snapshotRack : snapshotRacks)
         snapshotRack->reset();
 }
@@ -2116,6 +2146,8 @@ bool MegaDSPAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) c
 void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                          juce::MidiBuffer& midi)
 {
+    const PerformanceCallbackScope callbackActivity(
+        performanceCallbackTicks, performanceHostBypassed, false);
     const auto callbackStart = static_cast<std::uint64_t>(
         juce::Time::getHighResolutionTicks());
     const auto diagnosticsEnabled =
@@ -2305,12 +2337,14 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     }
     recordRealtimeDiagnostics(elapsedMicros, main.getNumSamples());
     recordPerformanceMetrics(
-        elapsedTicks, main.getNumSamples(), false);
+        elapsedTicks, main.getNumSamples());
 }
 
 void MegaDSPAudioProcessor::processBlockBypassed(
     juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
+    const PerformanceCallbackScope callbackActivity(
+        performanceCallbackTicks, performanceHostBypassed, true);
     const auto callbackStart = static_cast<std::uint64_t>(
         juce::Time::getHighResolutionTicks());
     realtimeProfile.reset();
@@ -2367,7 +2401,7 @@ void MegaDSPAudioProcessor::processBlockBypassed(
             static_cast<std::uint64_t>(
                 juce::Time::getHighResolutionTicks())
                 - callbackStart,
-            main.getNumSamples(), true);
+            main.getNumSamples());
         return;
     }
 
@@ -2389,7 +2423,7 @@ void MegaDSPAudioProcessor::processBlockBypassed(
         static_cast<std::uint64_t>(
             juce::Time::getHighResolutionTicks())
             - callbackStart,
-        main.getNumSamples(), true);
+        main.getNumSamples());
 }
 
 PluginPerformanceSnapshot
@@ -2480,6 +2514,31 @@ MegaDSPAudioProcessor::performanceSnapshot() const noexcept
     result.otherSnapshotsPeakLoad =
         performanceOtherSnapshotsPeakLoad.load(
             std::memory_order_acquire);
+    const auto callbackTicks =
+        performanceCallbackTicks.load(std::memory_order_acquire);
+    if (callbackTicks == performanceCallbackRunning)
+        result.callbacksActive = true;
+    else if (callbackTicks != 0)
+    {
+        const auto now = static_cast<std::uint64_t>(
+            juce::Time::getHighResolutionTicks());
+        const auto elapsed = now >= callbackTicks
+            ? juce::Time::highResolutionTicksToSeconds(
+                  static_cast<juce::int64>(now - callbackTicks))
+            : 0.0;
+        const auto timeoutSeconds = juce::jmax(
+            0.25, 3.0 * static_cast<double>(result.deadlineMilliseconds) / 1000.0);
+        result.callbacksActive = elapsed <= timeoutSeconds;
+    }
+    if (!result.callbacksActive)
+        result.currentLoad = 0.0f;
+    if (!result.effectDspActive())
+    {
+        result.slotAverageLoad.fill(0.0f);
+        result.slotPeakLoad.fill(0.0f);
+        result.otherSnapshotsAverageLoad = 0.0f;
+        result.otherSnapshotsPeakLoad = 0.0f;
+    }
     return result;
 }
 
@@ -2509,8 +2568,7 @@ void MegaDSPAudioProcessor::resetPerformanceMetrics() noexcept
 }
 
 void MegaDSPAudioProcessor::recordPerformanceMetrics(
-    std::uint64_t elapsedTicks, int blockSamples,
-    bool hostBypassed) noexcept
+    std::uint64_t elapsedTicks, int blockSamples) noexcept
 {
     if (blockSamples <= 0 || preparedSampleRate <= 0.0)
         return;
@@ -2595,8 +2653,6 @@ void MegaDSPAudioProcessor::recordPerformanceMetrics(
     performanceLiveSafe.store(
         liveSafeSnapshots.load(std::memory_order_relaxed),
         std::memory_order_release);
-    performanceHostBypassed.store(
-        hostBypassed, std::memory_order_release);
 
     const auto profileSnapshot =
         activeAudioSnapshot.load(std::memory_order_relaxed);
