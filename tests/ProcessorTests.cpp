@@ -280,6 +280,91 @@ public:
 
 HostParameterMetadataTests hostParameterMetadataTests;
 
+class RackScrollingTests final : public juce::UnitTest
+{
+public:
+    RackScrollingTests()
+        : juce::UnitTest("Rack wheel scrolling", "megaDSP")
+    {
+    }
+
+    void runTest() override
+    {
+        juce::ScopedJuceInitialiser_GUI gui;
+        juce::Component content;
+        juce::Component child;
+        content.addAndMakeVisible(child);
+        child.setBounds(0, 0, 1800, 600);
+        HorizontalRackViewport viewport;
+        viewport.setViewedComponent(&content, false);
+        viewport.setScrollBarsShown(false, true);
+        viewport.setSize(300, 200);
+        content.setSize(1800, 600);
+        const auto wheelEvent = [](juce::Component& target, bool shift)
+        {
+            const auto now = juce::Time::getCurrentTime();
+            return juce::MouseEvent(
+                juce::Desktop::getInstance().getMainMouseSource(),
+                { 20.0f, 20.0f },
+                juce::ModifierKeys(
+                    shift ? juce::ModifierKeys::shiftModifier : 0),
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                &target, &target, now, { 20.0f, 20.0f }, now, 0, false);
+        };
+
+        beginTest("Vertical wheel never becomes horizontal, including Shift and inertia");
+        for (const auto shift : { false, true })
+            for (const auto inertial : { false, true })
+                for (const auto delta : { -0.25f, 0.25f })
+                {
+                    viewport.setViewPosition(500, 0);
+                    juce::MouseWheelDetails wheel {};
+                    wheel.deltaY = delta;
+                    wheel.isInertial = inertial;
+                    viewport.mouseWheelMove(wheelEvent(viewport, shift), wheel);
+                    expectEquals(viewport.getViewPositionX(), 500);
+                    child.mouseWheelMove(wheelEvent(child, shift), wheel);
+                    expectEquals(viewport.getViewPositionX(), 500);
+                }
+
+        beginTest("Horizontal wheel keeps its own direction and magnitude");
+        for (const auto delta : { -0.25f, 0.25f })
+        {
+            viewport.setViewPosition(500, 0);
+            juce::MouseWheelDetails wheel {};
+            wheel.deltaX = delta;
+            viewport.mouseWheelMove(wheelEvent(viewport, false), wheel);
+            const auto horizontalPosition = viewport.getViewPositionX();
+            expect(delta < 0.0f ? horizontalPosition > 500
+                                : horizontalPosition < 500);
+            viewport.setViewPosition(500, 0);
+            wheel.deltaY = -1.0f;
+            child.mouseWheelMove(wheelEvent(child, false), wheel);
+            expectEquals(viewport.getViewPositionX(), horizontalPosition);
+        }
+
+        beginTest("Arrow keys still move the horizontal scrollbar");
+        viewport.setViewPosition(500, 0);
+        expect(viewport.keyPressed(juce::KeyPress(juce::KeyPress::rightKey)));
+        expect(viewport.getHorizontalScrollBar().getCurrentRangeStart() > 500.0);
+        expect(viewport.keyPressed(juce::KeyPress(juce::KeyPress::leftKey)));
+        expectEquals(
+            viewport.getHorizontalScrollBar().getCurrentRangeStart(), 500.0);
+
+        beginTest("Ultra retains vertical wheel scrolling without horizontal movement");
+        viewport.setVerticalScrolling(true);
+        viewport.setScrollBarsShown(true, false);
+        viewport.setViewPosition(0, 200);
+        juce::MouseWheelDetails wheel {};
+        wheel.deltaY = -0.25f;
+        child.mouseWheelMove(wheelEvent(child, false), wheel);
+        expect(viewport.getViewPositionY() > 200);
+        expectEquals(viewport.getViewPositionX(), 0);
+    }
+};
+
+RackScrollingTests rackScrollingTests;
+
 class EmbeddedBitmap final : public reaper::REAPER_FXEMBED_IBitmap
 {
 public:
@@ -680,6 +765,17 @@ public:
                 editor->selectedCardForTesting(), megadsp::slotCount - 1);
             expect(editor->selectedCardVisibleForTesting());
             editor->clickChainNavigatorForTesting(0);
+            expectEquals(editor->selectedCardForTesting(), 0);
+            expect(editor->selectedCardVisibleForTesting());
+
+            for (int slot = 0; slot < megadsp::slotCount - 1; ++slot)
+                expect(editor->cardForTesting(slot)->keyPressed(
+                    juce::KeyPress(juce::KeyPress::rightKey)));
+            expectEquals(editor->selectedCardForTesting(), 7);
+            expect(editor->selectedCardVisibleForTesting());
+            for (int slot = megadsp::slotCount - 1; slot > 0; --slot)
+                expect(editor->cardForTesting(slot)->keyPressed(
+                    juce::KeyPress(juce::KeyPress::leftKey)));
             expectEquals(editor->selectedCardForTesting(), 0);
             expect(editor->selectedCardVisibleForTesting());
 

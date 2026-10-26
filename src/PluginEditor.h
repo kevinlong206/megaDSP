@@ -19,18 +19,10 @@ public:
         const juce::MouseEvent& event,
         const juce::MouseWheelDetails& wheel) override
     {
-        if (verticalScrolling)
-        {
-            juce::Viewport::mouseWheelMove(event, wheel);
-            return;
-        }
-        auto horizontal = wheel;
-        if (std::abs(horizontal.deltaX) < std::abs(horizontal.deltaY))
-        {
-            horizontal.deltaX = horizontal.deltaY;
-            horizontal.deltaY = 0.0f;
-        }
-        juce::Viewport::mouseWheelMove(event, horizontal);
+        auto axisWheel = wheel;
+        if (!verticalScrolling)
+            axisWheel.deltaY = 0.0f;
+        juce::Viewport::mouseWheelMove(event, axisWheel);
     }
 
     void setVerticalScrolling(bool vertical) { verticalScrolling = vertical; }
