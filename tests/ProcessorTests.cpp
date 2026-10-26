@@ -76,11 +76,209 @@ public:
             ++nonParameterChanges;
         if (details.programChanged)
             ++programChanges;
+        if (details.parameterInfoChanged)
+        {
+            ++parameterInfoChanges;
+            parameterInfoThread = std::this_thread::get_id();
+        }
     }
 
     int nonParameterChanges = 0;
     int programChanges = 0;
+    int parameterInfoChanges = 0;
+    std::thread::id parameterInfoThread;
 };
+
+class HostParameterMetadataTests final : public juce::UnitTest
+{
+public:
+    HostParameterMetadataTests()
+        : juce::UnitTest("Host parameter metadata", "megaDSP")
+    {
+    }
+
+    void runTest() override
+    {
+        juce::ScopedJuceInitialiser_GUI gui;
+        beginTest("Every module supplies names without changing the host contract");
+        juce::AudioProcessorGraph owner;
+        juce::AudioProcessorValueTreeState state(
+            owner, nullptr, "metadata", megadsp::createParameterLayout());
+        expectEquals(owner.getParameters().size(), 114);
+        for (int slot = 0; slot < 8; ++slot)
+        {
+            auto* typeParameter = state.getParameter(
+                megadsp::slotParameterId(slot, "type"));
+            expect(!typeParameter->isAutomatable());
+            for (int type = 0; type < megadsp::moduleTypeCount; ++type)
+            {
+                typeParameter->setValueNotifyingHost(
+                    typeParameter->convertTo0to1(static_cast<float>(type)));
+                const auto& definition = megadsp::moduleDefinition(
+                    static_cast<megadsp::ModuleType>(type));
+                for (int control = 0; control < 12; ++control)
+                {
+                    auto* parameter = state.getParameter(
+                        megadsp::controlParameterId(slot, control));
+                    const auto& metadata =
+                        definition.controls[static_cast<size_t>(control)];
+                    const auto label = type == 0
+                        ? "Unassigned " + juce::String(control + 1)
+                        : metadata.isActive()
+                            ? juce::String(metadata.name)
+                            : "Unused " + juce::String(control + 1);
+                    const auto expected = "S" + juce::String(slot + 1)
+                        + " " + label + (type == 0 ? juce::String()
+                            : " - " + juce::String(definition.displayName));
+                    expectEquals(parameter->getName(128), expected);
+                    expectEquals(parameter->getName(8), expected.substring(0, 8));
+                    expectEquals(parameter->getParameterIndex(),
+                                 slot * 14 + control + 2);
+                    expectEquals(parameter->paramID,
+                        "slot" + juce::String(slot + 1).paddedLeft('0', 2)
+                        + ".control"
+                        + juce::String(control + 1).paddedLeft('0', 2));
+                    expectEquals(parameter->getVersionHint(), 1);
+                    expectEquals(parameter->getDefaultValue(), 0.5f);
+                    expect(parameter->isAutomatable());
+                    expect(!parameter->isDiscrete());
+                    expectWithinAbsoluteError(
+                        parameter->convertTo0to1(0.37f), 0.37f, 0.000001f);
+                    expectEquals(parameter->getText(0.37f, 0),
+                        megadsp::formatControlValue(
+                            definition.type, control, 0.37f));
+                }
+            }
+        }
+
+        beginTest("Host text uses musical units, named choices and toggle labels");
+        auto* type = state.getParameter("slot01.type");
+        auto* control = state.getParameter("slot01.control01");
+        type->setValueNotifyingHost(type->convertTo0to1(2.0f));
+        expectEquals(control->getName(128),
+                     juce::String("S1 Threshold - Compressor"));
+        expectEquals(control->getText(0.7f, 0), juce::String("-18.0 dB"));
+        expectEquals(control->getText(0.7f, 5), juce::String("-18.0"));
+        expectWithinAbsoluteError(
+            control->getValueForText("-18 dB"), 0.7f, 0.000001f);
+        auto* detector = state.getParameter("slot01.control08");
+        expectEquals(detector->getText(1.0f, 0), juce::String("External"));
+        expectEquals(detector->getValueForText("External"), 1.0f);
+        expectEquals(detector->getValueForText("Internal"), 0.0f);
+        auto* makeup = state.getParameter("slot01.control09");
+        expectEquals(makeup->getValueForText("On"), 1.0f);
+        expectEquals(makeup->getValueForText("Off"), 0.0f);
+        control->setValueNotifyingHost(0.37f);
+        expectEquals(control->getValueForText("not a value"), 0.37f);
+
+        type->setValueNotifyingHost(type->convertTo0to1(4.0f));
+        expectEquals(control->getName(128), juce::String("S1 Time - Delay"));
+        const auto milliseconds = control->getValueForText("250 ms");
+        expectEquals(control->getText(milliseconds, 0), juce::String("250 ms"));
+        auto* division = state.getParameter("slot01.control02");
+        const auto divisionText = division->getText(0.5f, 0);
+        expectEquals(division->getText(
+            division->getValueForText(divisionText), 0), divisionText);
+        state.getParameter("slot01.control03")->setValueNotifyingHost(1.0f);
+        expectEquals(control->getName(128), juce::String("S1 Time - Delay"));
+        expectEquals(division->getName(128), juce::String("S1 Division - Delay"));
+        expectEquals(control->getValue(), 0.37f);
+
+        beginTest("Topology, undo and restore coalesce metadata notifications");
+        MegaDSPAudioProcessor processor;
+        processor.prepareToPlay(48000.0, 512);
+        ProcessorChangeRecorder changes;
+        processor.addListener(&changes);
+        processor.addModule(megadsp::ModuleType::compressor);
+        processor.addModule(megadsp::ModuleType::delay);
+        expectEquals(changes.parameterInfoChanges, 0);
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(changes.parameterInfoChanges, 1);
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(changes.parameterInfoChanges, 1);
+        auto* first = processor.parameters.getParameter("slot01.control01");
+        auto* second = processor.parameters.getParameter("slot02.control01");
+        juce::MemoryBlock saved;
+        processor.getStateInformation(saved);
+        processor.moveSlot(0, 1);
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(changes.parameterInfoChanges, 2);
+        expectEquals(first->getName(128), juce::String("S1 Time - Delay"));
+        expectEquals(second->getName(128),
+                     juce::String("S2 Threshold - Compressor"));
+        expect(processor.undo());
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(changes.parameterInfoChanges, 3);
+        expectEquals(first->getName(128),
+                     juce::String("S1 Threshold - Compressor"));
+        expect(processor.redo());
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(changes.parameterInfoChanges, 4);
+        processor.setStateInformation(saved.getData(),
+                                     static_cast<int>(saved.getSize()));
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(changes.parameterInfoChanges, 5);
+        expectEquals(first->getName(128),
+                     juce::String("S1 Threshold - Compressor"));
+        first->setValueNotifyingHost(0.45f);
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(changes.parameterInfoChanges, 5);
+        processor.clearSlot(0);
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(changes.parameterInfoChanges, 6);
+        expectEquals(first->getName(128), juce::String("S1 Time - Delay"));
+        processor.clearSlot(0);
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(changes.parameterInfoChanges, 7);
+        expectEquals(first->getName(128), juce::String("S1 Unassigned 1"));
+        processor.loadFactoryPreset(1);
+        processor.flushPendingUpdatesForTesting();
+        expectEquals(changes.parameterInfoChanges, 8);
+        expectEquals(first->getName(128),
+                     juce::String("S1 Low Frequency - Parametric EQ"));
+        processor.removeListener(&changes);
+
+        beginTest("MIDI snapshot recall refreshes metadata off the audio thread");
+        MegaDSPAudioProcessor snapshots;
+        snapshots.prepareToPlay(48000.0, 512);
+        snapshots.addModule(megadsp::ModuleType::compressor);
+        snapshots.storeSnapshot(1, false);
+        snapshots.flushPendingUpdatesForTesting();
+        snapshots.parameters.getParameter("slot01.type")
+            ->setValueNotifyingHost(
+                snapshots.parameters.getParameter("slot01.type")
+                    ->convertTo0to1(4.0f));
+        snapshots.flushPendingUpdatesForTesting();
+        auto* recalled = snapshots.parameters.getParameter("slot01.control01");
+        expectEquals(recalled->getName(128), juce::String("S1 Time - Delay"));
+        ProcessorChangeRecorder recallChanges;
+        snapshots.addListener(&recallChanges);
+        ParameterEventRecorder recallValues(snapshots.getParameters().size());
+        recallValues.watch(*recalled);
+        juce::AudioBuffer<float> audio(2, 512);
+        audio.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::programChange(1, 0), 37);
+        std::thread audioThread([&]
+        {
+            snapshots.processBlock(audio, midi);
+        });
+        audioThread.join();
+        expectEquals(recallChanges.parameterInfoChanges, 0);
+        snapshots.flushPendingUpdatesForTesting();
+        expectEquals(recallChanges.parameterInfoChanges, 1);
+        expect(recallChanges.parameterInfoThread == std::this_thread::get_id());
+        expectEquals(recalled->getName(128),
+                     juce::String("S1 Threshold - Compressor"));
+        expect(recallValues.values[static_cast<size_t>(
+            recalled->getParameterIndex())].empty());
+        snapshots.flushPendingUpdatesForTesting();
+        expectEquals(recallChanges.parameterInfoChanges, 1);
+        snapshots.removeListener(&recallChanges);
+    }
+};
+
+HostParameterMetadataTests hostParameterMetadataTests;
 
 class EmbeddedBitmap final : public reaper::REAPER_FXEMBED_IBitmap
 {

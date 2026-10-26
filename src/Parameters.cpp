@@ -6,6 +6,78 @@ namespace megadsp
 {
 namespace
 {
+class ModuleControlParameter final : public juce::AudioParameterFloat
+{
+public:
+    ModuleControlParameter(
+        int slot, int control, const juce::AudioParameterChoice& module)
+        : AudioParameterFloat(
+              juce::ParameterID(controlParameterId(slot, control), 1),
+              "Slot " + juce::String(slot + 1)
+                  + " Control " + juce::String(control + 1),
+              juce::NormalisableRange<float>(0.0f, 1.0f), 0.5f),
+          slotIndex(slot), controlIndex(control), moduleParameter(module)
+    {
+    }
+
+    juce::String getName(int maximumLength) const override
+    {
+        const auto type = moduleType();
+        const auto& definition = moduleDefinition(type);
+        const auto& control =
+            definition.controls[static_cast<size_t>(controlIndex)];
+        const auto label = type == ModuleType::empty
+            ? "Unassigned " + juce::String(controlIndex + 1)
+            : control.isActive()
+                ? juce::String(control.name)
+                : "Unused " + juce::String(controlIndex + 1);
+        const auto name = "S" + juce::String(slotIndex + 1) + " " + label
+            + (definition.type == ModuleType::empty
+                   ? juce::String()
+                   : " - " + juce::String(definition.displayName));
+        return maximumLength > 0 ? name.substring(0, maximumLength) : name;
+    }
+
+    juce::String getText(float value, int maximumLength) const override
+    {
+        const auto text = formatControlValue(
+            moduleType(), controlIndex, value);
+        return maximumLength > 0 ? text.substring(0, maximumLength) : text;
+    }
+
+    float getValueForText(const juce::String& text) const override
+    {
+        const auto type = moduleType();
+        if (controlMetadata(type, controlIndex).kind == ControlKind::toggle)
+        {
+            if (text.trim().equalsIgnoreCase(
+                    formatControlValue(type, controlIndex, 0.0f)))
+                return 0.0f;
+            if (text.trim().equalsIgnoreCase(
+                    formatControlValue(type, controlIndex, 1.0f)))
+                return 1.0f;
+        }
+        if (const auto value = parseControlValue(type, controlIndex, text);
+            value.has_value() && std::isfinite(*value))
+            return *value;
+
+        juce::Logger::writeToLog(
+            "Invalid host parameter value for " + getName(128)
+            + ": " + text);
+        return get();
+    }
+
+private:
+    ModuleType moduleType() const noexcept
+    {
+        return static_cast<ModuleType>(moduleParameter.getIndex());
+    }
+
+    const int slotIndex;
+    const int controlIndex;
+    const juce::AudioParameterChoice& moduleParameter;
+};
+
 float exponential(float low, float high, float normalized)
 {
     return low * std::pow(high / low, juce::jlimit(0.0f, 1.0f, normalized));
@@ -264,10 +336,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     for (int slot = 0; slot < slotCount; ++slot)
     {
         const auto prefix = "Slot " + juce::String(slot + 1) + " ";
-        layout.add(std::make_unique<APC>(
+        auto module = std::make_unique<APC>(
             juce::ParameterID(slotParameterId(slot, "type"), 1),
             prefix + "Module", moduleNames, 0,
-            juce::AudioParameterChoiceAttributes().withAutomatable(false)));
+            juce::AudioParameterChoiceAttributes().withAutomatable(false));
+        const auto& moduleParameter = *module;
+        layout.add(std::move(module));
         layout.add(std::make_unique<APF>(
             juce::ParameterID(slotParameterId(slot, "bypass"), 1),
             prefix + "Bypass", juce::NormalisableRange<float>(0.0f, 1.0f),
@@ -275,10 +349,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 
         for (int control = 0; control < controlsPerSlot; ++control)
         {
-            layout.add(std::make_unique<APF>(
-                juce::ParameterID(controlParameterId(slot, control), 1),
-                prefix + "Control " + juce::String(control + 1),
-                juce::NormalisableRange<float>(0.0f, 1.0f), 0.5f));
+            layout.add(std::make_unique<ModuleControlParameter>(
+                slot, control, moduleParameter));
         }
     }
 

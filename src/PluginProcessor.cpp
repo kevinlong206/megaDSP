@@ -6702,6 +6702,22 @@ void MegaDSPAudioProcessor::timerCallback()
     if (topologyDirty.load(std::memory_order_acquire)
         && !topologyMutationInProgress.load(std::memory_order_acquire))
         handleAsyncUpdate();
+    auto parameterInfoChanged = false;
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        const auto index = static_cast<size_t>(slot);
+        // Snapshot recall sets parameters without notifying APVTS listeners.
+        const auto* parameter = parameters.getParameter(typeParameterIds[index]);
+        const auto type = juce::roundToInt(
+            parameter->convertFrom0to1(parameter->getValue()));
+        if (publishedParameterModuleTypes[index] != type)
+        {
+            publishedParameterModuleTypes[index] = type;
+            parameterInfoChanged = true;
+        }
+    }
+    if (parameterInfoChanged)
+        updateHostDisplay(ChangeDetails{}.withParameterInfoChanged(true));
     if ((!liveSafeSnapshots.load(std::memory_order_acquire)
          || !audioStreamActive.load(std::memory_order_acquire))
         && latencyDirty.exchange(false, std::memory_order_acq_rel))

@@ -483,6 +483,7 @@ private:
 
     std::array<megadsp::RackState, megadsp::snapshotCount> snapshotStates;
     std::array<juce::String, megadsp::slotCount> typeParameterIds;
+    std::array<int, megadsp::slotCount> publishedParameterModuleTypes {};
     std::array<juce::String, megadsp::slotCount> bypassParameterIds;
     std::array<std::array<juce::String, megadsp::controlsPerSlot>,
                megadsp::slotCount>

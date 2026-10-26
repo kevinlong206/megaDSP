@@ -212,6 +212,17 @@ Host project-state restoration starts a fresh history, and MIDI/automation
 changes made on the audio thread are intentionally excluded from the internal
 history.
 
+DAW automation parameters use the loaded module's musical control names, such
+as **S1 Threshold - Compressor**, with values such as dB, ms, Hz, and named
+choices rather than generic control numbers and normalized values. Empty slots
+are labelled **Unassigned**, and unused module controls are labelled **Unused**.
+Names refresh after module changes, reordering, preset/state restoration, and
+snapshot recall; the DAW may cache an existing automation lane's displayed name.
+All 114 parameter IDs, ordering, and value mappings remain unchanged.
+Automation stays attached to its slot/control, not to a module: replacing,
+moving, or recalling a different module can change what an existing envelope
+controls. Contextually hidden controls retain their names, values, and bindings.
+
 Continuous and spectral DSP telemetry, meters, and animation run for every
 populated widget while the editor is visible. Hidden editors and fully bypassed
 widgets suspend their visualization capture.
