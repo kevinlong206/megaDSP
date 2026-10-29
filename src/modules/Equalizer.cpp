@@ -11,6 +11,7 @@ using detail::lerp;
 void EqualizerModule::prepare(const juce::dsp::ProcessSpec& spec)
 {
     sampleRate = spec.sampleRate;
+    nativeProcessor.prepare(spec);
     for (auto& band : topologyMix)
         for (auto& smoother : band)
             smoother.reset(sampleRate, 0.02);
@@ -19,6 +20,7 @@ void EqualizerModule::prepare(const juce::dsp::ProcessSpec& spec)
 
 void EqualizerModule::reset()
 {
+    nativeProcessor.reset();
     for (auto& channel : filters)
         for (auto& band : channel)
             for (auto& filter : band)
@@ -124,8 +126,15 @@ void EqualizerModule::Biquad::reset()
 
 void EqualizerModule::process(juce::AudioBuffer<float>& buffer,
                               const ControlValues& controls,
-                              const ProcessEnvironment&)
+                              const ProcessEnvironment& environment)
 {
+    if (nativeEnabled && environment.equalizerSettings != nullptr)
+    {
+        nativeProcessor.process(
+            buffer, environment.equalizerSettings->load(), environment,
+            lerp(-18.0f, 18.0f, controls[9]));
+        return;
+    }
     const std::array<float, 3> frequencies {
         exponential(30.0f, static_cast<float>(
             juce::jmin(1200.0, sampleRate * 0.475)), controls[0]),

@@ -166,6 +166,10 @@ public:
     }
     void addModule(megadsp::ModuleType type);
     void resetModuleToDefaults(int slot);
+    megadsp::ReEqSettings reEqSettings(int slot) const;
+    void setReEqSettings(
+        int slot, const megadsp::ReEqSettings&, bool recordUndo = true);
+    void upgradeEqualizer(int slot);
     juce::Result loadImpulseResponse(int slot, const juce::File& file);
     juce::Result loadImpulseResponse(
         int slot, int lane, const juce::File& file);

@@ -4714,8 +4714,9 @@ const std::array<ModuleDefinition, moduleTypeCount>& registryStorage()
         makeDefinition(
             ModuleType::equalizer, "Parametric EQ",
             ModuleCategory::eqAndFilters,
-            "Shape lows, mids, and highs with a flexible three-band EQ.",
-            "eq filter tone high pass low pass", eqNames, eqMetadata,
+            "Sixteen-band ReEQ2-derived parametric and dynamic EQ with decramped filters.",
+            "eq filter tone high pass low pass dynamic mid side ReEQ2",
+            eqNames, eqMetadata,
             &makeModule<EqualizerModule>),
         makeDefinition(
             ModuleType::compressor, "Compressor", ModuleCategory::dynamics,

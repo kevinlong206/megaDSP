@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DspModule.h"
+#include "ReEqProcessor.h"
 
 namespace megadsp
 {
@@ -11,6 +12,13 @@ public:
     void reset() override;
     void process(juce::AudioBuffer<float>&, const ControlValues&,
                  const ProcessEnvironment&) override;
+    void setNativeEnabled(bool enabled) noexcept { nativeEnabled = enabled; }
+    int latencySamples() const override
+    {
+        return nativeEnabled ? nativeProcessor.latencySamples() : 0;
+    }
+    int nativeLatencySamples() const { return nativeProcessor.latencySamples(); }
+    const ReEqProcessor& reEqProcessor() const { return nativeProcessor; }
 
 private:
     struct Biquad
@@ -34,5 +42,7 @@ private:
         topologyCount>, 3> topologyMix;
     double sampleRate = 44100.0;
     bool topologyInitialized = false;
+    ReEqProcessor nativeProcessor;
+    bool nativeEnabled = false;
 };
 } // namespace megadsp

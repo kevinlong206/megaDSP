@@ -1,4 +1,5 @@
 #include "EffectGraph.h"
+#include "ReEqView.h"
 
 #include "GraphStyle.h"
 #include "../modules/AnalogTape.h"
@@ -159,6 +160,17 @@ EffectGraph::EffectGraph(
     }
     if (compactEqualizer)
     {
+        reEqView = std::make_unique<ReEqView>(processor, slot);
+        addChildComponent(*reEqView);
+        upgradeEqualizerButton.setTooltip(
+            "Convert this legacy three-band EQ to the native 16-band ReEQ2 engine. "
+            "The decramped filters can sound different; Undo restores the original.");
+        upgradeEqualizerButton.onClick = [this]
+        {
+            processor.upgradeEqualizer(slot);
+            resized();
+        };
+        addAndMakeVisible(upgradeEqualizerButton);
         compactEqualizerBand = 1;
         setTitle("Equalizer graph");
         setDescription(
@@ -276,6 +288,20 @@ EffectGraph::~EffectGraph()
 
 void EffectGraph::resized()
 {
+    if (reEqView != nullptr)
+    {
+        const auto native = processor.reEqSettings(slot).native;
+        setDescription(
+            native
+                ? "Native ReEQ2 sixteen-band parametric and dynamic equalizer."
+                : "Legacy three-band equalizer. Upgrade explicitly to ReEQ2.");
+        reEqView->setBounds(getLocalBounds());
+        reEqView->setVisible(native);
+        reEqView->setVisualizationActive(native && visualizationActive);
+        upgradeEqualizerButton.setVisible(!native);
+        upgradeEqualizerButton.setBounds(
+            getWidth() - 132, 2, 128, 18);
+    }
     if (isCompactAssetLibrary())
     {
         auto area = compactAssetLibraryArea();
@@ -3079,6 +3105,8 @@ void EffectGraph::paint(juce::Graphics& graphics)
     graphics.fillAll(moduleSurfaceColour(
         backgroundColour(processor.getBackgroundThemeIndex()).darker(0.18f),
         type, 0.16f));
+    if (reEqView != nullptr && reEqView->isVisible())
+        return;
     auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
     paintCompact(graphics, area);
     if (type != ModuleType::compressor
@@ -3711,6 +3739,9 @@ void EffectGraph::setVisualizationActive(bool active)
         active && (!isCompactAssetLibrary()
                    || type == ModuleType::envelopeConvolution);
     processor.getVisualizationData().setSlotActive(slot, needsCapture);
+    if (reEqView != nullptr)
+        reEqView->setVisualizationActive(
+            active && processor.reEqSettings(slot).native);
     if (changed)
         repaint();
 }
@@ -3776,6 +3807,19 @@ void EffectGraph::timerCallback()
 
 void EffectGraph::refreshVisualization()
 {
+    if (reEqView != nullptr)
+    {
+        const auto native = processor.reEqSettings(slot).native;
+        if (native != reEqView->isVisible())
+            resized();
+        if (native)
+        {
+            reEqView->setVisualizationActive(
+                visualizationActive && !processor.isSlotBypassed(slot));
+            reEqView->refresh();
+            return;
+        }
+    }
     if (isCompactAssetLibrary())
     {
         repaint();

@@ -95,12 +95,21 @@ public:
             juce::String("Ultra Compact"));
         expectEquals(
             calculateRackContentWidth(
-                2, WidgetSize::small, false),
+                { 300, 300 }, false),
             300 * 2 + moduleCardGap);
         expectEquals(
             calculateRackContentWidth(
-                2, WidgetSize::small, true),
+                { 300, 300 }, true),
             300 * 2 + moduleCardGap + 3 * 24);
+        beginTest("Mixed processor widths include every card and insertion gap");
+        expectEquals(
+            calculateRackContentWidth({ 480, 300, 480 }, false),
+            480 + 300 + 480 + 2 * moduleCardGap);
+        expectEquals(
+            calculateRackContentWidth({ 480, 300, 480 }, true),
+            480 + 300 + 480 + 2 * moduleCardGap + 4 * 24);
+        expectEquals(calculateRackContentWidth({}, false), 0);
+        expectEquals(calculateRackContentWidth({}, true), 24);
         expect(widgetSizeFromId("invalid") == WidgetSize::small);
         expectEquals(
             widgetSizeId(widgetSizeFromId("MEDIUM")),

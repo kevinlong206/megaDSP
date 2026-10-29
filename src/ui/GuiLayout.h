@@ -33,9 +33,9 @@ enum class WidgetSize
 juce::String widgetSizeId(WidgetSize);
 juce::String widgetSizeName(WidgetSize);
 WidgetSize widgetSizeFromId(const juce::String&);
-int widgetWidth(WidgetSize);
+int widgetWidth(WidgetSize, ModuleType = ModuleType::empty);
 int calculateRackContentWidth(
-    int moduleCount, WidgetSize, bool showAddButton);
+    const std::vector<int>& moduleWidths, bool showAddButton);
 juce::Rectangle<int> calculateEditorResizeLimits(
     juce::Rectangle<int> displayUserArea);
 

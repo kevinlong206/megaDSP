@@ -169,6 +169,8 @@ set(MEGADSP_MODULE_SOURCES
     src/modules/DspHelpers.cpp
     src/modules/DynamicEqualizer.cpp
     src/modules/Equalizer.cpp
+    src/modules/ReEqSettings.cpp
+    src/modules/ReEqProcessor.cpp
     src/modules/FrequencyLab.cpp
     src/modules/FormantForge.cpp
     src/modules/GateExpander.cpp
@@ -238,6 +240,8 @@ set(MEGADSP_MODULE_HEADERS
     src/modules/DspSafety.h
     src/modules/DynamicEqualizer.h
     src/modules/Equalizer.h
+    src/modules/ReEqSettings.h
+    src/modules/ReEqProcessor.h
     src/modules/FrequencyLab.h
     src/modules/FormantForge.h
     src/modules/GateExpander.h
@@ -299,6 +303,8 @@ set(MEGADSP_UI_SOURCES
     src/ui/GraphStyle.h
     src/ui/GuiLayout.cpp
     src/ui/GuiLayout.h
+    src/ui/ReEqView.cpp
+    src/ui/ReEqView.h
     src/ui/ModuleBrowser.cpp
     src/ui/ModuleBrowser.h)
 
@@ -363,15 +369,22 @@ clap_juce_extensions_plugin(
 
 if(APPLE)
     option(MEGADSP_ADHOC_SIGN "Ad-hoc sign local development plugin bundles" ON)
-    if(MEGADSP_ADHOC_SIGN)
-        foreach(bundle_target megaDSP_VST3 megaDSP_AU megaDSP_CLAP megaDSP_Standalone)
+    foreach(bundle_target megaDSP_VST3 megaDSP_AU megaDSP_CLAP megaDSP_Standalone)
+        add_custom_command(TARGET ${bundle_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "$<TARGET_BUNDLE_DIR:${bundle_target}>/Contents/Resources/licenses"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/reeq2/LICENSE"
+                    "$<TARGET_BUNDLE_DIR:${bundle_target}>/Contents/Resources/licenses/ReEQ2-MIT.txt"
+            COMMENT "Bundling ReEQ2 third-party license")
+        if(MEGADSP_ADHOC_SIGN)
             add_custom_command(TARGET ${bundle_target} POST_BUILD
                 COMMAND codesign --force --deep --sign -
                         "$<TARGET_BUNDLE_DIR:${bundle_target}>"
                 COMMAND /usr/bin/touch "$<TARGET_BUNDLE_DIR:${bundle_target}>"
                 COMMENT "Ad-hoc signing ${bundle_target}")
-        endforeach()
-    endif()
+        endif()
+    endforeach()
 endif()
 
 juce_add_console_app(megaDSPTests PRODUCT_NAME "megaDSP Tests")
@@ -387,6 +400,9 @@ target_sources(megaDSPTests PRIVATE
     tests/TelemetryFoundationTests.cpp
     tests/TimeTelemetryTests.cpp
     tests/GuiLayoutTests.cpp
+    tests/ReEqDspTests.cpp
+    tests/ReEqStateTests.cpp
+    tests/ReEqViewTests.cpp
     tests/GuitarCabinetTests.cpp
     tests/ChordLoomTests.cpp
     tests/VolumeSwellTests.cpp

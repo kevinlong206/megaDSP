@@ -8,6 +8,7 @@
 #include <array>
 namespace megadsp::ui
 {
+class ReEqView;
 constexpr int graphFftOrder = 10;
 constexpr int graphFftSize = 1 << graphFftOrder;
 constexpr int graphLevelHistorySize = 500;
@@ -205,5 +206,7 @@ private:
     bool compactEnvelopeKeyboard = true;
     bool bypassVisualsSuspended = false;
     bool visualizationActive = false;
+    std::unique_ptr<ReEqView> reEqView;
+    juce::TextButton upgradeEqualizerButton { "UPGRADE TO ReEQ2" };
 };
 } // namespace megadsp::ui

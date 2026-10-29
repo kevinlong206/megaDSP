@@ -162,7 +162,7 @@ megaDSP.clap → ~/.clap
 
 1. Load megaDSP on a track in your DAW.
 2. Use any `+` between widgets to insert a processor at that exact signal-flow position. The module browser retains its category menus, searchable list, and keyboard navigation.
-3. Modules run from left to right in one row beneath a compact single-line identity/meter header and snapshot strip. When the rack is wider than the plugin window, use horizontal wheel gestures or the Left/Right arrow keys to move through it. A regular vertical mouse wheel never scrolls horizontally, including with Shift held. Use the highlighted **S**, **M**, or **L** button to choose uniform 300, 440, or 640 logical-pixel widgets. Animated visualizations follow both widget-size changes and host window resizing, including docking transitions. Compact continuous controls use clearly marked rotary knobs with an adjacent value; drag straight up to increase or down to decrease, and hold Shift for fine adjustment. While dragging, a larger precision knob and value readout appear over the editor. This preference is global for newly opened megaDSP editors and is not stored in projects or automation.
+3. Modules run from left to right in one row beneath a compact single-line identity/meter header and snapshot strip. When the rack is wider than the plugin window, use horizontal wheel gestures or the Left/Right arrow keys to move through it. A regular vertical mouse wheel never scrolls horizontally, including with Shift held. Use the highlighted **S**, **M**, or **L** button to choose processor-specific widget widths: most modules use 300, 440, or 640 logical pixels, while Equalizer uses 480, 640, or 800 for more room to edit its response graph. Ultra Compact retains full-width rows. Animated visualizations follow both widget-size changes and host window resizing, including docking transitions. Compact continuous controls use clearly marked rotary knobs with an adjacent value; drag straight up to increase or down to decrease, and hold Shift for fine adjustment. While dragging, a larger precision knob and value readout appear over the editor. This preference is global for newly opened megaDSP editors and is not stored in projects or automation.
 4. Each widget is the complete module editor. Every module type receives a stable dark background tint from a coherent category palette: filters, dynamics, saturation, delay, reverb, modulation, utility, creative, and guitar effects remain visually related while retaining distinct per-module colors. Every currently relevant control remains visible at **S**, **M**, and **L**; changing size alters spacing and visualization room rather than hiding parameters. Effect-specific views include response and transfer curves, dynamics histories, IR envelopes, repeat fields, decay spaces, stereo scopes, modulation ribbons, grains, slices, resonant modes, transport media, tuner strobe/precision/needle displays, and spectral fields. Asset processors expose their current model or IR plus loading, clearing, and browsing directly in the widget. A single process-wide background-priority monitor detects NAM model, NAM cabinet IR, and shared user-IR changes within 30 seconds, rebuilds validated metadata off the message and audio threads, and refreshes every open instance. Use the header **SETTINGS > Libraries** menu for global roots and explicit index rebuilds. Manual rebuilds run on a background worker with a progress dialog for folder scanning, file validation, and index saving; audio processing continues, and failures are reported explicitly.
 5. Drag a widget header left or right to reorder the signal chain. Use **Left / Right** to move keyboard focus between adjacent widgets.
 6. Use a widget's explicit **ON / BYP** control (or focus it and press **Space / B**) to bypass it. After its short click-safe fade, the module DSP and live visualization are suspended; only latency-preserving dry routing remains. **RST** and **DEL** reset or remove the module directly from the widget.
@@ -290,11 +290,27 @@ crash report when one exists. Logs rotate at 1 MB and retain three older files.
 
 | Module | What it does |
 |---|---|
-| **EQ** | Compact three-node editor with individual and combined response curves, logarithmic frequency and gain guides, selected-band frequency/gain/Q readout, direct frequency/gain dragging, wheel Q, double-click reset, explicit Bell/Shelf/Cut modes, and a live output spectrum |
+| **EQ** | Native JUCE/C++ port of the MIT-licensed ReEQ2: 16 editable bands, decramped filters with 14 shapes, selectable slopes, Stereo/Mid/Side/Left/Right placement, per-band dynamics and sidechain detection, and an interactive response/spectrum display. Existing projects retain the original three-band EQ until explicitly upgraded. |
 | **Auto Wah** | Pick-responsive Low Pass, Band Pass, Peak, or Classic Wah filter with direct center/range editing and a visible sensitivity threshold |
 | **Resonance Tamer** | Adaptive narrow-resonance suppression with transient protection and live detected-reduction traces |
 | **Spectral Balance** | Long-term tonal balancing toward Natural, Warm, Clear, Vocal, or Flat target contours |
 | **Program Equalizer** | Interacting passive low boost and attenuation, broad proportional-Q high boost, high attenuation, and a colored makeup amplifier |
+
+New EQs added from the module browser use the native ReEQ2 engine. Old sessions
+and factory presets keep their original filters and automation; **UPGRADE TO
+ReEQ2** explicitly converts the three original bands and is undoable. The
+decramped filter responses are intentionally different from the legacy EQ.
+The native engine reserves a fixed 10 ms of reported latency in every lookahead
+setting, including Off, keeping host alignment and latency-bearing bypass stable.
+The eight-slot/twelve-control host layout and parameter IDs are unchanged.
+Native band, dynamics, routing, and analyzer settings are saved in schema-14
+projects, presets, snapshots, and undo state rather than appended as new host
+parameters. The existing Output automation remains an additional trim; the
+other legacy EQ controls retain their values but affect only legacy processing.
+Only one stereo external-sidechain bus is available in megaDSP, rather than
+ReEQ2's three sidechain pairs; an unavailable external source falls back to
+the main input. Band/detector audition is temporary and is not saved.
+See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and licenses.
 
 ### Saturation
 

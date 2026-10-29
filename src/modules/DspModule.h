@@ -15,6 +15,7 @@ namespace megadsp
 using ControlValues = std::array<float, controlsPerSlot>;
 
 class NamModelCapability;
+class AtomicReEqSettings;
 
 struct ProcessEnvironment
 {
@@ -22,6 +23,7 @@ struct ProcessEnvironment
     double bpm = 120.0;
     bool captureTelemetry = false;
     bool nonRealtime = false;
+    const AtomicReEqSettings* equalizerSettings = nullptr;
 };
 
 enum class DryPathTiming

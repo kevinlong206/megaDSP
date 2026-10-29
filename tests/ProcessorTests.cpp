@@ -744,8 +744,7 @@ public:
             expectEquals(editor->cardCountForTesting(), megadsp::slotCount);
             expectEquals(
                 editor->cardWidthForTesting(0),
-                megadsp::ui::widgetWidth(
-                    megadsp::ui::WidgetSize::small));
+                480);
             expect(editor->cardChildrenFitForTesting());
             expect(editor->cardGraphsAvoidControlsForTesting());
             expect(
@@ -785,8 +784,7 @@ public:
                 editor->cardGraphWidthForTesting(0);
             expectEquals(
                 editor->cardWidthForTesting(0),
-                megadsp::ui::widgetWidth(
-                    megadsp::ui::WidgetSize::medium));
+                640);
             editor->setWidgetSizeForTesting(
                 megadsp::ui::WidgetSize::large);
             expect(
@@ -794,8 +792,7 @@ public:
                 "Animated graph should follow module width changes.");
             expectEquals(
                 editor->cardWidthForTesting(0),
-                megadsp::ui::widgetWidth(
-                    megadsp::ui::WidgetSize::large));
+                800);
             const auto graphHeightBeforeHostResize =
                 editor->cardGraphHeightForTesting(0);
             editor->setSize(820, 760);
@@ -1123,7 +1120,8 @@ public:
                 editor->setWidgetSizeForTesting(size);
                 expectEquals(
                     editor->cardWidthForTesting(0),
-                    megadsp::ui::widgetWidth(size));
+                    megadsp::ui::widgetWidth(
+                        size, static_cast<megadsp::ModuleType>(rawType)));
                 expect(editor->cardChildrenFitForTesting());
                 expect(editor->cardGraphsAvoidControlsForTesting());
                 expect(editor->cardPresentsAllActiveControlsForTesting());
@@ -1216,6 +1214,32 @@ public:
             auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(
                 *rackProcessor, 1100, 720);
 
+            const std::array<megadsp::ui::WidgetSize, 3> sizes {
+                megadsp::ui::WidgetSize::small,
+                megadsp::ui::WidgetSize::medium,
+                megadsp::ui::WidgetSize::large
+            };
+            const std::array<int, 3> equalizerWidths { 480, 640, 800 };
+            const std::array<int, 3> otherWidths { 300, 440, 640 };
+            for (size_t index = 0; index < sizes.size(); ++index)
+            {
+                editor->setWidgetSizeForTesting(sizes[index]);
+                expectEquals(editor->cardWidthForTesting(0), equalizerWidths[index]);
+                expectEquals(editor->cardWidthForTesting(1), otherWidths[index]);
+                expectEquals(editor->cardWidthForTesting(2), otherWidths[index]);
+                for (int slot = 1; slot < 3; ++slot)
+                    expectEquals(
+                        editor->cardForTesting(slot)->getX()
+                            - editor->cardForTesting(slot - 1)->getRight(),
+                        megadsp::ui::moduleCardGap + 24);
+                const auto* lastCard = editor->cardForTesting(2);
+                expectEquals(
+                    lastCard->getParentComponent()->getWidth(),
+                    lastCard->getRight() + 24 + 8);
+                editor->clickChainNavigatorForTesting(2);
+                expect(editor->selectedCardVisibleForTesting());
+            }
+            editor->setWidgetSizeForTesting(megadsp::ui::WidgetSize::small);
             expectEquals(editor->chainInsertButtonCountForTesting(), 4);
             editor->reorderChainNavigatorForTesting(0, 2, true);
             expect(rackProcessor->getRack().moduleType(0)
@@ -1224,6 +1248,9 @@ public:
                    == megadsp::ModuleType::delay);
             expect(rackProcessor->getRack().moduleType(2)
                    == megadsp::ModuleType::equalizer);
+            expectEquals(editor->cardWidthForTesting(0), 300);
+            expectEquals(editor->cardWidthForTesting(2), 480);
+            expect(editor->selectedCardVisibleForTesting());
             expectEquals(editor->selectedCardForTesting(), 2);
 
             editor->insertModuleFromChainForTesting(

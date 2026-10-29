@@ -65,8 +65,10 @@ struct SlotVisualizationData
 {
     SampleHistory<8192> input;
     SampleHistory<8192> output;
-    SampleHistory<8192> outputLeft;
-    SampleHistory<8192> outputRight;
+    SampleHistory<16384> inputLeft;
+    SampleHistory<16384> inputRight;
+    SampleHistory<16384> outputLeft;
+    SampleHistory<16384> outputRight;
     SampleHistory<2048> gainReduction;
     SampleHistory<512> inputLevel;
     SampleHistory<512> outputLevel;
@@ -126,6 +128,8 @@ struct SlotVisualizationData
     {
         input.clear();
         output.clear();
+        inputLeft.clear();
+        inputRight.clear();
         outputLeft.clear();
         outputRight.clear();
         gainReduction.clear();
@@ -187,6 +191,14 @@ public:
         {
             auto& data = slots[static_cast<size_t>(slot)];
             capture(buffer, data.input, data.inputLevel, data.inputLevelWriter);
+            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            {
+                const auto left = buffer.getSample(0, sample);
+                data.inputLeft.push(left);
+                data.inputRight.push(
+                    buffer.getNumChannels() > 1
+                        ? buffer.getSample(1, sample) : left);
+            }
         }
     }
 

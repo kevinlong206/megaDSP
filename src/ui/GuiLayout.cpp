@@ -114,8 +114,18 @@ WidgetSize widgetSizeFromId(const juce::String& identifier)
     return WidgetSize::small;
 }
 
-int widgetWidth(WidgetSize size)
+int widgetWidth(WidgetSize size, ModuleType type)
 {
+    if (type == ModuleType::equalizer)
+    {
+        switch (size)
+        {
+            case WidgetSize::small: return 480;
+            case WidgetSize::medium: return 640;
+            case WidgetSize::large: return 800;
+            case WidgetSize::ultraCompact: break;
+        }
+    }
     switch (size)
     {
         case WidgetSize::small: return 300;
@@ -127,12 +137,11 @@ int widgetWidth(WidgetSize size)
 }
 
 int calculateRackContentWidth(
-    int moduleCount, WidgetSize size, bool showAddButton)
+    const std::vector<int>& moduleWidths, bool showAddButton)
 {
-    const auto modules = juce::jmax(0, moduleCount);
-    if (size == WidgetSize::ultraCompact)
-        return widgetWidth(size);
-    auto width = modules * widgetWidth(size);
+    const auto modules = static_cast<int>(moduleWidths.size());
+    auto width = std::accumulate(
+        moduleWidths.begin(), moduleWidths.end(), 0);
     if (modules > 1)
         width += (modules - 1) * moduleCardGap;
     if (showAddButton)

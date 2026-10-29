@@ -597,7 +597,7 @@ public:
                          index);
 
         beginTest("Musical defaults avoid generic half-value hazards");
-        expectEquals(megadsp::stateSchemaVersion, 13);
+        expectEquals(megadsp::stateSchemaVersion, 14);
         const auto reverbDefaults = megadsp::moduleDefaults(
             megadsp::ModuleType::algorithmicReverb);
         expectEquals(reverbDefaults[2], 1.0f);
@@ -1428,7 +1428,7 @@ public:
 
         beginTest("Host parameter contract remains fixed");
         expectEquals(megadsp::moduleTypeCount, 62);
-        expectEquals(megadsp::stateSchemaVersion, 13);
+        expectEquals(megadsp::stateSchemaVersion, 14);
         expectEquals(static_cast<int>(megadsp::ModuleType::empty), 0);
         expectEquals(static_cast<int>(megadsp::ModuleType::equalizer), 1);
         expectEquals(static_cast<int>(megadsp::ModuleType::compressor), 2);

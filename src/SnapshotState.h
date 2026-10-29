@@ -1,6 +1,7 @@
 #pragma once
 
 #include "modules/ModuleRegistry.h"
+#include "modules/ReEqSettings.h"
 
 #include <juce_data_structures/juce_data_structures.h>
 
@@ -16,6 +17,7 @@ struct RackSlotState
     std::atomic<float> type { 0.0f };
     std::atomic<float> bypass { 0.0f };
     std::array<std::atomic<float>, controlsPerSlot> controls;
+    AtomicReEqSettings equalizer;
     juce::String impulseResponsePath;
     juce::String impulseResponsePath2;
     std::array<juce::String, 3> convolutionImpulseBankPaths;

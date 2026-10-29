@@ -12,7 +12,7 @@ namespace megadsp
 {
 constexpr int slotCount = 8;
 constexpr int controlsPerSlot = 12;
-constexpr int stateSchemaVersion = 13;
+constexpr int stateSchemaVersion = 14;
 constexpr int moduleTypeCount = 62;
 
 enum class ModuleType

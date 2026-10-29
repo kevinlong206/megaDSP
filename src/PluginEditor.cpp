@@ -2513,6 +2513,11 @@ public:
         }
     }
 
+    int preferredWidth() const
+    {
+        return megadsp::ui::widgetWidth(editor.widgetSize, type);
+    }
+
     int preferredHeight() const
     {
         return isUltraCompact() ? megadsp::ui::ultraCompactRowHeight
@@ -4180,8 +4185,12 @@ void MegaDSPAudioProcessorEditor::resized()
     }
     const auto showAddButton =
         static_cast<int>(cards.size()) < megadsp::slotCount;
+    std::vector<int> cardWidths;
+    cardWidths.reserve(cards.size());
+    for (const auto& card : cards)
+        cardWidths.push_back(card->preferredWidth());
     const auto contentWidth = megadsp::ui::calculateRackContentWidth(
-        static_cast<int>(cards.size()), widgetSize, showAddButton)
+        cardWidths, showAddButton)
         + rackPadding * 2;
     const auto targetWidth =
         juce::jmax(rackViewport.getWidth(), contentWidth);
@@ -4200,7 +4209,7 @@ void MegaDSPAudioProcessorEditor::resized()
         auto& card = cards[static_cast<size_t>(index)];
         card->setBounds(
             cardBounds.removeFromLeft(
-                megadsp::ui::widgetWidth(widgetSize)));
+                cardWidths[static_cast<size_t>(index)]));
         if (index + 1 < static_cast<int>(cards.size()))
             cardBounds.removeFromLeft(megadsp::ui::moduleCardGap);
     }

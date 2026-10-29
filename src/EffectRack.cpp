@@ -295,6 +295,11 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
     auto module = createDspModule(type);
     if (module == nullptr)
         return;
+    if (auto* eq = dynamic_cast<EqualizerModule*>(module.get()))
+        eq->setNativeEnabled(
+            state != nullptr
+            && state->slots[static_cast<size_t>(&slot - slots.data())]
+                   .equalizer.load().native);
 
     if (hasPrepareState)
     {
@@ -316,8 +321,10 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
             static_cast<int>(preparedSpec.numChannels),
             static_cast<int>(preparedSpec.maximumBlockSize),
             false, true, true);
+        const auto* eq = dynamic_cast<const EqualizerModule*>(module.get());
         const auto latencyCapacity = static_cast<size_t>(
-            juce::jmax(0, alignedLatencySamples(*module)));
+            eq != nullptr ? eq->nativeLatencySamples()
+                          : juce::jmax(0, alignedLatencySamples(*module)));
         if (latencyCapacity > 0)
             for (auto& channel : slot.latencyBuffer)
                 channel.assign(latencyCapacity, 0.0f);
@@ -355,6 +362,10 @@ void EffectRack::synchronizeModuleDataState(int slot)
     }
 
     // IR capability
+    if (auto* eq = dynamic_cast<EqualizerModule*>(module))
+        eq->setNativeEnabled(
+            state != nullptr
+            && state->slots[static_cast<size_t>(slot)].equalizer.load().native);
     auto* impulseResponse = module->impulseResponseCapability();
     if (impulseResponse == nullptr)
     {
@@ -566,7 +577,10 @@ void EffectRack::processChunk(juce::AudioBuffer<float>& main,
             !bypassRequested
             && visualization.isSlotActive(slotIndex);
         const ProcessEnvironment environment {
-            sidechain, bpm, captureVisualization, nonRealtime
+            sidechain, bpm, captureVisualization, nonRealtime,
+            state != nullptr
+                ? &state->slots[static_cast<size_t>(slotIndex)].equalizer
+                : nullptr
         };
         if (captureVisualization)
             visualization.captureInput(slotIndex, main);
@@ -835,6 +849,9 @@ void EffectRack::moveSlot(int source, int destination)
     };
 
     const auto moving = read(source);
+    const auto movingEqualizer = state != nullptr
+        ? state->slots[static_cast<size_t>(source)].equalizer.load()
+        : ReEqSettings {};
     const std::array<juce::String, 2> movingIr {
         readIr(source, 0), readIr(source, 1)
     };
@@ -870,6 +887,8 @@ void EffectRack::moveSlot(int source, int destination)
                 writeIr(index, lane, readIr(index + 1, lane));
             if (state != nullptr)
             {
+                state->slots[static_cast<size_t>(index)].equalizer.copyFrom(
+                    state->slots[static_cast<size_t>(index + 1)].equalizer);
                 state->slots[static_cast<size_t>(index)]
                     .convolutionImpulseBankPaths =
                         state->slots[static_cast<size_t>(index + 1)]
@@ -905,6 +924,8 @@ void EffectRack::moveSlot(int source, int destination)
                 writeIr(index, lane, readIr(index - 1, lane));
             if (state != nullptr)
             {
+                state->slots[static_cast<size_t>(index)].equalizer.copyFrom(
+                    state->slots[static_cast<size_t>(index - 1)].equalizer);
                 state->slots[static_cast<size_t>(index)]
                     .convolutionImpulseBankPaths =
                         state->slots[static_cast<size_t>(index - 1)]
@@ -937,6 +958,8 @@ void EffectRack::moveSlot(int source, int destination)
         writeIr(destination, lane, movingIr[static_cast<size_t>(lane)]);
     if (state != nullptr)
     {
+        state->slots[static_cast<size_t>(destination)].equalizer.store(
+            movingEqualizer);
         state->slots[static_cast<size_t>(destination)]
             .convolutionImpulseBankPaths = movingConvolutionBanks;
         state->slots[static_cast<size_t>(destination)]
@@ -984,6 +1007,7 @@ void EffectRack::clearSlot(int slot)
     setImpulsePath(slot, 1, {});
     if (state != nullptr)
     {
+        state->slots[static_cast<size_t>(slot)].equalizer.store({});
         state->slots[static_cast<size_t>(slot)]
             .convolutionImpulseBankPaths.fill({});
         state->slots[static_cast<size_t>(slot)]
@@ -1029,6 +1053,7 @@ void EffectRack::clearModuleDataState()
         setImpulsePath(slot, 1, {});
         if (state != nullptr)
         {
+            state->slots[static_cast<size_t>(slot)].equalizer.store({});
             state->slots[static_cast<size_t>(slot)]
                 .convolutionImpulseBankPaths.fill({});
             state->slots[static_cast<size_t>(slot)]

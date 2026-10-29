@@ -23,7 +23,7 @@ serial slots and twelve fixed generic controls per slot.
   58.
 - Preserve the eight-slot, twelve-control host parameter topology and existing
   parameter IDs.
-- Keep state migration compatible with schema 2 through current schema 13.
+- Keep state migration compatible with schema 2 through current schema 14.
 - Module type parameters are not automatable; saved integer module values must
   continue to restore exactly.
 - Processing after `prepare()` must be allocation-free, lock-free, finite, and

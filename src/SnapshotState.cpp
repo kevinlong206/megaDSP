@@ -18,6 +18,9 @@ void RackSlotState::copyFrom(const RackSlotState& source)
         controls[index].store(
             source.controls[index].load(std::memory_order_relaxed),
             std::memory_order_relaxed);
+    auto eq = source.equalizer.load();
+    eq.clearAudition();
+    equalizer.store(eq);
     impulseResponsePath = source.impulseResponsePath;
     impulseResponsePath2 = source.impulseResponsePath2;
     convolutionImpulseBankPaths = source.convolutionImpulseBankPaths;
@@ -51,6 +54,7 @@ void RackState::clear()
         slot.bypass.store(0.0f, std::memory_order_relaxed);
         for (auto& control : slot.controls)
             control.store(0.5f, std::memory_order_relaxed);
+        slot.equalizer.store({});
         slot.impulseResponsePath.clear();
         slot.impulseResponsePath2.clear();
         slot.convolutionImpulseBankPaths.fill({});
@@ -94,6 +98,8 @@ juce::ValueTree RackState::toValueTree(int index) const
                 source.controls[static_cast<size_t>(control)].load(
                     std::memory_order_relaxed),
                 nullptr);
+        if (const auto eq = source.equalizer.load(); eq.native)
+            slot.addChild(eq.toValueTree(), -1, nullptr);
         if (source.impulseResponsePath.isNotEmpty())
             slot.setProperty(
                 "impulseResponse", source.impulseResponsePath, nullptr);
@@ -165,6 +171,8 @@ void RackState::fromValueTree(const juce::ValueTree& snapshot)
                 static_cast<float>(static_cast<double>(child.getProperty(
                     "control" + juce::String(control + 1), 0.5))),
                 std::memory_order_relaxed);
+        destination.equalizer.store(
+            ReEqSettings::fromValueTree(child.getChildWithName("REEQ2")));
         destination.impulseResponsePath =
             child.getProperty("impulseResponse").toString();
         destination.impulseResponsePath2 =

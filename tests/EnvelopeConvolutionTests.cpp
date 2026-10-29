@@ -25,7 +25,7 @@ public:
         expectEquals(static_cast<int>(ModuleType::envelopeModulator), 60);
         expectEquals(static_cast<int>(ModuleType::envelopeConvolution), 61);
         expectEquals(moduleTypeCount, 62);
-        expectEquals(stateSchemaVersion, 13);
+        expectEquals(stateSchemaVersion, 14);
         auto created = createDspModule(ModuleType::envelopeConvolution);
         expect(dynamic_cast<Module*>(created.get()) != nullptr);
         expect(created->impulseResponseCapability() != nullptr);

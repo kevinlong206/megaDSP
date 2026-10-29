@@ -4365,6 +4365,13 @@ void MegaDSPAudioProcessor::addModule(megadsp::ModuleType type)
             parameter->convertTo0to1(static_cast<float>(type)));
         parameter->endChangeGesture();
     }
+    if (type == megadsp::ModuleType::equalizer)
+    {
+        megadsp::ReEqSettings eq;
+        eq.native = true;
+        selectedSnapshotState().slots[static_cast<size_t>(slot)]
+            .equalizer.store(eq);
+    }
     finishTopologyMutation(false, true, true);
     selectedTab = slot;
 }
@@ -4379,6 +4386,15 @@ void MegaDSPAudioProcessor::resetModuleToDefaults(int slot)
 
     ScopedProcessorUndoTransaction undo(*this, "Reset module");
     suspendProcessing(true);
+    if (type == megadsp::ModuleType::equalizer)
+    {
+        auto eq = reEqSettings(slot);
+        const auto native = eq.native;
+        eq = {};
+        eq.native = native;
+        selectedSnapshotState().slots[static_cast<size_t>(slot)]
+            .equalizer.store(eq);
+    }
     const auto defaults = megadsp::moduleDefaults(type);
     for (int control = 0; control < megadsp::controlsPerSlot; ++control)
     {
@@ -4395,6 +4411,93 @@ void MegaDSPAudioProcessor::resetModuleToDefaults(int slot)
     getRack().visualizationData().slotData(slot).clear();
     suspendProcessing(false);
     refreshLatency();
+}
+
+megadsp::ReEqSettings MegaDSPAudioProcessor::reEqSettings(int slot) const
+{
+    if (!juce::isPositiveAndBelow(slot, megadsp::slotCount))
+        return {};
+    return snapshotStates[static_cast<size_t>(getSelectedSnapshot())]
+        .slots[static_cast<size_t>(slot)].equalizer.load();
+}
+
+void MegaDSPAudioProcessor::setReEqSettings(
+    int slot, const megadsp::ReEqSettings& settings, bool recordUndo)
+{
+    if (!juce::isPositiveAndBelow(slot, megadsp::slotCount)
+        || getRack().moduleType(slot) != megadsp::ModuleType::equalizer)
+        return;
+    auto sanitized = settings;
+    sanitized.sanitize();
+    const auto previous = reEqSettings(slot);
+    if (previous == sanitized)
+        return;
+    auto persistentBefore = previous;
+    auto persistentAfter = sanitized;
+    persistentBefore.clearAudition();
+    persistentAfter.clearAudition();
+    const auto persistentChanged = persistentBefore != persistentAfter;
+    const auto modeChanged = previous.native != sanitized.native;
+    if (recordUndo && persistentChanged)
+        beginUndoTransaction("Edit equalizer");
+    if (!modeChanged || beginTopologyMutation())
+    {
+        selectedSnapshotState().slots[static_cast<size_t>(slot)]
+            .equalizer.store(sanitized);
+        if (modeChanged)
+            finishTopologyMutation(false, true, true);
+        if (persistentChanged)
+            updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
+    }
+    if (recordUndo && persistentChanged)
+        endUndoTransaction();
+}
+
+void MegaDSPAudioProcessor::upgradeEqualizer(int slot)
+{
+    if (!juce::isPositiveAndBelow(slot, megadsp::slotCount)
+        || getRack().moduleType(slot) != megadsp::ModuleType::equalizer
+        || reEqSettings(slot).native)
+        return;
+    megadsp::ReEqSettings settings;
+    settings.native = true;
+    const std::array<float, 3> low { 30.0f, 150.0f, 1500.0f };
+    const auto ceiling = float((getSampleRate() > 0.0 ? getSampleRate() : 44100.0)
+                               * 0.475);
+    const std::array<float, 3> high {
+        juce::jmin(1200.0f, ceiling), juce::jmin(7000.0f, ceiling),
+        juce::jmin(20000.0f, ceiling)
+    };
+    const auto value = [this, slot](int control)
+    {
+        const auto* parameter = parameters.getParameter(
+            megadsp::controlParameterId(slot, control));
+        return parameter->convertFrom0to1(parameter->getValue());
+    };
+    for (int band = 0; band < 3; ++band)
+    {
+        auto& b = settings.bands[static_cast<size_t>(band)];
+        b.enabled = 2;
+        b.frequency = low[static_cast<size_t>(band)] * std::pow(
+            high[static_cast<size_t>(band)] / low[static_cast<size_t>(band)],
+            value(band * 3));
+        b.gainDb = -18.0f + 36.0f * value(band * 3 + 1);
+        b.q = 0.2f * std::pow(50.0f, value(band * 3 + 2));
+        if (band != 1)
+        {
+            const auto mode = megadsp::equalizerBandMode(value(band == 0 ? 10 : 11));
+            if (mode == megadsp::EqualizerBandMode::shelf)
+                b.shape = band == 0 ? megadsp::ReEqShape::lowShelf
+                                    : megadsp::ReEqShape::highShelf;
+            else if (mode == megadsp::EqualizerBandMode::cut)
+            {
+                b.shape = band == 0 ? megadsp::ReEqShape::lowCut
+                                    : megadsp::ReEqShape::highCut;
+                b.slope = 1;
+            }
+        }
+    }
+    setReEqSettings(slot, settings);
 }
 
 juce::Result MegaDSPAudioProcessor::loadImpulseResponse(
