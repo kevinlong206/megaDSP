@@ -7,6 +7,21 @@ or CLAP plugin with a growing collection of high-quality, intuitive effects.
 Use a module on its own or combine up to eight in a serial chain to shape,
 transform, and finish your audio without juggling separate plugins.
 
+On macOS, the same rack also runs without a DAW as **megaDSP.app**:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target megaDSP_Standalone -j 6
+open build/megaDSP_artefacts/Release/Standalone/megaDSP.app
+```
+
+Allow audio input access when macOS asks, then use **Settings > Audio/MIDI
+Settings...** to select your interface, channels, sample rate, buffer size, and
+MIDI inputs. Input starts muted to prevent speaker/microphone feedback; use
+headphones or an isolated interface before disabling **Mute audio input**.
+The standalone wrapper restores its saved rack and device settings. Without a
+DAW playhead, tempo-synchronized effects use the existing 120 BPM fallback.
+
 Mono, mono-to-stereo, and stereo channel layouts are supported. In Logic Pro,
 choose **Mono->Stereo** on a mono track to feed its signal equally into both
 rack channels and retain stereo effect output. Host bypass keeps that signal

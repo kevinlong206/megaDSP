@@ -151,6 +151,8 @@ juce_add_plugin(megaDSP
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "megaDSP needs audio input access to process your microphone or audio interface."
     IS_MIDI_EFFECT FALSE
     AU_MAIN_TYPE kAudioUnitType_Effect
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
