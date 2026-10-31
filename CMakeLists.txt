@@ -159,6 +159,12 @@ juce_add_plugin(megaDSP
     COPY_PLUGIN_AFTER_BUILD FALSE
     VST3_CATEGORIES Fx)
 
+target_sources(megaDSP_Standalone PRIVATE
+    src/StandaloneApplication.cpp
+    src/StandaloneAudioSettings.h)
+target_compile_definitions(megaDSP_Standalone PRIVATE
+    JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1)
+
 set(MEGADSP_MODULE_SOURCES
     src/modules/AlgorithmicReverb.cpp
     src/modules/AdaptiveClipper.cpp

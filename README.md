@@ -19,6 +19,9 @@ Allow audio input access when macOS asks, then use **Settings > Audio/MIDI
 Settings...** to select your interface, channels, sample rate, buffer size, and
 MIDI inputs. Input starts muted to prevent speaker/microphone feedback; use
 headphones or an isolated interface before disabling **Mute audio input**.
+Input channels are listed individually: enable one physical channel for mono
+input or two for stereo input. Keep two output channels enabled for stereo
+output; mono input is duplicated into both rack channels before processing.
 The standalone wrapper restores its saved rack and device settings. Without a
 DAW playhead, tempo-synchronized effects use the existing 120 BPM fallback.
 

@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "ReaperEmbeddedUI.h"
+#include "StandaloneAudioSettings.h"
 #include "ui/EffectGraph.h"
 #include "ui/GuiLayout.h"
 
@@ -9,6 +10,7 @@
 
 #include <vector>
 #include <thread>
+#include <utility>
 
 #if JUCE_MAC
 #include <CoreFoundation/CoreFoundation.h>
@@ -406,6 +408,75 @@ public:
     std::vector<unsigned int> pixels;
 };
 
+class StandaloneTestDevice final : public juce::AudioIODevice
+{
+public:
+    StandaloneTestDevice() : AudioIODevice("Test Interface", "Standalone Test") {}
+    juce::StringArray getOutputChannelNames() override { return { "Out 1", "Out 2", "Out 3", "Out 4" }; }
+    juce::StringArray getInputChannelNames() override { return { "In 1", "In 2", "In 3", "In 4" }; }
+    juce::Array<double> getAvailableSampleRates() override { return { 48000.0 }; }
+    juce::Array<int> getAvailableBufferSizes() override { return { 64 }; }
+    int getDefaultBufferSize() override { return 64; }
+    juce::String open(const juce::BigInteger& inputs, const juce::BigInteger& outputs,
+                      double, int) override
+    {
+        inputChannels = inputs;
+        outputChannels = outputs;
+        opened = true;
+        return {};
+    }
+    void close() override { stop(); opened = false; }
+    bool isOpen() override { return opened; }
+    void start(juce::AudioIODeviceCallback* next) override
+    {
+        callback = next;
+        if (callback != nullptr)
+            callback->audioDeviceAboutToStart(this);
+    }
+    void stop() override
+    {
+        if (auto* previous = std::exchange(callback, nullptr))
+            previous->audioDeviceStopped();
+    }
+    bool isPlaying() override { return callback != nullptr; }
+    juce::String getLastError() override { return {}; }
+    int getCurrentBufferSizeSamples() override { return 64; }
+    double getCurrentSampleRate() override { return 48000.0; }
+    int getCurrentBitDepth() override { return 32; }
+    juce::BigInteger getActiveOutputChannels() const override { return outputChannels; }
+    juce::BigInteger getActiveInputChannels() const override { return inputChannels; }
+    int getOutputLatencyInSamples() override { return 0; }
+    int getInputLatencyInSamples() override { return 0; }
+
+private:
+    juce::BigInteger inputChannels, outputChannels;
+    juce::AudioIODeviceCallback* callback = nullptr;
+    bool opened = false;
+};
+
+class StandaloneTestDeviceType final : public juce::AudioIODeviceType
+{
+public:
+    StandaloneTestDeviceType() : AudioIODeviceType("Standalone Test") {}
+    void scanForDevices() override {}
+    juce::StringArray getDeviceNames(bool) const override { return { "Test Interface" }; }
+    int getDefaultDeviceIndex(bool) const override { return 0; }
+    int getIndexOfDevice(juce::AudioIODevice*, bool) const override { return 0; }
+    bool hasSeparateInputsAndOutputs() const override { return false; }
+    juce::AudioIODevice* createDevice(const juce::String&, const juce::String&) override
+    {
+        return new StandaloneTestDevice;
+    }
+};
+
+class StandaloneTestDeviceManager final : public juce::AudioDeviceManager
+{
+    void createAudioDeviceTypes(juce::OwnedArray<juce::AudioIODeviceType>& types) override
+    {
+        types.add(new StandaloneTestDeviceType);
+    }
+};
+
 class ProcessorChannelLayoutTests final : public juce::UnitTest
 {
 public:
@@ -416,6 +487,64 @@ public:
 
     void runTest() override
     {
+        beginTest("Standalone selects an individual input while retaining stereo output");
+        {
+            StandaloneTestDeviceManager manager;
+            expectEquals(manager.initialise(2, 2, nullptr, false), juce::String {});
+            MegaDSPAudioProcessor processor;
+            processor.disableNonMainBuses();
+            juce::AudioProcessorPlayer player;
+            player.setProcessor(&processor);
+            manager.addAudioCallback(&player);
+            juce::Value muted(true);
+            megadsp::StandaloneAudioSettings settings(manager, muted);
+            std::function<juce::ListBox*(juce::Component&, const juce::String&)> findChannels =
+                [&findChannels](juce::Component& component, const juce::String& text)
+                    -> juce::ListBox*
+                {
+                    if (auto* label = dynamic_cast<juce::Label*>(&component))
+                        if (label->getText() == text)
+                            return dynamic_cast<juce::ListBox*>(label->getAttachedComponent());
+                    for (auto* child : component.getChildren())
+                        if (auto* found = findChannels(*child, text))
+                            return found;
+                    return nullptr;
+                };
+            auto* inputs = findChannels(settings, "Active input channels:");
+            auto* outputs = findChannels(settings, "Active output channels:");
+            expect(inputs != nullptr && outputs != nullptr);
+            if (inputs != nullptr && outputs != nullptr)
+            {
+                expectEquals(inputs->getListBoxModel()->getNumRows(), 4);
+                inputs->getListBoxModel()->returnKeyPressed(3);
+                inputs->getListBoxModel()->returnKeyPressed(1);
+                const auto selected = manager.getAudioDeviceSetup();
+                expectEquals(selected.inputChannels.countNumberOfSetBits(), 1);
+                expect(selected.inputChannels[3]);
+                expectEquals(selected.outputChannels.countNumberOfSetBits(), 2);
+                expectEquals(processor.getMainBusNumOutputChannels(), 2);
+                std::array<float, 64> input, left {}, right {};
+                input.fill(0.25f);
+                const float* inputPointers[] { input.data() };
+                float* outputPointers[] { left.data(), right.data() };
+                player.audioDeviceIOCallbackWithContext(
+                    inputPointers, 1, outputPointers, 2, 64, {});
+                for (int sample = 0; sample < 64; ++sample)
+                {
+                    expectWithinAbsoluteError(left[static_cast<size_t>(sample)], 0.25f, 0.00001f);
+                    expectWithinAbsoluteError(right[static_cast<size_t>(sample)], 0.25f, 0.00001f);
+                }
+                outputs->getListBoxModel()->returnKeyPressed(1);
+                expectEquals(manager.getAudioDeviceSetup().outputChannels.countNumberOfSetBits(), 2);
+                inputs->getListBoxModel()->returnKeyPressed(2);
+                expectEquals(manager.getAudioDeviceSetup().inputChannels.countNumberOfSetBits(), 2);
+                expectEquals(processor.getMainBusNumInputChannels(), 2);
+                expectEquals(processor.getMainBusNumOutputChannels(), 2);
+            }
+            manager.removeAudioCallback(&player);
+            player.setProcessor(nullptr);
+        }
+
         beginTest("Only mono, mono-to-stereo, and stereo layouts are accepted");
         {
             MegaDSPAudioProcessor processor;
