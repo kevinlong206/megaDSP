@@ -21,8 +21,9 @@ public:
     void reset();
     void process(juce::AudioBuffer<float>&, const ReEqSettings&,
                  const ProcessEnvironment&, float hostOutputDb = 0.0f);
-    // Fixed prepared 10ms latency. Lookahead moves only the detector tap.
+    void setLookahead(float milliseconds) noexcept;
     int latencySamples() const noexcept;
+    int maximumLatencySamples() const noexcept;
     static double bandMagnitude(const ReEqBand&, double sampleRate,
                                 double frequency, float scale = 1.0f);
     float dynamicGainDb(int band) const noexcept;

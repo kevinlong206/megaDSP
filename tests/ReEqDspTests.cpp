@@ -129,16 +129,18 @@ public:
             expect(error < 1.0e-6);
         }
 
-        beginTest("Fixed latency stays aligned through every lookahead setting and reset");
+        beginTest("Lookahead Off is immediate and selected lookahead matches reported latency");
         for (const auto rate : { 22050.0, 44100.0, 48000.0, 96000.0, 192000.0 })
         {
             ReEqProcessor processor;
             processor.prepare({ rate, 256, 2 });
+            expectEquals(processor.latencySamples(), 0);
             for (const auto lookahead : { 0.0f, 1.0f, 5.0f, 10.0f })
             {
+                processor.setLookahead(lookahead);
                 processor.reset();
                 settings = {}; settings.lookaheadMs = lookahead;
-                const auto expected = static_cast<int>(std::lround(0.01 * rate));
+                const auto expected = static_cast<int>(std::lround(lookahead * 0.001 * rate));
                 expectEquals(processor.latencySamples(), expected);
                 int position = 0, peak = -1;
                 for (int chunk = 0; chunk < 12; ++chunk)
@@ -152,6 +154,35 @@ public:
                 expectEquals(peak, expected);
                 expectEquals(processor.latencySamples(), expected);
             }
+        }
+
+        beginTest("Lookahead changes crossfade prepared audio taps without resetting the signal");
+        {
+            ReEqProcessor processor;
+            processor.prepare({ 48000, 256, 2 });
+            settings = {};
+            constexpr std::array<float, 5> lookahead { 0, 1, 5, 10, 0 };
+            float last = 0.0f;
+            double maximumStep = 0.0;
+            for (int chunk = 0; chunk < 100; ++chunk)
+            {
+                settings.lookaheadMs = lookahead[size_t(chunk / 20)];
+                for (int i = 0; i < 256; ++i)
+                {
+                    block.setSample(0, i, float(0.1 * std::sin((chunk * 256 + i) * 0.05)));
+                    block.setSample(1, i, 0.0f);
+                }
+                processor.process(block, settings, environment);
+                for (int i = 0; i < 256; ++i)
+                {
+                    const auto sample = block.getSample(0, i);
+                    expect(std::isfinite(sample));
+                    maximumStep = std::max(maximumStep, std::abs(double(sample - last)));
+                    last = sample;
+                }
+                expectWithinAbsoluteError(block.getMagnitude(1, 0, 256), 0.0f, 0.000001f);
+            }
+            expect(maximumStep < 0.006);
         }
 
         beginTest("Dynamics uses source soft knee, linked louder-channel RMS, and signed range");
@@ -199,7 +230,7 @@ public:
         dynamics.reset();
         expect(toneGain(dynamics, settings, environment, 48000, 1000) < 0.6);
 
-        beginTest("Lookahead anticipates attacks without moving the audible signal");
+        beginTest("Lookahead anticipates attacks at the corresponding delayed onset");
         ReEqSettings noLook, ahead;
         auto& transient = noLook.bands[0];
         transient.enabled = 2; transient.dynamic = true; transient.frequency = 1000;
@@ -228,16 +259,14 @@ public:
             for (int i = 0; i < 256; ++i)
             {
                 const auto t = chunk * 256 + i;
-                if (t >= 2528 && t < 2720)
-                {
+                if (t >= 2048 && t < 2240)
                     offEnergy += std::pow(block.getSample(0, i), 2);
+                if (t >= 2528 && t < 2720)
                     aheadEnergy += std::pow(earlyBlock.getSample(0, i), 2);
-                }
-                if (t < 2528)
-                {
+                if (t < 2048)
                     expect(std::abs(block.getSample(0, i)) < 1.0e-8f);
+                if (t < 2528)
                     expect(std::abs(earlyBlock.getSample(0, i)) < 1.0e-8f);
-                }
             }
         }
         expect(aheadEnergy < offEnergy * 0.8);

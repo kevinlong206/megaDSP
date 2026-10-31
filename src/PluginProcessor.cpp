@@ -4438,14 +4438,17 @@ void MegaDSPAudioProcessor::setReEqSettings(
     persistentAfter.clearAudition();
     const auto persistentChanged = persistentBefore != persistentAfter;
     const auto modeChanged = previous.native != sanitized.native;
+    const auto latencyChanged = (previous.native || sanitized.native)
+        && !juce::exactlyEqual(previous.lookaheadMs, sanitized.lookaheadMs);
+    const auto topologyChanged = modeChanged || latencyChanged;
     if (recordUndo && persistentChanged)
         beginUndoTransaction("Edit equalizer");
-    if (!modeChanged || beginTopologyMutation())
+    if (!topologyChanged || beginTopologyMutation())
     {
         selectedSnapshotState().slots[static_cast<size_t>(slot)]
             .equalizer.store(sanitized);
-        if (modeChanged)
-            finishTopologyMutation(false, true, true);
+        if (topologyChanged)
+            finishTopologyMutation(false, modeChanged, true);
         if (persistentChanged)
             updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
     }

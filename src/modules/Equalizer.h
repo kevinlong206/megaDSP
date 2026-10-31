@@ -12,12 +12,20 @@ public:
     void reset() override;
     void process(juce::AudioBuffer<float>&, const ControlValues&,
                  const ProcessEnvironment&) override;
-    void setNativeEnabled(bool enabled) noexcept { nativeEnabled = enabled; }
+    void setReEqSettings(const ReEqSettings& settings) noexcept
+    {
+        nativeEnabled = settings.native;
+        nativeLookaheadMs = settings.lookaheadMs;
+        nativeProcessor.setLookahead(nativeLookaheadMs);
+    }
     int latencySamples() const override
     {
         return nativeEnabled ? nativeProcessor.latencySamples() : 0;
     }
-    int nativeLatencySamples() const { return nativeProcessor.latencySamples(); }
+    int maximumNativeLatencySamples() const
+    {
+        return nativeProcessor.maximumLatencySamples();
+    }
     const ReEqProcessor& reEqProcessor() const { return nativeProcessor; }
 
 private:
@@ -44,5 +52,6 @@ private:
     bool topologyInitialized = false;
     ReEqProcessor nativeProcessor;
     bool nativeEnabled = false;
+    float nativeLookaheadMs = 0.0f;
 };
 } // namespace megadsp

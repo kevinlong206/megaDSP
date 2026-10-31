@@ -16,6 +16,7 @@ void EqualizerModule::prepare(const juce::dsp::ProcessSpec& spec)
         for (auto& smoother : band)
             smoother.reset(sampleRate, 0.02);
     reset();
+    nativeProcessor.setLookahead(nativeLookaheadMs);
 }
 
 void EqualizerModule::reset()

@@ -101,8 +101,10 @@ public:
         restored->prepareToPlay(48000.0, 256);
         restored->setStateInformation(state.getData(), int(state.getSize()));
         expect(restored->reEqSettings(1) == changed);
+        expectEquals(restored->getLatencySamples(), 240);
         restored->recallSnapshot(0);
         expect(restored->reEqSettings(0) == settings);
+        expectEquals(restored->getLatencySamples(), 240);
         restored->recallSnapshot(1);
         restored->removeSlot(0);
         expect(restored->reEqSettings(0) == changed);
@@ -190,30 +192,34 @@ public:
         expectWithinAbsoluteError(
             restored->reEqSettings(0).bands[0].gainDb,
             -18.0f + 36.0f * controls[1], 0.00001f);
-        expect(restored->getRack().activeModuleInstance(0)->latencySamples() > 0);
+        expectEquals(restored->getRack().activeModuleInstance(0)->latencySamples(), 0);
         expect(restored->undo());
         expect(!restored->reEqSettings(0).native);
         expectEquals(restored->getRack().activeModuleInstance(0)->latencySamples(), 0);
 
-        beginTest("Native lookahead and suspended bypass keep one aligned latency");
+        beginTest("Host PDC and suspended bypass follow the selected native lookahead");
         auto aligned = std::make_unique<MegaDSPAudioProcessor>();
         aligned->prepareToPlay(48000.0, 512);
         aligned->addModule(ModuleType::equalizer);
-        expectEquals(aligned->getRack().latencySamples(), 480);
+        expectEquals(aligned->getRack().latencySamples(), 0);
+        expectEquals(aligned->getLatencySamples(), 0);
         juce::AudioBuffer<float> impulse(2, 1024);
         for (const auto lookahead : { 0.0f, 1.0f, 5.0f, 10.0f })
         {
             auto eq = aligned->reEqSettings(0);
             eq.lookaheadMs = lookahead;
             aligned->setReEqSettings(0, eq);
+            const auto latency = static_cast<int>(std::lround(lookahead * 48));
+            expectEquals(aligned->getRack().latencySamples(), latency);
+            expectEquals(aligned->getLatencySamples(), latency);
             aligned->getRack().reset();
             impulse.clear();
             impulse.setSample(0, 0, 0.1f);
             impulse.setSample(1, 0, -0.1f);
             aligned->getRack().process(impulse, nullptr, 120.0);
-            expectEquals(aligned->getRack().latencySamples(), 480);
-            expectWithinAbsoluteError(impulse.getSample(0, 480), 0.1f, 0.00001f);
-            expectWithinAbsoluteError(impulse.getSample(1, 480), -0.1f, 0.00001f);
+            expectEquals(aligned->getRack().latencySamples(), latency);
+            expectWithinAbsoluteError(impulse.getSample(0, latency), 0.1f, 0.00001f);
+            expectWithinAbsoluteError(impulse.getSample(1, latency), -0.1f, 0.00001f);
         }
         aligned->parameters.getParameter(slotParameterId(0, "bypass"))
             ->setValueNotifyingHost(1.0f);
@@ -224,6 +230,16 @@ public:
         aligned->getRack().process(impulse, nullptr, 120.0);
         expectWithinAbsoluteError(impulse.getSample(0, 480), 0.1f, 0.00001f);
         expectEquals(aligned->getRack().latencySamples(), 480);
+        auto eq = aligned->reEqSettings(0);
+        eq.lookaheadMs = 0.0f;
+        aligned->setReEqSettings(0, eq);
+        expectEquals(aligned->getLatencySamples(), 0);
+        impulse.clear();
+        impulse.setSample(0, 0, 0.1f);
+        aligned->getRack().process(impulse, nullptr, 120.0);
+        expect(aligned->getRack().slotDspSuspended(0));
+        expectWithinAbsoluteError(impulse.getSample(0, 0), 0.1f, 0.00001f);
+        expectEquals(aligned->getRack().latencySamples(), 0);
     }
 };
 

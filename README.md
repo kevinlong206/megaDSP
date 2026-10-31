@@ -300,8 +300,9 @@ New EQs added from the module browser use the native ReEQ2 engine. Old sessions
 and factory presets keep their original filters and automation; **UPGRADE TO
 ReEQ2** explicitly converts the three original bands and is undoable. The
 decramped filter responses are intentionally different from the legacy EQ.
-The native engine reserves a fixed 10 ms of reported latency in every lookahead
-setting, including Off, keeping host alignment and latency-bearing bypass stable.
+Like ReEQ2, the native engine adds no latency with Lookahead Off. Selecting
+1, 5, or 10 ms delays the audio by that amount and reports it to the host;
+dry and bypass routing stay aligned with the selected lookahead.
 The eight-slot/twelve-control host layout and parameter IDs are unchanged.
 Native band, dynamics, routing, and analyzer settings are saved in schema-14
 projects, presets, snapshots, and undo state rather than appended as new host

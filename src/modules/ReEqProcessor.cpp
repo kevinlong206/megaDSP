@@ -555,6 +555,7 @@ struct ReEqProcessor::Impl
         const auto wanted = std::clamp(static_cast<int>(std::lround(
             bounded(settings.lookaheadMs, 0, 10, 0) * 0.001 * rate)), 0,
             static_cast<int>(delay.size()) - 1);
+        latency.store(wanted, std::memory_order_relaxed);
         if (wanted != delayLength)
         {
             previousDelay = delayLength;
@@ -673,6 +674,7 @@ void ReEqProcessor::prepare(const juce::dsp::ProcessSpec& spec)
               * biquadPower(1, -2, 1, -1.99004745483398, 0.99007225036621, w);
     }
     impl->prepared = true;
+    setLookahead(0.0f);
     reset();
 }
 
@@ -687,8 +689,6 @@ void ReEqProcessor::reset()
     impl->listenGain.snap(1);
     impl->limitMix.snap(0); impl->delayMix.snap(1);
     impl->write = impl->delayLength = impl->previousDelay = 0;
-    impl->latency.store(impl->prepared ? static_cast<int>(std::lround(0.01 * impl->rate)) : 0,
-                        std::memory_order_relaxed);
     impl->gainCorrection = impl->gainTarget = 1;
     impl->initialized = false;
     for (size_t i = 0; i < impl->bands.size(); ++i)
@@ -698,9 +698,22 @@ void ReEqProcessor::reset()
     }
 }
 
+void ReEqProcessor::setLookahead(float milliseconds) noexcept
+{
+    const auto samples = static_cast<int>(std::lround(
+        bounded(milliseconds, 0, 10, 0) * 0.001 * impl->rate));
+    impl->latency.store(std::clamp(samples, 0, maximumLatencySamples()),
+                        std::memory_order_relaxed);
+}
+
 int ReEqProcessor::latencySamples() const noexcept
 {
     return impl->latency.load(std::memory_order_relaxed);
+}
+
+int ReEqProcessor::maximumLatencySamples() const noexcept
+{
+    return impl->prepared ? static_cast<int>(impl->delay.size()) - 1 : 0;
 }
 
 double ReEqProcessor::bandMagnitude(const ReEqBand& band, double rate, double frequency, float scale)
@@ -751,31 +764,23 @@ void ReEqProcessor::process(juce::AudioBuffer<float>& buffer, const ReEqSettings
         }
         auto& incoming = p.delay[static_cast<size_t>(p.write)];
         incoming = { l, r, externalL, externalR, 0, 0 };
-        const auto fixedDelay = p.latency.load(std::memory_order_relaxed);
         const auto blend = p.delayMix.next();
-        const auto& detectorOld = p.delay[static_cast<size_t>(
-            (p.write - (fixedDelay - p.previousDelay) + delaySize) % delaySize)];
-        const auto& detectorNew = p.delay[static_cast<size_t>(
-            (p.write - (fixedDelay - p.delayLength) + delaySize) % delaySize)];
         std::array<double, 2> detectorSignal {};
         for (size_t i = 0; i < p.bands.size(); ++i)
         {
             if (!p.bands[i].dynamic) continue;
             const auto& b = settings.bands[i];
             const auto offset = b.externalSidechain && hasSidechain ? 2u : 0u;
-            const auto dl = detectorOld[offset]
-                            + (detectorNew[offset] - detectorOld[offset]) * blend;
-            const auto dr = detectorOld[offset + 1]
-                            + (detectorNew[offset + 1] - detectorOld[offset + 1]) * blend;
+            const auto dl = incoming[offset];
+            const auto dr = incoming[offset + 1];
             const auto detected = p.dynamicTick(i, b, dl, dr);
             if (settings.listenBand == static_cast<int>(i)) detectorSignal = detected;
         }
         incoming[4] = detectorSignal[0]; incoming[5] = detectorSignal[1];
-        const auto& main = p.delay[static_cast<size_t>(
-            (p.write - fixedDelay + delaySize) % delaySize)];
-        l = main[0]; r = main[1];
         const auto& a = p.delay[static_cast<size_t>((p.write - p.previousDelay + delaySize) % delaySize)];
         const auto& b = p.delay[static_cast<size_t>((p.write - p.delayLength + delaySize) % delaySize)];
+        l = a[0] + (b[0] - a[0]) * blend;
+        r = a[1] + (b[1] - a[1]) * blend;
         detectorSignal = { a[4] + (b[4] - a[4]) * blend,
                            a[5] + (b[5] - a[5]) * blend };
         p.write = (p.write + 1) % delaySize;

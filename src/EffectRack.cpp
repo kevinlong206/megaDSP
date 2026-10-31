@@ -296,10 +296,11 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
     if (module == nullptr)
         return;
     if (auto* eq = dynamic_cast<EqualizerModule*>(module.get()))
-        eq->setNativeEnabled(
+        eq->setReEqSettings(
             state != nullptr
-            && state->slots[static_cast<size_t>(&slot - slots.data())]
-                   .equalizer.load().native);
+                ? state->slots[static_cast<size_t>(&slot - slots.data())]
+                      .equalizer.load()
+                : ReEqSettings {});
 
     if (hasPrepareState)
     {
@@ -323,7 +324,7 @@ void EffectRack::rebuildSlot(Slot& slot, ModuleType type)
             false, true, true);
         const auto* eq = dynamic_cast<const EqualizerModule*>(module.get());
         const auto latencyCapacity = static_cast<size_t>(
-            eq != nullptr ? eq->nativeLatencySamples()
+            eq != nullptr ? eq->maximumNativeLatencySamples()
                           : juce::jmax(0, alignedLatencySamples(*module)));
         if (latencyCapacity > 0)
             for (auto& channel : slot.latencyBuffer)
@@ -363,9 +364,10 @@ void EffectRack::synchronizeModuleDataState(int slot)
 
     // IR capability
     if (auto* eq = dynamic_cast<EqualizerModule*>(module))
-        eq->setNativeEnabled(
+        eq->setReEqSettings(
             state != nullptr
-            && state->slots[static_cast<size_t>(slot)].equalizer.load().native);
+                ? state->slots[static_cast<size_t>(slot)].equalizer.load()
+                : ReEqSettings {});
     auto* impulseResponse = module->impulseResponseCapability();
     if (impulseResponse == nullptr)
     {
