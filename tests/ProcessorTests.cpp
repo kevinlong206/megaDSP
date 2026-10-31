@@ -10,6 +10,10 @@
 #include <vector>
 #include <thread>
 
+#if JUCE_MAC
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+
 namespace
 {
 class ParameterEventRecorder final
@@ -1202,6 +1206,130 @@ public:
             expectEquals(
                 editor->cardControlTextForTesting(1, 3),
                 juce::String("36 ms"));
+        }
+
+#if JUCE_MAC
+        beginTest("Native editor repairs a worker-initialized message thread and completes module menus");
+        {
+            auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
+            rackProcessor->prepareToPlay(48000.0, 512);
+            auto* manager = juce::MessageManager::getInstance();
+            std::thread initializer([manager]
+            {
+                manager->setCurrentThreadAsMessageThread();
+            });
+            initializer.join();
+            expect(!manager->isThisTheMessageThread());
+            std::unique_ptr<juce::AudioProcessorEditor> editor(
+                rackProcessor->createEditor());
+            expect(manager->isThisTheMessageThread(),
+                   "Cocoa editor creation must bind JUCE to the macOS main thread.");
+            editor->setTopLeftPosition(-10000, -10000);
+            editor->addToDesktop(juce::ComponentPeer::windowIgnoresMouseClicks);
+            editor->setVisible(true);
+            std::function<juce::Button*(juce::Component&)> findInsert =
+                [&findInsert](juce::Component& component) -> juce::Button*
+                {
+                    if (component.getTitle()
+                        == "Insert processor at signal-flow position 1")
+                        return dynamic_cast<juce::Button*>(&component);
+                    for (auto* child : component.getChildren())
+                        if (auto* found = findInsert(*child))
+                            return found;
+                    return nullptr;
+                };
+            auto* insert = findInsert(*editor);
+            expect(insert != nullptr);
+            if (insert != nullptr)
+            {
+                insert->onClick();
+                auto* menu = juce::Component::getCurrentlyModalComponent();
+                expect(menu != nullptr);
+                if (menu != nullptr)
+                {
+                    auto menuResult = std::make_shared<std::atomic<int>>(-1);
+                    juce::ModalComponentManager::getInstance()->attachCallback(
+                        menu, juce::ModalCallbackFunction::create([menuResult](int result)
+                        {
+                            menuResult->store(result);
+                        }));
+                    std::function<juce::AccessibilityHandler*(
+                        juce::Component&, const juce::String&)> findItem =
+                        [&findItem](juce::Component& component, const juce::String& title)
+                            -> juce::AccessibilityHandler*
+                        {
+                            if (auto* handler = component.getAccessibilityHandler())
+                                if (handler->getTitle() == title)
+                                    return handler;
+                            for (auto* child : component.getChildren())
+                                if (auto* found = findItem(*child, title))
+                                    return found;
+                            return nullptr;
+                        };
+                    const auto& definition = megadsp::moduleDefinition(
+                        megadsp::ModuleType::compressor);
+                    auto* category = findItem(
+                        *menu, megadsp::moduleCategoryName(definition.category));
+                    expect(category != nullptr);
+                    if (category != nullptr)
+                        category->getActions().invoke(juce::AccessibilityActionType::press);
+                    if (auto* submenu = juce::Component::getCurrentlyModalComponent())
+                    {
+                        auto* item = findItem(*submenu, definition.displayName);
+                        expect(item != nullptr);
+                        if (item != nullptr)
+                            item->getActions().invoke(juce::AccessibilityActionType::press);
+                    }
+                    const auto deadline = juce::Time::getMillisecondCounterHiRes() + 500.0;
+                    while (menuResult->load() < 0
+                           && juce::Time::getMillisecondCounterHiRes() < deadline)
+                        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, false);
+                    expect(menuResult->load() > 0,
+                           "Module menu completion result: " + juce::String(menuResult->load()));
+                    expectEquals(rackProcessor->getRack().activeSlotCount(), 1);
+                    expect(rackProcessor->getRack().moduleType(0)
+                           == megadsp::ModuleType::compressor);
+                    expect(juce::Component::getCurrentlyModalComponent() == nullptr);
+                    expect(rackProcessor->canUndo());
+                }
+            }
+            manager->setCurrentThreadAsMessageThread();
+            juce::PopupMenu::dismissAllActiveMenus();
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.03, false);
+        }
+#endif
+
+        beginTest("Ultra keeps an add-module button for empty and partially populated racks");
+        {
+            auto rackProcessor = std::make_unique<MegaDSPAudioProcessor>();
+            rackProcessor->prepareToPlay(48000.0, 512);
+            MegaDSPAudioProcessorEditor editor(*rackProcessor, 1100, 720);
+            editor.setWidgetSizeForTesting(megadsp::ui::WidgetSize::ultraCompact);
+            std::function<juce::Button*(juce::Component&)> findAdd =
+                [&findAdd](juce::Component& component) -> juce::Button*
+                {
+                    if (auto* button = dynamic_cast<juce::Button*>(&component))
+                        if (button->getButtonText() == "+ ADD MODULE")
+                            return button;
+                    for (auto* child : component.getChildren())
+                        if (auto* found = findAdd(*child))
+                            return found;
+                    return nullptr;
+                };
+            auto* add = findAdd(editor);
+            expect(add != nullptr);
+            if (add != nullptr)
+            {
+                expect(add->isVisible() && !add->getBounds().isEmpty());
+                rackProcessor->addModule(megadsp::ModuleType::equalizer);
+                editor.refreshCardsForTesting();
+                expect(add->isVisible() && !add->getBounds().isEmpty());
+                expect(add->getParentComponent()->getLocalBounds().contains(add->getBounds()));
+                for (int slot = 1; slot < megadsp::slotCount; ++slot)
+                    rackProcessor->addModule(megadsp::ModuleType::equalizer);
+                editor.refreshCardsForTesting();
+                expect(!add->isVisible());
+            }
         }
 
         beginTest("Widgets reorder and insert at every boundary");

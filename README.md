@@ -24,7 +24,9 @@ architecture generation. Filename-only entries omit this label until metadata
 validation completes.
 
 Choose **ULTRA** beside **S / M / L** for 36-pixel module rows stacked in
-top-to-bottom signal-flow order. Each row exposes up to five prioritized,
+top-to-bottom signal-flow order. **+ ADD MODULE** remains available below the
+rows, including in an empty rack, until all eight slots are filled.
+Each row exposes up to five prioritized,
 contextual controls with musical values, alongside bypass and a visible drag
 handle. Drag the handle or title above/below another row to reorder;
 **Alt+Up / Alt+Down** also reorder, and **Up / Down** select rows.

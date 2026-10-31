@@ -14,6 +14,10 @@
 #include <optional>
 #include <string_view>
 
+#if JUCE_MAC
+#include <pthread.h>
+#endif
+
 thread_local bool
     MegaDSPAudioProcessor::publishingSnapshotParameters = false;
 
@@ -6897,6 +6901,17 @@ void MegaDSPAudioProcessor::finishNamModelLoadForTesting()
 
 juce::AudioProcessorEditor* MegaDSPAudioProcessor::createEditor()
 {
+#if JUCE_MAC
+    // AU construction may run on a worker; Cocoa editor callbacks run on the main thread.
+    auto* manager = juce::MessageManager::getInstance();
+    if (pthread_main_np() != 0 && !manager->isThisTheMessageThread())
+    {
+        manager->setCurrentThreadAsMessageThread();
+        megadsp::Diagnostics::instance().log(
+            "editor", "rebound message thread to macOS main instance="
+                + juce::String(diagnosticInstanceId));
+    }
+#endif
     return new MegaDSPAudioProcessorEditor(*this, editorWidth, editorHeight);
 }
 

@@ -4155,6 +4155,8 @@ void MegaDSPAudioProcessorEditor::resized()
     rackViewport.setDescription(
         ultraCompact ? "Modules process audio from top to bottom."
                      : "Modules process audio from left to right.");
+    const auto showAddButton =
+        static_cast<int>(cards.size()) < megadsp::slotCount;
     if (ultraCompact)
     {
         const auto contentHeight = std::accumulate(
@@ -4162,7 +4164,7 @@ void MegaDSPAudioProcessorEditor::resized()
             [](int height, const auto& card)
             {
                 return height + card->preferredHeight() + 4;
-            });
+            }) + (showAddButton ? 36 : 0);
         rackContent.setSize(
             juce::jmax(
                 1, rackViewport.getWidth()
@@ -4171,7 +4173,8 @@ void MegaDSPAudioProcessorEditor::resized()
             juce::jmax(rackViewport.getHeight(), contentHeight));
         for (auto& button : chainInsertButtons)
             button->setVisible(false);
-        addButton.setVisible(false);
+        addButton.setVisible(showAddButton);
+        addButton.setEnabled(showAddButton);
         auto rows = rackContent.getLocalBounds().reduced(rackPadding);
         for (auto& card : cards)
         {
@@ -4179,12 +4182,13 @@ void MegaDSPAudioProcessorEditor::resized()
                 rows.removeFromTop(card->preferredHeight()));
             rows.removeFromTop(4);
         }
+        addButton.setBounds(
+            showAddButton ? rows.removeFromTop(32) : juce::Rectangle<int> {});
         for (auto& card : cards)
             card->reassertVisualizationCapture();
         return;
     }
-    const auto showAddButton =
-        static_cast<int>(cards.size()) < megadsp::slotCount;
+    addButton.setVisible(false);
     std::vector<int> cardWidths;
     cardWidths.reserve(cards.size());
     for (const auto& card : cards)
