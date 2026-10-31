@@ -4233,7 +4233,6 @@ juce::ValueTree MegaDSPAudioProcessor::copyPluginState()
         && juce::MessageManager::getInstance()->isThisTheMessageThread())
     {
         handleAsyncUpdate();
-        updateHostDisplay(ChangeDetails{}.withParameterInfoChanged(true));
     }
     auto state = parameters.copyState();
     for (auto child : state)
@@ -4317,6 +4316,7 @@ void MegaDSPAudioProcessor::setStateInformation(const void* data, int size)
         restoreSnapshots(restored, schemaVersion);
         finishTopologyMutation(true, true, true);
         setSelectedTab(selectedTab);
+        updatePublishedParameterModuleTypes();
         updateHostDisplay(ChangeDetails{}.withParameterInfoChanged(true));
         megadsp::Diagnostics::instance().log(
             "state",
@@ -6692,6 +6692,7 @@ juce::Result MegaDSPAudioProcessor::loadPreset(const juce::File& file)
     restoreSnapshots(state, schemaVersion);
     finishTopologyMutation(true, true, true);
     setSelectedTab(selectedTab);
+    updatePublishedParameterModuleTypes();
     updateHostDisplay(ChangeDetails{}
         .withParameterInfoChanged(true)
         .withProgramChanged(true)
@@ -6768,6 +6769,23 @@ void MegaDSPAudioProcessor::restoreParameterState(const juce::ValueTree& state)
             parameter->setValueNotifyingHost(normalizedValue);
         }
     }
+}
+
+bool MegaDSPAudioProcessor::updatePublishedParameterModuleTypes()
+{
+    auto changed = false;
+    for (int slot = 0; slot < megadsp::slotCount; ++slot)
+    {
+        const auto index = static_cast<size_t>(slot);
+        // Snapshot recall sets parameters without notifying APVTS listeners.
+        const auto* parameter = parameters.getParameter(typeParameterIds[index]);
+        const auto type = juce::roundToInt(
+            parameter->convertFrom0to1(parameter->getValue()));
+        if (publishedParameterModuleTypes[index].exchange(
+                type, std::memory_order_acq_rel) != type)
+            changed = true;
+    }
+    return changed;
 }
 
 void MegaDSPAudioProcessor::timerCallback()
@@ -6852,21 +6870,7 @@ void MegaDSPAudioProcessor::timerCallback()
     if (topologyDirty.load(std::memory_order_acquire)
         && !topologyMutationInProgress.load(std::memory_order_acquire))
         handleAsyncUpdate();
-    auto parameterInfoChanged = false;
-    for (int slot = 0; slot < megadsp::slotCount; ++slot)
-    {
-        const auto index = static_cast<size_t>(slot);
-        // Snapshot recall sets parameters without notifying APVTS listeners.
-        const auto* parameter = parameters.getParameter(typeParameterIds[index]);
-        const auto type = juce::roundToInt(
-            parameter->convertFrom0to1(parameter->getValue()));
-        if (publishedParameterModuleTypes[index] != type)
-        {
-            publishedParameterModuleTypes[index] = type;
-            parameterInfoChanged = true;
-        }
-    }
-    if (parameterInfoChanged)
+    if (updatePublishedParameterModuleTypes())
         updateHostDisplay(ChangeDetails{}.withParameterInfoChanged(true));
     if ((!liveSafeSnapshots.load(std::memory_order_acquire)
          || !audioStreamActive.load(std::memory_order_acquire))

@@ -429,6 +429,7 @@ private:
     void parameterGestureChanged(int parameterIndex, bool starting) override;
     double currentBpm() const;
     void refreshLatency();
+    bool updatePublishedParameterModuleTypes();
     juce::ValueTree copyPluginState();
     void restoreParameterState(const juce::ValueTree&);
     void finishTopologyMutation(
@@ -490,7 +491,7 @@ private:
 
     std::array<megadsp::RackState, megadsp::snapshotCount> snapshotStates;
     std::array<juce::String, megadsp::slotCount> typeParameterIds;
-    std::array<int, megadsp::slotCount> publishedParameterModuleTypes {};
+    std::array<std::atomic<int>, megadsp::slotCount> publishedParameterModuleTypes {};
     std::array<juce::String, megadsp::slotCount> bypassParameterIds;
     std::array<std::array<juce::String, megadsp::controlsPerSlot>,
                megadsp::slotCount>
