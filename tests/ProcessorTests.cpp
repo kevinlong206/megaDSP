@@ -2490,6 +2490,169 @@ public:
                     0.0f, 0.000001f);
         }
 
+        beginTest("Full plugin presets round trip across standalone and plugin wrapper contexts");
+        {
+            const auto directory = MegaDSPAudioProcessor::presetDirectory()
+                .getNonexistentChildFile("portable-preset-test", {}, false);
+            expect(directory.createDirectory().wasOk());
+            const auto file = directory.getChildFile("Full rack.megadsp");
+            const std::array wrappers {
+                juce::AudioProcessor::wrapperType_Standalone,
+                juce::AudioProcessor::wrapperType_AudioUnit,
+                juce::AudioProcessor::wrapperType_VST3,
+                juce::AudioProcessor::wrapperType_Undefined // CLAP's JUCE adapter.
+            };
+            const auto create = [](juce::AudioProcessor::WrapperType wrapper)
+            {
+                juce::AudioProcessor::setTypeOfNextNewPlugin(wrapper);
+                auto createdProcessor = std::make_unique<MegaDSPAudioProcessor>();
+                juce::AudioProcessor::setTypeOfNextNewPlugin(
+                    juce::AudioProcessor::wrapperType_Undefined);
+                createdProcessor->prepareToPlay(48000.0, 64);
+                return createdProcessor;
+            };
+            for (const auto sourceWrapper : wrappers)
+            {
+                auto source = create(sourceWrapper);
+                source->setInstanceName("Whole Plugin");
+                source->setBackgroundThemeIndex(12);
+                source->addModule(megadsp::ModuleType::equalizer);
+                source->addModule(megadsp::ModuleType::delay);
+                source->parameters.getParameter("global.input")->setValueNotifyingHost(0.73f);
+                source->parameters.getParameter("global.output")->setValueNotifyingHost(0.41f);
+                auto eq = source->reEqSettings(0);
+                eq.lookaheadMs = 5.0f;
+                eq.bands[12].enabled = 1;
+                eq.bands[12].frequency = 1750.0f;
+                eq.bands[12].gainDb = 7.0f;
+                source->setReEqSettings(0, eq);
+                source->storeSnapshot(1, false);
+                source->flushPendingUpdatesForTesting();
+                auto alternate = eq;
+                alternate.bands[12].gainDb = -4.0f;
+                source->setReEqSettings(0, alternate);
+                source->parameters.getParameter(megadsp::slotParameterId(1, "bypass"))
+                    ->setValueNotifyingHost(0.0f);
+                source->recallSnapshot(0);
+                source->flushPendingUpdatesForTesting();
+                source->setSelectedTab(1);
+                source->setLiveSafeSnapshotsEnabled(true);
+                source->rememberEditorSize(1200, 800);
+                source->parameters.getParameter(megadsp::slotParameterId(1, "bypass"))
+                    ->setValueNotifyingHost(1.0f);
+                expect(source->isSlotBypassed(1), "Source preset must contain a bypassed delay.");
+                expect(source->savePreset(file).wasOk());
+                juce::MemoryBlock expectedData;
+                source->getStateInformation(expectedData);
+                auto expectedXml = juce::AudioProcessor::getXmlFromBinary(
+                    expectedData.getData(), static_cast<int>(expectedData.getSize()));
+                const auto expected = juce::ValueTree::fromXml(*expectedXml);
+                for (const auto targetWrapper : wrappers)
+                {
+                    auto target = create(targetWrapper);
+                    target->setInstanceName("Before recall");
+                    target->addModule(megadsp::ModuleType::saturator);
+                    expect(target->loadPreset(file).wasOk());
+                    expectEquals(target->getParameters().size(), 114);
+                    expectEquals(target->getInstanceName(), juce::String("Whole Plugin"));
+                    expectEquals(target->getBackgroundThemeIndex(), 12);
+                    expectEquals(target->getSelectedTab(), 1);
+                    expect(target->isLiveSafeSnapshotsEnabled());
+                    expect(target->isSlotBypassed(1), "Preset recall must restore bypass.");
+                    expect(target->reEqSettings(0) == eq);
+                    juce::MemoryBlock restoredData;
+                    target->getStateInformation(restoredData);
+                    auto restoredXml = juce::AudioProcessor::getXmlFromBinary(
+                        restoredData.getData(), static_cast<int>(restoredData.getSize()));
+                    const auto restored = juce::ValueTree::fromXml(*restoredXml);
+                    expect(restored.isEquivalentTo(expected), "All serialized plugin state must round trip.");
+                    expect(target->undo());
+                    expectEquals(target->getInstanceName(), juce::String("Before recall"));
+                    expect(target->getRack().moduleType(0) == megadsp::ModuleType::saturator);
+                    expect(target->redo());
+                    target->recallSnapshot(1);
+                    target->flushPendingUpdatesForTesting();
+                    expect(target->reEqSettings(0) == alternate);
+                    expectWithinAbsoluteError(
+                        target->parameters.getParameter(megadsp::slotParameterId(1, "bypass"))->getValue(),
+                        0.0f, 0.000001f);
+                }
+            }
+            expect(file.replaceWithText("<not-a-preset/>"));
+            MegaDSPAudioProcessor untouched;
+            untouched.setInstanceName("Retained");
+            expect(untouched.loadPreset(file).failed());
+            expectEquals(untouched.getInstanceName(), juce::String("Retained"));
+            expect(directory.deleteRecursively());
+        }
+
+        beginTest("Preset picker refreshes shared files and name label commits or cancels renaming");
+        {
+            const auto directory = MegaDSPAudioProcessor::presetDirectory()
+                .getNonexistentChildFile("preset-picker-test", {}, false);
+            expect(directory.createDirectory().wasOk());
+            const auto file = directory.getChildFile("Shared preset.megadsp");
+            auto receiver = std::make_unique<MegaDSPAudioProcessor>();
+            receiver->prepareToPlay(48000.0, 64);
+            auto editor = std::make_unique<MegaDSPAudioProcessorEditor>(*receiver, 1100, 720);
+            editor->setTopLeftPosition(-10000, -10000);
+            editor->addToDesktop(juce::ComponentPeer::windowIgnoresMouseClicks);
+            editor->setVisible(true);
+            std::function<juce::Component*(juce::Component&, const juce::String&)> find =
+                [&find](juce::Component& component, const juce::String& title) -> juce::Component*
+                {
+                    if (component.getTitle() == title)
+                        return &component;
+                    for (auto* child : component.getChildren())
+                        if (auto* found = find(*child, title))
+                            return found;
+                    return nullptr;
+                };
+            auto* label = dynamic_cast<juce::Label*>(find(*editor, "Instance name"));
+            auto* picker = dynamic_cast<PresetSelector*>(find(*editor, "Presets"));
+            expect(label != nullptr && picker != nullptr);
+            if (label != nullptr && picker != nullptr)
+            {
+                expectEquals(label->getText(), juce::String("Untitled"));
+                label->grabKeyboardFocus();
+                expect(editor->keyPressed(juce::KeyPress(juce::KeyPress::returnKey)));
+                expect(label->isBeingEdited());
+                if (auto* text = label->getCurrentTextEditor())
+                    text->setText("  Lead  ", false);
+                label->hideEditor(false);
+                expectEquals(receiver->getInstanceName(), juce::String("Lead"));
+                expectEquals(label->getText(), juce::String("Lead"));
+                label->showEditor();
+                if (auto* text = label->getCurrentTextEditor())
+                    text->setText("Cancelled", false);
+                label->hideEditor(true);
+                expectEquals(receiver->getInstanceName(), juce::String("Lead"));
+                label->showEditor();
+                if (auto* text = label->getCurrentTextEditor())
+                    text->setText({}, false);
+                label->hideEditor(false);
+                expect(receiver->getInstanceName().isEmpty());
+                expectEquals(label->getText(), juce::String("Untitled"));
+                MegaDSPAudioProcessor sender;
+                sender.prepareToPlay(48000.0, 64);
+                sender.setInstanceName("Saved elsewhere");
+                sender.addModule(megadsp::ModuleType::compressor);
+                expect(sender.savePreset(file).wasOk());
+                picker->refresh();
+                const auto files = MegaDSPAudioProcessor::userPresetFiles();
+                const auto index = files.indexOf(file);
+                expect(index >= 0);
+                if (index >= 0)
+                    picker->setSelectedId(
+                        receiver->getNumPrograms() + index + 1, juce::sendNotificationSync);
+                expectEquals(receiver->getInstanceName(), juce::String("Saved elsewhere"));
+                expectEquals(label->getText(), juce::String("Saved elsewhere"));
+                expect(receiver->getRack().moduleType(0) == megadsp::ModuleType::compressor);
+                expectEquals(picker->getTextWhenNothingSelected(), juce::String("Presets"));
+            }
+            expect(directory.deleteRecursively());
+        }
+
         beginTest("Instance identity is normalized, notified, and restored");
         MegaDSPAudioProcessor identityProcessor;
         ProcessorChangeRecorder identityChanges;

@@ -3722,35 +3722,25 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
 
     instanceName.setTitle("Instance name");
     instanceName.setDescription(
-        "A saved label for identifying this megaDSP instance.");
+        "A saved plugin name. Double-click or press Return to rename.");
     instanceName.setTooltip(
-        "Name this plugin instance, for example Vocal or Guitar.");
-    instanceName.setMultiLine(false);
-    instanceName.setReturnKeyStartsNewLine(false);
-    instanceName.setInputRestrictions(
-        megadsp::ui::instanceNameMaximumLength);
-    instanceName.setTextToShowWhenEmpty(
-        "Untitled", juce::Colour(0xff7f8b99));
+        "Double-click to rename this plugin. Return saves; Escape cancels.");
+    instanceName.setEditable(false, true, false);
+    instanceName.setFont(juce::FontOptions(14.0f, juce::Font::bold));
     instanceName.setColour(
-        juce::TextEditor::backgroundColourId, juce::Colour(0xff111821));
-    instanceName.setColour(
-        juce::TextEditor::outlineColourId, juce::Colour(0xff3a4553));
-    instanceName.setColour(
-        juce::TextEditor::focusedOutlineColourId, accent);
-    instanceName.setText(
-        audioProcessor.getInstanceName(), juce::dontSendNotification);
-    instanceName.onReturnKey = [this]
+        juce::Label::textColourId, juce::Colour(0xffe4ebf3));
+    instanceName.onEditorShow = [this]
     {
-        commitInstanceName();
-        instanceName.giveAwayKeyboardFocus();
+        if (auto* editor = instanceName.getCurrentTextEditor())
+        {
+            editor->setInputRestrictions(megadsp::ui::instanceNameMaximumLength);
+            editor->setText(audioProcessor.getInstanceName(), false);
+            editor->setTextToShowWhenEmpty("Untitled", juce::Colour(0xff7f8b99));
+            editor->setColour(juce::TextEditor::focusedOutlineColourId, accent);
+            editor->selectAll();
+        }
     };
-    instanceName.onEscapeKey = [this]
-    {
-        instanceName.setText(
-            audioProcessor.getInstanceName(), juce::dontSendNotification);
-        instanceName.giveAwayKeyboardFocus();
-    };
-    instanceName.onFocusLost = [this] { commitInstanceName(); };
+    instanceName.onTextChange = [this] { commitInstanceName(); };
     addAndMakeVisible(instanceName);
 
     themeButton.setTitle("Instance color");
@@ -3773,26 +3763,27 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
     addAndMakeVisible(saveButton);
     addAndMakeVisible(loadButton);
 
-    juce::StringArray factoryProgramNames;
-    for (int program = 0; program < audioProcessor.getNumPrograms(); ++program)
-        factoryProgramNames.add(audioProcessor.getProgramName(program));
-    factoryPresets.addItemList(factoryProgramNames, 1);
-    factoryPresets.setScrollWheelEnabled(false);
-    factoryPresets.setTextWhenNothingSelected("Factory Racks");
-    factoryPresets.onChange = [this]
+    presets.setTitle("Presets");
+    presets.setDescription("Recall a factory or saved full-plugin preset.");
+    presets.setScrollWheelEnabled(false);
+    presets.setTextWhenNothingSelected("Presets");
+    presets.refresh = [this] { refreshPresetList(); };
+    refreshPresetList();
+    presets.onChange = [this]
     {
-        const auto preset = factoryPresets.getSelectedItemIndex();
-        if (preset < 0)
+        const auto id = presets.getSelectedId();
+        if (id == 0)
             return;
-        audioProcessor.loadFactoryPreset(preset);
-        factoryPresets.setSelectedItemIndex(
-            -1, juce::dontSendNotification);
-        selectSlot(0);
-        refreshCards();
-        megadsp::Diagnostics::instance().log(
-            "editor", "opened");
+        if (id <= audioProcessor.getNumPrograms())
+            audioProcessor.loadFactoryPreset(id - 1);
+        else if (const auto index = id - audioProcessor.getNumPrograms() - 1;
+                 juce::isPositiveAndBelow(index, presetFiles.size()))
+            showResult(audioProcessor.loadPreset(presetFiles[index]));
+        presets.setSelectedId(0, juce::dontSendNotification);
+        refreshCards(true);
+        refreshIdentityPresentation();
     };
-    addAndMakeVisible(factoryPresets);
+    addAndMakeVisible(presets);
 
     refreshIdentityPresentation();
 
@@ -4045,6 +4036,13 @@ void MegaDSPAudioProcessorEditor::updateEditorResizeLimits()
 bool MegaDSPAudioProcessorEditor::keyPressed(
     const juce::KeyPress& key)
 {
+    if (key.getKeyCode() == juce::KeyPress::returnKey
+        && instanceName.hasKeyboardFocus(false)
+        && !instanceName.isBeingEdited())
+    {
+        instanceName.showEditor();
+        return true;
+    }
     const auto modifiers = key.getModifiers();
     const auto shortcut =
         modifiers.isCommandDown() || modifiers.isCtrlDown();
@@ -4092,7 +4090,7 @@ void MegaDSPAudioProcessorEditor::resized()
         headerTop.removeFromLeft(identityLayout.nameWidth).reduced(2));
     themeButton.setBounds(
         headerTop.removeFromLeft(identityLayout.themeWidth).reduced(2));
-    factoryPresets.setBounds(
+    presets.setBounds(
         headerTop.removeFromLeft(identityLayout.presetWidth).reduced(2));
     saveButton.setBounds(
         headerTop.removeFromLeft(identityLayout.saveWidth).reduced(2));
@@ -4944,8 +4942,9 @@ void MegaDSPAudioProcessorEditor::showModuleSearch(int insertPosition)
 void MegaDSPAudioProcessorEditor::commitInstanceName()
 {
     audioProcessor.setInstanceName(instanceName.getText());
+    const auto name = audioProcessor.getInstanceName();
     instanceName.setText(
-        audioProcessor.getInstanceName(), juce::dontSendNotification);
+        name.isEmpty() ? "Untitled" : name, juce::dontSendNotification);
 }
 
 void MegaDSPAudioProcessorEditor::showThemePalette()
@@ -5187,11 +5186,12 @@ void MegaDSPAudioProcessorEditor::chooseLibraryRoot(int library)
 
 void MegaDSPAudioProcessorEditor::refreshIdentityPresentation()
 {
-    if (!instanceName.hasKeyboardFocus(true))
+    if (!instanceName.isBeingEdited())
     {
         const auto savedName = audioProcessor.getInstanceName();
-        if (instanceName.getText() != savedName)
-            instanceName.setText(savedName, juce::dontSendNotification);
+        const auto displayName = savedName.isEmpty() ? juce::String("Untitled") : savedName;
+        if (instanceName.getText() != displayName)
+            instanceName.setText(displayName, juce::dontSendNotification);
     }
 
     const auto themeIndex = audioProcessor.getBackgroundThemeIndex();
@@ -5388,16 +5388,46 @@ void MegaDSPAudioProcessorEditor::applyPendingCardMutation()
         reorderSlot(source, destination);
 }
 
+void MegaDSPAudioProcessorEditor::refreshPresetList()
+{
+    presets.clear(juce::dontSendNotification);
+    presets.addSectionHeading("Factory");
+    for (int program = 0; program < audioProcessor.getNumPrograms(); ++program)
+        presets.addItem(audioProcessor.getProgramName(program), program + 1);
+    presetFiles = MegaDSPAudioProcessor::userPresetFiles();
+    if (!presetFiles.isEmpty())
+    {
+        presets.addSeparator();
+        presets.addSectionHeading("Saved");
+        const auto directory = MegaDSPAudioProcessor::presetDirectory();
+        for (int index = 0; index < presetFiles.size(); ++index)
+        {
+            const auto& file = presetFiles[index];
+            presets.addItem(
+                file.getRelativePathFrom(directory).dropLastCharacters(file.getFileExtension().length()),
+                audioProcessor.getNumPrograms() + index + 1);
+        }
+    }
+}
+
 void MegaDSPAudioProcessorEditor::choosePreset(bool save)
 {
-    const auto directory = juce::File::getSpecialLocation(
-                               juce::File::userApplicationDataDirectory)
-                               .getChildFile("megaDSP")
-                               .getChildFile("Presets");
-    directory.createDirectory();
+    if (instanceName.isBeingEdited())
+        instanceName.hideEditor(false);
+    const auto directory = MegaDSPAudioProcessor::presetDirectory();
+    if (const auto result = directory.createDirectory(); result.failed())
+    {
+        showResult(result);
+        return;
+    }
+    const auto name = audioProcessor.getInstanceName();
+    const auto initialFile = save
+        ? directory.getChildFile(
+              juce::File::createLegalFileName(name.isEmpty() ? "Untitled" : name) + ".megadsp")
+        : directory;
     fileChooser = std::make_unique<juce::FileChooser>(
         save ? "Save megaDSP preset" : "Load megaDSP preset",
-        directory, "*.megadsp");
+        initialFile, "*.megadsp");
     const auto flags = save
                            ? juce::FileBrowserComponent::saveMode
                                  | juce::FileBrowserComponent::canSelectFiles
@@ -5418,8 +5448,12 @@ void MegaDSPAudioProcessorEditor::choosePreset(bool save)
             ? safeThis->audioProcessor.savePreset(file)
             : safeThis->audioProcessor.loadPreset(file);
         safeThis->showResult(result);
-        if (!save && result.wasOk())
+        if (!save)
+        {
             safeThis->refreshCards(true);
+            safeThis->refreshIdentityPresentation();
+        }
+        safeThis->refreshPresetList();
     });
 }
 
@@ -5427,4 +5461,5 @@ void MegaDSPAudioProcessorEditor::showResult(const juce::Result& result)
 {
     status.setText(result.wasOk() ? "Preset ready" : result.getErrorMessage(),
                    juce::dontSendNotification);
+    status.setTooltip(result.wasOk() ? juce::String() : result.getErrorMessage());
 }

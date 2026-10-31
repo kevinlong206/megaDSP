@@ -342,6 +342,8 @@ public:
     void rememberEditorSize(int width, int height);
     juce::String globalWidgetSizeId() const;
     juce::Result setGlobalWidgetSizeId(const juce::String&);
+    static juce::File presetDirectory();
+    static juce::Array<juce::File> userPresetFiles();
     juce::Result savePreset(const juce::File&);
     juce::Result loadPreset(const juce::File&);
     int getSelectedSnapshot() const noexcept
@@ -427,6 +429,7 @@ private:
     void parameterGestureChanged(int parameterIndex, bool starting) override;
     double currentBpm() const;
     void refreshLatency();
+    juce::ValueTree copyPluginState();
     void restoreParameterState(const juce::ValueTree&);
     void finishTopologyMutation(
         bool compact, bool resetRack, bool publishAlways);

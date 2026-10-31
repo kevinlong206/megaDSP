@@ -31,6 +31,19 @@ private:
     bool verticalScrolling = false;
 };
 
+class PresetSelector final : public juce::ComboBox
+{
+public:
+    std::function<void()> refresh;
+
+    void showPopup() override
+    {
+        if (refresh)
+            refresh();
+        juce::ComboBox::showPopup();
+    }
+};
+
 class MegaDSPAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                           public juce::DragAndDropContainer,
                                           private juce::Timer
@@ -127,6 +140,7 @@ private:
     void requestReorderSlot(int source, int destination);
     void applyPendingCardMutation();
     void choosePreset(bool save);
+    void refreshPresetList();
     void commitInstanceName();
     void showThemePalette();
     void showSettingsMenu();
@@ -149,7 +163,7 @@ private:
     juce::Label title;
     juce::TextButton commitHashButton;
     juce::Label instanceLabel;
-    juce::TextEditor instanceName;
+    juce::Label instanceName;
     juce::TextButton themeButton { "COLOR" };
     juce::TextButton settingsButton { "SETTINGS" };
     double libraryRebuildFraction = -1.0;
@@ -159,7 +173,8 @@ private:
     juce::Label status;
     juce::TextButton saveButton { "Save" };
     juce::TextButton loadButton { "Load" };
-    juce::ComboBox factoryPresets;
+    PresetSelector presets;
+    juce::Array<juce::File> presetFiles;
     juce::Slider inputGain;
     juce::Slider outputGain;
     juce::Label inputLabel;

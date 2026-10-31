@@ -4227,7 +4227,7 @@ void MegaDSPAudioProcessor::restoreSnapshots(
     snapshotGeneration.fetch_add(1, std::memory_order_release);
 }
 
-void MegaDSPAudioProcessor::getStateInformation(juce::MemoryBlock& destination)
+juce::ValueTree MegaDSPAudioProcessor::copyPluginState()
 {
     auto state = parameters.copyState();
     for (auto child : state)
@@ -4244,7 +4244,12 @@ void MegaDSPAudioProcessor::getStateInformation(juce::MemoryBlock& destination)
     state.setProperty("editorWidth", editorWidth, nullptr);
     state.setProperty("editorHeight", editorHeight, nullptr);
     serializeSnapshots(state);
-    if (auto xml = state.createXml())
+    return state;
+}
+
+void MegaDSPAudioProcessor::getStateInformation(juce::MemoryBlock& destination)
+{
+    if (auto xml = copyPluginState().createXml())
         copyXmlToBinary(*xml, destination);
 }
 
@@ -6619,24 +6624,31 @@ void MegaDSPAudioProcessor::loadFactoryPreset(int presetIndex)
             .withProgramChanged(true));
 }
 
+juce::File MegaDSPAudioProcessor::presetDirectory()
+{
+    return globalSettingsFile().getSiblingFile("Presets");
+}
+
+juce::Array<juce::File> MegaDSPAudioProcessor::userPresetFiles()
+{
+    auto files = presetDirectory().findChildFiles(
+        juce::File::findFiles, true, "*.megadsp");
+    juce::File::NaturalFileComparator comparator(false);
+    files.sort(comparator);
+    return files;
+}
+
 juce::Result MegaDSPAudioProcessor::savePreset(const juce::File& file)
 {
-    auto state = parameters.copyState();
-    state.setProperty("schemaVersion", megadsp::stateSchemaVersion, nullptr);
-    state.setProperty("selectedTab", selectedTab, nullptr);
-    serializeSnapshots(state);
-    auto xml = state.createXml();
+    auto xml = copyPluginState().createXml();
     if (xml == nullptr)
         return juce::Result::fail("Could not serialize preset state.");
 
-    const auto temporary = file.getSiblingFile(file.getFileName() + ".tmp");
-    if (!temporary.replaceWithText(xml->toString()))
+    juce::TemporaryFile temporary(file);
+    if (!temporary.getFile().replaceWithText(xml->toString()))
         return juce::Result::fail("Could not write preset.");
-    if (!temporary.moveFileTo(file))
-    {
-        temporary.deleteFile();
+    if (!temporary.overwriteTargetFileWithTemporary())
         return juce::Result::fail("Could not finalize preset.");
-    }
     return juce::Result::ok();
 }
 
@@ -6658,11 +6670,24 @@ juce::Result MegaDSPAudioProcessor::loadPreset(const juce::File& file)
     if (!beginTopologyMutation())
         return juce::Result::fail(
             "Another topology update is already in progress.");
+    editorWidth = juce::jlimit(
+        megadsp::ui::editorMinimumWidth, megadsp::ui::editorStateMaximumWidth,
+        static_cast<int>(state.getProperty("editorWidth", editorWidth)));
+    editorHeight = juce::jlimit(
+        megadsp::ui::editorMinimumHeight, megadsp::ui::editorStateMaximumHeight,
+        static_cast<int>(state.getProperty("editorHeight", editorHeight)));
     selectedTab = static_cast<int>(state.getProperty("selectedTab", 0));
     restoreParameterState(state);
     restoreSnapshots(state, schemaVersion);
     finishTopologyMutation(true, true, true);
     setSelectedTab(selectedTab);
+    juce::String assetErrors;
+    for (int snapshot = 0; snapshot < megadsp::snapshotCount; ++snapshot)
+        if (const auto error = snapshotError(snapshot); error.isNotEmpty())
+            assetErrors += "Snapshot " + juce::String(snapshot + 1) + ": " + error + " ";
+    if (assetErrors.isNotEmpty())
+        return juce::Result::fail(
+            "Preset restored with unavailable assets. " + assetErrors);
     return juce::Result::ok();
 }
 

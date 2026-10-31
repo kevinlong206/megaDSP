@@ -416,14 +416,31 @@ See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and licenses.
 
 ## Themes and instance identity
 
-Type a clear label such as **Vocal**, **Guitar**, or **Mix Bus** in the
-**INSTANCE** field. The name is saved with that plugin instance and preset, but
+The plugin name is a label, not a permanently open text box. Double-click it
+or focus it and press **Return** to rename it, for example **Vocal**, **Guitar**,
+or **Mix Bus**. Return commits the edit, Escape cancels, and clicking away also
+commits. The name is saved with that plugin instance and preset, but
 does not rename anything in the DAW. Empty names display **Untitled**.
 
 The adjacent **COLOR** button opens sixteen named full-background themes.
 The original ten themes retain their saved identities, with Ocean Navy,
 Emerald, Burgundy, Indigo, Blue Charcoal, and Dark Olive added. Multiple
 instances can use distinct names and colors in the same session.
+
+## Presets
+
+**Presets** contains both factory presets and saved user presets. **Save** writes
+a `.megadsp` full-plugin preset; **Load** opens a preset from any location.
+Presets saved in the shared preset folder, including its subfolders, appear in
+the picker the next time it opens in any instance. On macOS that folder is
+`~/Library/megaDSP/Presets`, shared by standalone, AU, VST3, and CLAP.
+
+The same format recalls the complete rack, all eight snapshots, module
+parameters and bypass, global gains, native EQ settings, name and theme, and
+NAM/IR references and convolution settings. External models and IR audio are
+referenced, not embedded: keep those files available. Missing assets are
+reported explicitly, and preset recall is one undoable operation. Audio-device
+selection and DAW routing remain outside the plugin preset.
 
 ## Documentation
 

@@ -931,6 +931,89 @@ public:
     NamStateTests() : juce::UnitTest("NAM state", "megaDSP") {}
     void runTest() override
     {
+        beginTest("Full presets retain NAM, cabinet, IR banks and EQ across wrapper contexts");
+        {
+            const auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                .getNonexistentChildFile("megaDSP-asset-preset", {}, false);
+            expect(root.createDirectory().wasOk());
+            const auto model = writeNam(linearNamJson(), "full-preset-model");
+            const auto first = writeImpulse(root.getChildFile("first.wav"), 7);
+            const auto second = writeImpulse(root.getChildFile("second.wav"), 23);
+            const auto preset = root.getChildFile("Assets.megadsp");
+            juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Standalone);
+            auto source = std::make_unique<MegaDSPAudioProcessor>();
+            juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Undefined);
+            source->prepareToPlay(48000.0, 64);
+            source->setInstanceName("Asset preset");
+            source->addModule(ModuleType::neuralAmpModeler);
+            source->addModule(ModuleType::convolutionReverb);
+            source->addModule(ModuleType::equalizer);
+            expect(source->loadNamModel(0, model).wasOk());
+            expect(source->loadNamCabinetAsync(0, first).wasOk());
+            source->finishNamModelLoadForTesting();
+            expect(source->setNamCabinetEnabled(0, false).wasOk());
+            expect(source->loadConvolutionImpulseResponseBank(1, 0, first).wasOk());
+            expect(source->loadConvolutionImpulseResponseBank(1, 1, second).wasOk());
+            expect(source->selectConvolutionImpulseResponseBank(1, 1));
+            expect(source->setConvolutionWetBufferSamples(1, 512).wasOk());
+            auto eq = source->reEqSettings(2);
+            eq.bands[9].enabled = 1;
+            eq.bands[9].frequency = 2300.0f;
+            eq.bands[9].gainDb = -3.0f;
+            source->setReEqSettings(2, eq);
+            source->storeSnapshot(1, false);
+            source->flushPendingUpdatesForTesting();
+            expect(source->setNamCabinetEnabled(0, true).wasOk());
+            source->recallSnapshot(0);
+            source->flushPendingUpdatesForTesting();
+            expect(source->savePreset(preset).wasOk());
+            for (const auto wrapper : {
+                     juce::AudioProcessor::wrapperType_AudioUnit,
+                     juce::AudioProcessor::wrapperType_VST3,
+                     juce::AudioProcessor::wrapperType_Undefined })
+            {
+                juce::AudioProcessor::setTypeOfNextNewPlugin(wrapper);
+                auto restored = std::make_unique<MegaDSPAudioProcessor>();
+                juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Undefined);
+                restored->prepareToPlay(48000.0, 64);
+                const auto result = restored->loadPreset(preset);
+                expect(result.wasOk(), result.getErrorMessage());
+                expectEquals(restored->namModelPath(0), model.getFullPathName());
+                expectEquals(restored->getRack().namCabinetPath(0), first.getFullPathName());
+                expect(!restored->isNamCabinetEnabled(0));
+                expectEquals(restored->convolutionImpulseResponseBankPath(1, 0), first.getFullPathName());
+                expectEquals(restored->convolutionImpulseResponseBankPath(1, 1), second.getFullPathName());
+                expectEquals(restored->activeConvolutionImpulseResponseBank(1), 1);
+                expectEquals(restored->convolutionWetBufferSamples(1), 512);
+                expect(restored->reEqSettings(2) == eq);
+                expect(restored->isSnapshotReady(0));
+                expect(restored->isSnapshotReady(1));
+                restored->recallSnapshot(1);
+                expect(restored->isNamCabinetEnabled(0));
+                juce::AudioBuffer<float> audio(2, 64);
+                for (int channel = 0; channel < 2; ++channel)
+                    juce::FloatVectorOperations::fill(audio.getWritePointer(channel), 0.1f, 64);
+                juce::MidiBuffer midi;
+                restored->processBlock(audio, midi);
+                expect(audio.getMagnitude(0, 0, 64) > 0.0f);
+                for (int channel = 0; channel < 2; ++channel)
+                    for (int sample = 0; sample < 64; ++sample)
+                        expect(std::isfinite(audio.getSample(channel, sample)));
+            }
+            expect(model.deleteFile());
+            MegaDSPAudioProcessor missing;
+            missing.prepareToPlay(48000.0, 64);
+            missing.setInstanceName("Before missing preset");
+            const auto result = missing.loadPreset(preset);
+            expect(result.failed());
+            expect(result.getErrorMessage().contains("unavailable assets"));
+            expect(result.getErrorMessage().contains("Snapshot"));
+            expect(missing.snapshotError(0).isNotEmpty());
+            expect(missing.undo());
+            expectEquals(missing.getInstanceName(), juce::String("Before missing preset"));
+            expect(root.deleteRecursively());
+        }
+
         beginTest("NAM path stored in APVTS state");
         {
             juce::AudioProcessorGraph owner;
