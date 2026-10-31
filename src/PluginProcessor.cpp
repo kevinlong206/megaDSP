@@ -4229,6 +4229,12 @@ void MegaDSPAudioProcessor::restoreSnapshots(
 
 juce::ValueTree MegaDSPAudioProcessor::copyPluginState()
 {
+    if (topologyDirty.load(std::memory_order_acquire)
+        && juce::MessageManager::getInstance()->isThisTheMessageThread())
+    {
+        handleAsyncUpdate();
+        updateHostDisplay(ChangeDetails{}.withParameterInfoChanged(true));
+    }
     auto state = parameters.copyState();
     for (auto child : state)
     {
@@ -4243,6 +4249,10 @@ juce::ValueTree MegaDSPAudioProcessor::copyPluginState()
     state.setProperty("selectedTab", selectedTab, nullptr);
     state.setProperty("editorWidth", editorWidth, nullptr);
     state.setProperty("editorHeight", editorHeight, nullptr);
+    state.setProperty("instanceName", megadsp::ui::normalizeInstanceName(
+        state.getProperty("instanceName").toString()), nullptr);
+    state.setProperty("backgroundTheme", megadsp::ui::safeBackgroundThemeIndex(
+        static_cast<int>(state.getProperty("backgroundTheme", 0))), nullptr);
     serializeSnapshots(state);
     return state;
 }
@@ -4307,6 +4317,7 @@ void MegaDSPAudioProcessor::setStateInformation(const void* data, int size)
         restoreSnapshots(restored, schemaVersion);
         finishTopologyMutation(true, true, true);
         setSelectedTab(selectedTab);
+        updateHostDisplay(ChangeDetails{}.withParameterInfoChanged(true));
         megadsp::Diagnostics::instance().log(
             "state",
             "restored instance=" + juce::String(diagnosticInstanceId)
@@ -6681,6 +6692,10 @@ juce::Result MegaDSPAudioProcessor::loadPreset(const juce::File& file)
     restoreSnapshots(state, schemaVersion);
     finishTopologyMutation(true, true, true);
     setSelectedTab(selectedTab);
+    updateHostDisplay(ChangeDetails{}
+        .withParameterInfoChanged(true)
+        .withProgramChanged(true)
+        .withNonParameterStateChanged(true));
     juce::String assetErrors;
     for (int snapshot = 0; snapshot < megadsp::snapshotCount; ++snapshot)
         if (const auto error = snapshotError(snapshot); error.isNotEmpty())

@@ -786,8 +786,12 @@ public:
         expect(xml != nullptr);
         if (xml != nullptr)
             juce::AudioProcessor::copyXmlToBinary(*xml, stateData);
+        ProcessorChangeRecorder restoreChanges;
+        restoredProcessor.addListener(&restoreChanges);
         restoredProcessor.setStateInformation(
             stateData.getData(), static_cast<int>(stateData.getSize()));
+        expect(restoreChanges.parameterInfoChanges > 0);
+        restoredProcessor.removeListener(&restoreChanges);
         restoredProcessor.flushPendingUpdatesForTesting();
 
         expectEquals(restoredProcessor.getRack().activeSlotCount(), 2);
@@ -2488,6 +2492,44 @@ public:
                     unsafe.getMagnitude(
                         channel, 0, unsafe.getNumSamples()),
                     0.0f, 0.000001f);
+        }
+
+        beginTest("Presets retain pending host edits and serialize default identity deterministically");
+        {
+            MegaDSPAudioProcessor source;
+            for (int slot = 0; slot < megadsp::slotCount; ++slot)
+            {
+                auto* type = source.parameters.getParameter(megadsp::slotParameterId(slot, "type"));
+                type->setValueNotifyingHost(type->convertTo0to1(
+                    static_cast<float>(megadsp::ModuleType::delay)));
+                for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+                    source.parameters.getParameter(megadsp::controlParameterId(slot, control))
+                        ->setValueNotifyingHost(0.13f + 0.05f * static_cast<float>(control));
+            }
+            source.parameters.getParameter(megadsp::slotParameterId(0, "type"))
+                ->setValueNotifyingHost(0.0f);
+            const auto file = MegaDSPAudioProcessor::presetDirectory()
+                .getNonexistentChildFile("unprepared-preset", ".megadsp", false);
+            expect(source.savePreset(file).wasOk());
+            juce::MemoryBlock expectedState;
+            source.getStateInformation(expectedState);
+            MegaDSPAudioProcessor restored;
+            ProcessorChangeRecorder changes;
+            restored.addListener(&changes);
+            expect(restored.loadPreset(file).wasOk());
+            expect(changes.parameterInfoChanges > 0);
+            expect(changes.programChanges > 0);
+            restored.removeListener(&changes);
+            juce::MemoryBlock restoredState;
+            restored.getStateInformation(restoredState);
+            expect(restoredState == expectedState);
+            for (int slot = 0; slot < megadsp::slotCount; ++slot)
+                for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+                    expectWithinAbsoluteError(
+                        restored.parameters.getParameter(megadsp::controlParameterId(slot, control))->getValue(),
+                        source.parameters.getParameter(megadsp::controlParameterId(slot, control))->getValue(),
+                        0.000001f);
+            expect(file.deleteFile());
         }
 
         beginTest("Full plugin presets round trip across standalone and plugin wrapper contexts");
