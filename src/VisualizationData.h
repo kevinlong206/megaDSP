@@ -26,6 +26,8 @@ public:
         if (count <= 0)
             return;
         writeGeneration.fetch_add(1, std::memory_order_seq_cst);
+        // New payload reads must also observe the preceding odd generation.
+        std::atomic_thread_fence(std::memory_order_release);
         const auto position = writePosition.load(std::memory_order_relaxed);
         for (int index = 0; index < count; ++index)
             samples[(position + static_cast<uint64_t>(index)) % Capacity]
