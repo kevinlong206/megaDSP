@@ -5,6 +5,7 @@
 #include "modules/ModuleRegistry.h"
 
 #include <cstdio>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -66,7 +67,8 @@ public:
         juce::AudioProcessorGraph owner;
         juce::AudioProcessorValueTreeState state(
             owner, nullptr, "testState", megadsp::createParameterLayout());
-        megadsp::EffectRack rack(state);
+        auto rackStorage = std::make_unique<megadsp::EffectRack>(state);
+        auto& rack = *rackStorage;
         for (int slot = 0; slot < megadsp::slotCount; ++slot)
         {
             expect(rack.activeModuleType(slot) == megadsp::ModuleType::empty);
@@ -496,8 +498,132 @@ public:
             expectEquals(latest[static_cast<size_t>(sample)],
                          static_cast<float>(92 + sample));
 
+        beginTest("Block history preserves wraparound, padding and reset");
+        history.pushBlock(47, [](int index) { return float(100 + index); });
+        expectEquals(static_cast<int>(history.copyLatest(latest)), 8);
+        for (int sample = 0; sample < 8; ++sample)
+            expectEquals(latest[static_cast<size_t>(sample)], float(139 + sample));
+        history.clear();
+        history.pushBlock(0, [](int) { return 99.0f; });
+        expectEquals(static_cast<int>(history.copyLatest(latest, -1.0f)), 0);
+        history.pushBlock(3, [](int index) { return float(index); });
+        expectEquals(static_cast<int>(history.copyLatest(latest, -1.0f)), 3);
+        for (int sample = 0; sample < 8; ++sample)
+            expectEquals(latest[static_cast<size_t>(sample)],
+                         sample < 5 ? -1.0f : float(sample - 5));
+
+        beginTest("Concurrent block readers reject overlapping publications");
+        {
+            megadsp::SampleHistory<32> concurrent;
+            std::atomic<bool> finished { false };
+            std::thread writer([&]
+            {
+                for (int block = 0; block < 2000; ++block)
+                {
+                    if (block % 127 == 0)
+                        concurrent.clear();
+                    concurrent.pushBlock(17, [block](int index)
+                    {
+                        return float(block * 17 + index);
+                    });
+                }
+                finished.store(true, std::memory_order_release);
+            });
+            bool consistent = true;
+            do
+            {
+                std::array<float, 8> window {};
+                const auto count = concurrent.copyLatest(window, -1.0f);
+                for (size_t index = 0; index < window.size() - count; ++index)
+                    consistent = consistent && juce::exactlyEqual(window[index], -1.0f);
+                for (size_t index = window.size() - count + 1;
+                     index < window.size(); ++index)
+                    consistent = consistent
+                        && juce::exactlyEqual(window[index], window[index - 1] + 1.0f);
+            } while (!finished.load(std::memory_order_acquire));
+            writer.join();
+            expect(consistent);
+            expectEquals(static_cast<int>(concurrent.copyLatest(latest)), 8);
+            expectEquals(latest.back(), 33999.0f);
+        }
+
+        beginTest("Selective capture preserves levels and mono stereo histories");
+        {
+            auto selective = std::make_unique<megadsp::VisualizationData>();
+            selective->prepare(48000.0);
+            selective->setCaptureRequirements(0, megadsp::captureInputLevels);
+            juce::AudioBuffer<float> input(2, 960);
+            for (int sample = 0; sample < input.getNumSamples(); ++sample)
+            {
+                input.setSample(0, sample, 1.0f);
+                input.setSample(1, sample, -1.0f);
+            }
+            selective->captureInput(0, input);
+            expectEquals(static_cast<int>(selective->slotData(0).input.position()), 0);
+            expectEquals(static_cast<int>(selective->slotData(0).inputLeft.position()), 0);
+            std::array<float, 1> level {};
+            expectEquals(static_cast<int>(
+                selective->slotData(0).inputLevel.copyLatest(level)), 1);
+            expectEquals(level[0], 0.0f);
+
+            selective->setCaptureRequirements(
+                0, megadsp::captureStereoInput | megadsp::captureStereoOutput);
+            juce::AudioBuffer<float> mono(1, 17);
+            mono.clear();
+            mono.setSample(0, 16, -0.25f);
+            selective->captureInput(0, mono);
+            selective->captureOutput(0, mono);
+            selective->slotData(0).outputRight.copyLatest(level);
+            expectEquals(level[0], -0.25f);
+            expectEquals(static_cast<int>(selective->slotData(0).inputLevel.position()), 0);
+            selective->setCaptureRequirements(0, 0);
+            selective->setSlotActive(0, true);
+            selective->captureInput(0, mono);
+            selective->captureOutput(0, mono);
+            selective->captureGainReduction(0, 6.0f, 17);
+            expect(selective->isSlotActive(0));
+            expectEquals(static_cast<int>(selective->slotData(0).outputRight.position()), 0);
+            expectEquals(static_cast<int>(selective->slotData(0).gainReduction.position()), 0);
+        }
+
+        beginTest("Visualization eligibility never changes processor audio");
+        for (int index = 1; index < megadsp::moduleTypeCount; ++index)
+        {
+            const auto type = static_cast<megadsp::ModuleType>(index);
+            auto capturedModule = megadsp::createDspModule(type);
+            auto uncapturedModule = megadsp::createDspModule(type);
+            if (capturedModule == nullptr || uncapturedModule == nullptr)
+                continue;
+            capturedModule->prepare({ 48000.0, 64, 2 });
+            uncapturedModule->prepare({ 48000.0, 64, 2 });
+            const auto controls = megadsp::moduleDefaults(type);
+            juce::AudioBuffer<float> capturedAudio(2, 64), uncapturedAudio(2, 64);
+            bool identical = true;
+            for (int block = 0; block < 512; ++block)
+            {
+                for (int sample = 0; sample < 64; ++sample)
+                {
+                    const auto signal = 0.2f * std::sin(
+                        float(block * 64 + sample) * 0.031f);
+                    capturedAudio.setSample(0, sample, signal);
+                    capturedAudio.setSample(1, sample, block % 3 == 0 ? signal : -0.3f * signal);
+                }
+                uncapturedAudio.makeCopyOf(capturedAudio);
+                capturedModule->process(capturedAudio, controls, { nullptr, 120.0, true, false });
+                uncapturedModule->process(
+                    uncapturedAudio, controls, { nullptr, 120.0, (block / 32) % 2 == 0, false });
+                for (int channel = 0; channel < 2; ++channel)
+                    for (int sample = 0; sample < 64; ++sample)
+                        identical = identical && juce::exactlyEqual(
+                            capturedAudio.getSample(channel, sample),
+                            uncapturedAudio.getSample(channel, sample));
+            }
+            expect(identical, megadsp::moduleDefinition(type).displayName);
+        }
+
         beginTest("Gain reduction history covers the latest ten seconds");
-        megadsp::VisualizationData reductionVisualization;
+        auto reductionStorage = std::make_unique<megadsp::VisualizationData>();
+        auto& reductionVisualization = *reductionStorage;
         reductionVisualization.prepare(48000.0);
         reductionVisualization.captureGainReduction(0, 24.0f, 960);
         for (int interval = 0; interval < 500; ++interval)
@@ -513,7 +639,8 @@ public:
             8.0f, 0.0001f);
 
         beginTest("Stereo visualization does not cancel anti-phase channels");
-        megadsp::VisualizationData visualization;
+        auto visualizationStorage = std::make_unique<megadsp::VisualizationData>();
+        auto& visualization = *visualizationStorage;
         visualization.setSlotActive(0, true);
         juce::AudioBuffer<float> antiPhase(2, 1);
         antiPhase.setSample(0, 0, 1.0f);
@@ -2759,6 +2886,7 @@ VintageChorusTests vintageChorusTests;
 
 int main(int argc, char** argv)
 {
+    juce::ScopedJuceInitialiser_GUI gui;
     class TestLogger final : public juce::Logger
     {
         void logMessage(const juce::String& message) override

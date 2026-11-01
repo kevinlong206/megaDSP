@@ -558,7 +558,10 @@ public:
 
     void setMeterActive(bool active)
     {
-        if (active && meterSource)
+        const auto running = active && meterSource && isVisible();
+        if (running == isTimerRunning())
+            return;
+        if (running)
             startTimerHz(30);
         else
         {
@@ -826,9 +829,15 @@ private:
     void timerCallback() override
     {
         if (meterSource)
-            meterLevelDb =
+        {
+            const auto level =
                 juce::jlimit(-60.0f, 0.0f, meterSource());
-        repaint();
+            if (!juce::exactlyEqual(level, meterLevelDb))
+            {
+                meterLevelDb = level;
+                repaint();
+            }
+        }
     }
 
     std::function<float()> meterSource;
@@ -2227,7 +2236,7 @@ public:
                     slider.updateText();
                 }
             }
-            setEditorVisible(false);
+            editor.updateVisualizationVisibility();
             return;
         }
         if (wasUltraCompact)
@@ -2583,7 +2592,7 @@ public:
         syncBypassState();
         if (!isUltraCompact())
             syncAssetName();
-        setEditorVisible(editor.isShowing());
+        editor.updateVisualizationVisibility();
     }
 
     void restorePresentationFrom(const ModuleCard& previous)
@@ -2613,36 +2622,57 @@ public:
     {
         const auto changed = selected != shouldBeSelected;
         selected = shouldBeSelected;
-        startTimerHz(selected ? 10 : 2);
+        if (presentationVisible)
+            startTimerHz(selected ? 10 : 2);
         if (changed)
             repaint();
     }
 
     void setEditorVisible(bool editorVisible)
     {
-        const auto active = editorVisible && !isUltraCompact();
+        const auto visible = editorVisible
+            && editor.rackViewport.getViewArea().intersects(getBounds());
+        const auto changed = presentationVisible != visible;
+        presentationVisible = visible;
+        const auto enabled = visible && !isUltraCompact()
+            && !processor.isSlotBypassed(slot);
+        const auto view = editor.rackViewport.getViewArea();
+        const auto active = enabled && view.intersects(
+            editor.rackContent.getLocalArea(graph.get(), graph->getLocalBounds()));
         graph->setVisualizationActive(active);
         for (auto& slider : sliders)
-            slider.setMeterActive(active);
-    }
-
-    void reassertVisualizationCapture()
-    {
-        graph->setVisualizationActive(
-            graph->isVisualizationActive());
+            slider.setMeterActive(enabled && view.intersects(
+                editor.rackContent.getLocalArea(&slider, slider.getLocalBounds())));
+        if (visible)
+        {
+            if (!isTimerRunning())
+                startTimerHz(selected ? 10 : 2);
+            if (changed)
+            {
+                updateContext();
+                syncAssetName();
+                syncBypassState();
+            }
+        }
+        else
+            stopTimer();
     }
 
     void syncBypassState()
     {
         const auto isBypassed = processor.isSlotBypassed(slot);
-        name.setText(isVerticalRack()
+        const auto label = isVerticalRack()
                 ? juce::String(slot + 1) + "  " + moduleName
                     + (isBypassed ? "  BYPASSED" : "  ON")
-                  : moduleName, juce::dontSendNotification);
+                  : moduleName;
+        const auto bypassTitle =
+            juce::String(isBypassed ? "Enable " : "Bypass ") + moduleName;
+        if (name.getText() == label && bypass.getTitle() == bypassTitle
+            && bypass.getToggleState() == isBypassed)
+            return;
+        name.setText(label, juce::dontSendNotification);
         bypass.setToggleState(isBypassed, juce::dontSendNotification);
-        bypass.setTitle(
-            juce::String(isBypassed ? "Enable " : "Bypass ")
-            + moduleName);
+        bypass.setTitle(bypassTitle);
         bypass.setDescription(
             isBypassed
                 ? "Enables processing for this module."
@@ -3307,6 +3337,15 @@ private:
         const auto values = currentValues();
         const auto stereo = processor.hasStereoOutput();
         const auto sidechain = processor.hasExternalSidechain();
+        if (!forceLayout && contextInitialized
+            && values == lastContextValues
+            && stereo == lastContextStereo
+            && sidechain == lastContextSidechain)
+            return;
+        contextInitialized = true;
+        lastContextValues = values;
+        lastContextStereo = stereo;
+        lastContextSidechain = sidechain;
         bool layoutChanged = forceLayout;
         for (int control = 0; control < megadsp::controlsPerSlot; ++control)
         {
@@ -3362,6 +3401,8 @@ private:
 
     void timerCallback() override
     {
+        if (!presentationVisible)
+            return;
         updateContext();
         if (!isUltraCompact())
             syncAssetName();
@@ -3510,6 +3551,11 @@ private:
                megadsp::controlsPerSlot> toggleAttachments;
     juce::Point<float> dragStart;
     bool selected = false;
+    bool presentationVisible = false;
+    bool contextInitialized = false;
+    bool lastContextStereo = false;
+    bool lastContextSidechain = false;
+    megadsp::ControlValues lastContextValues {};
     bool dragOver = false;
     bool dropAfter = false;
     bool canStartDrag = false;
@@ -3980,6 +4026,8 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
 
     addAndMakeVisible(rackViewport);
     rackViewport.setViewedComponent(&rackContent, false);
+    rackViewport.onVisibleAreaChanged =
+        [this] { updateVisualizationVisibility(); };
     rackViewport.setScrollBarsShown(false, true);
     rackViewport.setWantsKeyboardFocus(false);
     rackViewport.setTitle("Module rack");
@@ -4021,6 +4069,7 @@ MegaDSPAudioProcessorEditor::MegaDSPAudioProcessorEditor(
 
 MegaDSPAudioProcessorEditor::~MegaDSPAudioProcessorEditor()
 {
+    rackViewport.onVisibleAreaChanged = nullptr;
     headerMeter->onShowPerformance = nullptr;
     fileChooser.reset();
     megadsp::Diagnostics::instance().log(
@@ -4039,7 +4088,19 @@ void MegaDSPAudioProcessorEditor::paint(juce::Graphics& graphics)
 
 void MegaDSPAudioProcessorEditor::visibilityChanged()
 {
-    const auto showing = isShowing();
+    updateVisualizationVisibility();
+}
+
+void MegaDSPAudioProcessorEditor::updateVisualizationVisibility()
+{
+    if (refreshingCards || updatingVisualizationVisibility)
+        return;
+    const juce::ScopedValueSetter<bool> updating(
+        updatingVisualizationVisibility, true);
+    auto showing = isShowing();
+#if defined(MEGADSP_TESTS)
+    showing = visualizationVisibilityForTesting.value_or(showing);
+#endif
     for (auto& card : cards)
         card->setEditorVisible(showing);
     if (!showing)
@@ -4055,9 +4116,7 @@ void MegaDSPAudioProcessorEditor::parentHierarchyChanged()
 {
     updateEditorResizeLimits();
     resized();
-    const auto showing = isShowing();
-    for (auto& card : cards)
-        card->setEditorVisible(showing);
+    updateVisualizationVisibility();
     repaint();
 }
 
@@ -4230,8 +4289,7 @@ void MegaDSPAudioProcessorEditor::resized()
         }
         addButton.setBounds(
             showAddButton ? rows.removeFromTop(32) : juce::Rectangle<int> {});
-        for (auto& card : cards)
-            card->reassertVisualizationCapture();
+        updateVisualizationVisibility();
         return;
     }
     addButton.setVisible(false);
@@ -4277,13 +4335,15 @@ void MegaDSPAudioProcessorEditor::resized()
         chainInsertButtons[cards.size()]->setBounds(
             cardBounds.removeFromLeft(24).reduced(2));
     addButton.setBounds({});
-    for (auto& card : cards)
-        card->reassertVisualizationCapture();
+    updateVisualizationVisibility();
 }
 
 void MegaDSPAudioProcessorEditor::timerCallback()
 {
     refreshLibraryRebuildProgress();
+    updateVisualizationVisibility();
+    if (!isShowing())
+        return;
     headerMeter->setLevels(audioProcessor.getRack().inputMeterDb(),
                            audioProcessor.getRack().outputMeterDb());
     headerMeter->setPerformance(
@@ -4731,10 +4791,8 @@ int MegaDSPAudioProcessorEditor::activeVisualizationCardCountForTesting() const
 
 void MegaDSPAudioProcessorEditor::setCardsEditorVisibleForTesting(bool visible)
 {
-    for (auto& card : cards)
-        card->setEditorVisible(visible);
-    if (!visible)
-        audioProcessor.getVisualizationData().clearActiveSlots();
+    visualizationVisibilityForTesting = visible;
+    updateVisualizationVisibility();
 }
 
 bool MegaDSPAudioProcessorEditor::cardChildrenFitForTesting() const

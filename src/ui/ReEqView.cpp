@@ -415,6 +415,10 @@ void ReEqView::updateAnalyzer()
     const auto position = data.outputLeft.position();
     if (position == state.position && state.valid)
         return;
+    if (data.inputLeft.position() != position
+        || data.inputRight.position() != position
+        || data.outputRight.position() != position)
+        return;
     const auto count = position >= state.position
                            ? std::min<uint64_t>(position - state.position, maximumFftSize)
                            : std::min<uint64_t>(position, maximumFftSize);
@@ -423,10 +427,18 @@ void ReEqView::updateAnalyzer()
         state.available = 0;
         state.write = 0;
     }
-    data.inputLeft.copyLatest(state.capture[0]);
-    data.inputRight.copyLatest(state.capture[1]);
-    data.outputLeft.copyLatest(state.capture[2]);
-    data.outputRight.copyLatest(state.capture[3]);
+    const auto inputLeftCount = data.inputLeft.copyLatest(state.capture[0]);
+    const auto inputRightCount = data.inputRight.copyLatest(state.capture[1]);
+    const auto outputLeftCount = data.outputLeft.copyLatest(state.capture[2]);
+    const auto outputRightCount = data.outputRight.copyLatest(state.capture[3]);
+    if ((position != 0 && outputLeftCount == 0)
+        || inputLeftCount != outputLeftCount || inputRightCount != outputLeftCount
+        || outputRightCount != outputLeftCount
+        || data.inputLeft.position() != position
+        || data.inputRight.position() != position
+        || data.outputLeft.position() != position
+        || data.outputRight.position() != position)
+        return;
     state.position = position;
     float inputPeak = 0.0f, outputPeak = 0.0f;
     for (size_t sample = maximumFftSize - static_cast<size_t>(count); sample < maximumFftSize;
@@ -1254,8 +1266,9 @@ ReEqView::~ReEqView()
 
 void ReEqView::setVisualizationActive(bool value)
 {
-    if (active != value)
-        responseDirty = true;
+    if (active == value)
+        return;
+    responseDirty = true;
     active = value;
     if (!active)
     {
@@ -1263,7 +1276,7 @@ void ReEqView::setVisualizationActive(bool value)
         endGesture();
         analyzer->valid = false;
         analyzer->available = 0;
-        analyzer->position = processor.getVisualizationData().slotData(slot).output.position();
+        analyzer->position = processor.getVisualizationData().slotData(slot).outputLeft.position();
     }
     repaint();
 }
@@ -1567,18 +1580,25 @@ void ReEqView::syncControls()
 
 void ReEqView::refresh()
 {
+    auto changed = responseDirty;
+    const auto previousPosition = analyzer->position;
+    const auto previouslyValid = analyzer->valid;
     const auto latest = processor.reEqSettings(slot);
     if (!gesture && latest != settings)
     {
         settings = latest;
         syncControls();
         responseDirty = true;
+        changed = true;
     }
     if (!gesture)
     {
-        globalFields[1]->assign(settings.outputDb + retainedOutputDb());
+        const auto trim = retainedOutputDb();
+        changed = changed || !juce::exactlyEqual(trim, lastOutputTrimDb);
+        lastOutputTrimDb = trim;
+        globalFields[1]->assign(settings.outputDb + trim);
         if (panelPage == 3)
-            bandFields[3]->assign(settings.outputDb + retainedOutputDb());
+            bandFields[3]->assign(settings.outputDb + trim);
     }
     if (active && isShowing())
     {
@@ -1594,14 +1614,19 @@ void ReEqView::refresh()
                     analyzer->dynamicGain[index] = delta;
                     responseDirty = true;
                 }
-                analyzer->detectorLevel[index] = module->reEqProcessor().detectorLevelDb(band);
+                const auto detector = module->reEqProcessor().detectorLevelDb(band);
+                changed = changed
+                    || !juce::exactlyEqual(detector, analyzer->detectorLevel[index]);
+                analyzer->detectorLevel[index] = detector;
             }
         if (momentaryListen && !juce::ModifierKeys::getCurrentModifiersRealtime().isShiftDown())
             stopListen();
         if (settings.displayMode != 2)
             updateAnalyzer();
     }
-    repaint();
+    if (changed || responseDirty || previousPosition != analyzer->position
+        || previouslyValid != analyzer->valid)
+        repaint();
 }
 
 void ReEqView::resized()

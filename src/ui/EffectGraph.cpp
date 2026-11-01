@@ -126,6 +126,9 @@ EffectGraph::EffectGraph(
       fft(graphFftOrder),
       window(graphFftSize, juce::dsp::WindowingFunction<float>::hann)
 {
+    for (int control = 0; control < controlsPerSlot; ++control)
+        controlPointers[static_cast<size_t>(control)] =
+            processor.parameters.getRawParameterValue(controlParameterId(slot, control));
     setOpaque(true);
     const auto compactCompressor = type == ModuleType::compressor;
     const auto compactEqualizer = type == ModuleType::equalizer;
@@ -276,7 +279,8 @@ EffectGraph::EffectGraph(
         processor.getVisualizationData().isSlotActive(slot);
     if (compactAssets)
         refreshCompactAssetLibrary();
-    startTimerHz(30);
+    if (visualizationActive)
+        startTimerHz(30);
 }
 
 EffectGraph::~EffectGraph()
@@ -3606,19 +3610,36 @@ void EffectGraph::setVisualizationActive(bool active)
     const auto needsCapture =
         active && (!isCompactAssetLibrary()
                    || type == ModuleType::envelopeConvolution);
-    processor.getVisualizationData().setSlotActive(slot, needsCapture);
+    auto& data = processor.getVisualizationData();
+    data.setCaptureRequirements(
+        slot, visualizationCaptureRequirements(
+                  type, reEqView != nullptr
+                            && processor.reEqSettings(slot).native));
+    data.setSlotActive(slot, needsCapture);
+    if (active)
+    {
+        if (!isTimerRunning())
+            startTimerHz(30);
+    }
+    else
+        stopTimer();
     if (reEqView != nullptr)
         reEqView->setVisualizationActive(
             active && processor.reEqSettings(slot).native);
     if (changed)
+    {
+        compressorFrameValid = false;
+        if (processor.isSlotBypassed(slot))
+            refreshVisualization();
         repaint();
+    }
 }
 
 float EffectGraph::value(int control) const
 {
-    if (auto* raw = processor.parameters.getRawParameterValue(
-            controlParameterId(slot, control)))
-        return raw->load();
+    if (juce::isPositiveAndBelow(control, controlsPerSlot))
+        if (auto* raw = controlPointers[static_cast<size_t>(control)])
+            return raw->load();
     return 0.5f;
 }
 
@@ -3666,10 +3687,7 @@ void EffectGraph::timerCallback()
         refreshCompactAssetLibrary();
         repaint();
     }
-    if (visualizationActive
-        && (!isCompactAssetLibrary() || type == ModuleType::envelopeConvolution)
-        && !processor.getVisualizationData().isSlotActive(slot))
-        processor.getVisualizationData().setSlotActive(slot, true);
+    setVisualizationActive(visualizationActive);
     refreshVisualization();
 }
 
@@ -3690,15 +3708,24 @@ void EffectGraph::refreshVisualization()
     }
     if (isCompactAssetLibrary())
     {
-        repaint();
+        const auto path = compactAssetLoadedPath();
+        const auto indexing = isCompactNamLibrary()
+            ? processor.isNamModelLibraryIndexing()
+            : processor.isImpulseResponseLibraryIndexing();
+        if (type == ModuleType::envelopeConvolution
+            || path != compactAssetPaintedPath
+            || indexing != compactAssetPaintedIndexing)
+        {
+            compactAssetPaintedPath = path;
+            compactAssetPaintedIndexing = indexing;
+            repaint();
+        }
         return;
     }
     if (processor.isSlotBypassed(slot))
     {
         if (!bypassVisualsSuspended)
         {
-            if (visualizationActive)
-                processor.getVisualizationData().slotData(slot).clear();
             inputSamples.fill(0.0f);
             outputSamples.fill(0.0f);
             stereoLeftSamples.fill(0.0f);
@@ -3717,28 +3744,59 @@ void EffectGraph::refreshVisualization()
     bypassVisualsSuspended = false;
 
     if (!visualizationActive)
-    {
-        repaint();
         return;
-    }
 
     auto& data = processor.getVisualizationData().slotData(slot);
-    const auto inputHistoryPosition = data.input.position();
+    if (type == ModuleType::compressor)
+    {
+        const std::array<uint64_t, 3> positions {
+            data.inputLevel.position(), data.outputLevel.position(),
+            data.gainReductionLevel.position()
+        };
+        ControlValues values {};
+        for (int control = 0; control < controlsPerSlot; ++control)
+            values[static_cast<size_t>(control)] = value(control);
+        const auto sidechain = processor.hasExternalSidechain();
+        if (compressorFrameValid && positions == compressorLevelPositions
+            && values == compressorPaintedValues
+            && sidechain == compressorPaintedSidechain)
+            return;
+        compressorLevelPositions = positions;
+        compressorPaintedValues = values;
+        compressorPaintedSidechain = sidechain;
+        compressorFrameValid = true;
+    }
     const auto outputHistoryPosition = data.output.position();
-    const auto inputAdvanced =
-        inputHistoryPosition != lastInputHistoryPosition;
-    const auto outputAdvanced =
+    auto outputAdvanced =
         outputHistoryPosition != lastOutputHistoryPosition;
-    lastInputHistoryPosition = inputHistoryPosition;
-    lastOutputHistoryPosition = outputHistoryPosition;
-    data.input.copyLatest(inputSamples);
-    data.output.copyLatest(outputSamples);
-    data.outputLeft.copyLatest(stereoLeftSamples);
-    data.outputRight.copyLatest(stereoRightSamples);
-    data.gainReduction.copyLatest(gainHistory);
-    data.inputLevel.copyLatest(inputLevels, -60.0f);
-    data.outputLevel.copyLatest(outputLevels, -60.0f);
-    data.gainReductionLevel.copyLatest(gainReductionLevels);
+    const auto requirements =
+        processor.getVisualizationData().getCaptureRequirements(slot);
+    if ((requirements & captureMonoOutput) != 0)
+    {
+        std::array<float, graphFftSize> samples {};
+        if (data.output.copyLatest(samples) != 0 || outputHistoryPosition == 0)
+        {
+            outputSamples = samples;
+            lastOutputHistoryPosition = outputHistoryPosition;
+        }
+        else
+            outputAdvanced = false;
+    }
+    if ((requirements & captureStereoOutput) != 0)
+    {
+        std::array<float, graphFftSize> left {}, right {};
+        if (data.copyOutputStereoLatest(left, right))
+        {
+            stereoLeftSamples = left;
+            stereoRightSamples = right;
+        }
+    }
+    if ((requirements & captureInputLevels) != 0)
+        data.inputLevel.copyLatest(inputLevels, -60.0f);
+    if ((requirements & captureOutputLevels) != 0)
+        data.outputLevel.copyLatest(outputLevels, -60.0f);
+    if ((requirements & captureReduction) != 0)
+        data.gainReductionLevel.copyLatest(gainReductionLevels);
     const auto compactVisualizationType =
         compactVisualization(type);
     const auto compactNeedsSpectrum =
@@ -3748,24 +3806,8 @@ void EffectGraph::refreshVisualization()
             == CompactVisualization::spectral
         || compactVisualizationType
             == CompactVisualization::cabinet;
-    if (compactNeedsSpectrum)
-    {
-        const auto decayStaleSpectrum =
-            [](auto& spectrum)
-            {
-                for (auto& magnitude : spectrum)
-                    magnitude = juce::jmax(
-                        -100.0f, magnitude - 5.0f);
-            };
-        if (type == ModuleType::neuralAmpModeler && !inputAdvanced)
-            decayStaleSpectrum(inputSpectrum);
-        else
-            calculateSpectrum(inputSamples, inputSpectrum);
-        if (type == ModuleType::neuralAmpModeler && !outputAdvanced)
-            decayStaleSpectrum(outputSpectrum);
-        else
-            calculateSpectrum(outputSamples, outputSpectrum);
-    }
+    if (compactNeedsSpectrum && outputAdvanced)
+        calculateSpectrum(outputSamples, outputSpectrum);
     repaint();
 }
 

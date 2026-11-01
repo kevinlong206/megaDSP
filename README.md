@@ -93,7 +93,15 @@ or suspended audio, so **IDLE** does not pretend to identify the cause.
 If the host still requests bypass callbacks, **HOST BYPASS / FX 0% / DRY**
 confirms the effect graphs are skipped; necessary dry routing, latency
 alignment, and callback bookkeeping can still use a small amount of CPU.
-UI and background library/asset work are separate and can continue in either state.
+UI and background library/asset work are separate from this DSP readout.
+Offscreen or hidden widget visualizations and collapsed Ultra visualizations
+suspend capture and their timers automatically; hidden editors skip presentation
+refresh, while visible widgets retain their normal refresh rates.
+Visualizations capture only the histories they use,
+while static asset browsers and unchanged controls avoid redundant repainting.
+Host gain-reduction reporting and background asset commits remain independent
+of editor visibility. This does not reduce DSP quality or change LIVE SAFE's
+processing graph count.
 
 Creative spectral effects keep the live dry signal immediate: **Spectral
 Prism**, **Pitch Bloom**, **Spectral Delay Canvas**, **Harmonic Mirage**,

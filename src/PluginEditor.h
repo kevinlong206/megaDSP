@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <optional>
 
 namespace megadsp::ui
 {
@@ -15,6 +16,14 @@ enum class WidgetSize;
 class HorizontalRackViewport final : public juce::Viewport
 {
 public:
+    std::function<void()> onVisibleAreaChanged;
+
+    void visibleAreaChanged(const juce::Rectangle<int>&) override
+    {
+        if (onVisibleAreaChanged)
+            onVisibleAreaChanged();
+    }
+
     void mouseWheelMove(
         const juce::MouseEvent& event,
         const juce::MouseWheelDetails& wheel) override
@@ -160,6 +169,7 @@ private:
     void showResult(const juce::Result&);
     void setWidgetSize(megadsp::ui::WidgetSize, bool persist);
     void refreshWidgetSizeButtons();
+    void updateVisualizationVisibility();
     void updateEditorResizeLimits();
 #if defined(MEGADSP_CAPTURE_SCREENSHOTS)
     void advanceScreenshotCapture();
@@ -219,6 +229,7 @@ private:
     int knownThemeIndex = -1;
     juce::Rectangle<int> knownDisplayUserArea;
     bool refreshingCards = false;
+    bool updatingVisualizationVisibility = false;
     enum class PendingCardMutation
     {
         none,
@@ -230,6 +241,9 @@ private:
     int pendingDestinationSlot = -1;
     std::uint64_t pendingTopologyGeneration = 0;
     std::uint64_t pendingTopologyRequestGeneration = 0;
+#if defined(MEGADSP_TESTS)
+    std::optional<bool> visualizationVisibilityForTesting;
+#endif
 #if defined(MEGADSP_CAPTURE_SCREENSHOTS)
     int screenshotPhase = 0;
     int screenshotDelay = 0;

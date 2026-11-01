@@ -2380,10 +2380,17 @@ void MegaDSPAudioProcessor::processBlockBypassed(
         const auto activeVisualSlots =
             snapshotRacks[static_cast<size_t>(previous)]
                 ->visualizationData().getActiveSlotMask();
-        snapshotRacks[static_cast<size_t>(previous)]
-            ->visualizationData().clearActiveSlots();
-        snapshotRacks[static_cast<size_t>(index)]
-            ->visualizationData().setActiveSlotMask(activeVisualSlots);
+        if (previous != index)
+        {
+            snapshotRacks[static_cast<size_t>(previous)]
+                ->visualizationData().clearActiveSlots();
+            snapshotRacks[static_cast<size_t>(index)]
+                ->visualizationData().copyCaptureRequirementsFrom(
+                    snapshotRacks[static_cast<size_t>(previous)]
+                        ->visualizationData());
+            snapshotRacks[static_cast<size_t>(index)]
+                ->visualizationData().setActiveSlotMask(activeVisualSlots);
+        }
         snapshotUiDirty.store(true, std::memory_order_release);
         snapshotGeneration.fetch_add(1, std::memory_order_release);
     };
@@ -3402,6 +3409,10 @@ void MegaDSPAudioProcessor::beginSnapshotRecall(int index) noexcept
         snapshotRacks[static_cast<size_t>(current)]
             ->visualizationData().clearActiveSlots();
         snapshotRacks[static_cast<size_t>(index)]
+            ->visualizationData().copyCaptureRequirementsFrom(
+                snapshotRacks[static_cast<size_t>(current)]
+                    ->visualizationData());
+        snapshotRacks[static_cast<size_t>(index)]
             ->visualizationData().setActiveSlotMask(activeVisualSlots);
         activeAudioSnapshot.store(index, std::memory_order_release);
         selectedSnapshot.store(index, std::memory_order_release);
@@ -3430,6 +3441,10 @@ void MegaDSPAudioProcessor::beginSnapshotRecall(int index) noexcept
             ->visualizationData().getActiveSlotMask();
     snapshotRacks[static_cast<size_t>(current)]
         ->visualizationData().clearActiveSlots();
+    snapshotRacks[static_cast<size_t>(index)]
+        ->visualizationData().copyCaptureRequirementsFrom(
+            snapshotRacks[static_cast<size_t>(current)]
+                ->visualizationData());
     snapshotRacks[static_cast<size_t>(index)]
         ->visualizationData().setActiveSlotMask(activeVisualSlots);
     activeAudioSnapshot.store(index, std::memory_order_release);

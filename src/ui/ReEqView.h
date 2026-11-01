@@ -106,6 +106,7 @@ class ReEqView final : public juce::Component
     juce::Point<float> dragOrigin, lastMouse;
     juce::Rectangle<float> plot, selectionBox;
     double responseSampleRate = 0.0;
+    float lastOutputTrimDb = 0.0f;
     std::array<juce::Path, reEqBandCount> bandCurves;
     std::array<juce::Path, 5> groupCurves;
     std::array<bool, 5> groupPresent{};

@@ -179,6 +179,19 @@ const std::array<ModuleDefinition, moduleTypeCount>& moduleRegistry();
 const ModuleDefinition* findModuleDefinition(ModuleType type);
 const ModuleDefinition& moduleDefinition(ModuleType type);
 CompactVisualization compactVisualization(ModuleType type);
+enum VisualizationCapture : std::uint32_t
+{
+    captureMonoInput = 1u,
+    captureMonoOutput = 2u,
+    captureStereoInput = 4u,
+    captureStereoOutput = 8u,
+    captureInputLevels = 16u,
+    captureOutputLevels = 32u,
+    captureReduction = 64u,
+    captureAll = 127u
+};
+std::uint32_t visualizationCaptureRequirements(
+    ModuleType, bool nativeEqualizer = false);
 bool compactVisualizationShowsGainReduction(ModuleType);
 const char* moduleCategoryName(ModuleCategory category);
 std::unique_ptr<DspModule> createDspModule(ModuleType type);

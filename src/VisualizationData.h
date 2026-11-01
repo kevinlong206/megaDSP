@@ -5,6 +5,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <array>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 
@@ -16,9 +17,22 @@ class SampleHistory
 public:
     void push(float value)
     {
+        pushBlock(1, [value](int) { return value; });
+    }
+
+    template <typename Read>
+    void pushBlock(int count, Read read)
+    {
+        if (count <= 0)
+            return;
+        writeGeneration.fetch_add(1, std::memory_order_seq_cst);
         const auto position = writePosition.load(std::memory_order_relaxed);
-        samples[position % Capacity].store(value, std::memory_order_relaxed);
-        writePosition.store(position + 1, std::memory_order_release);
+        for (int index = 0; index < count; ++index)
+            samples[(position + static_cast<uint64_t>(index)) % Capacity]
+                .store(read(index), std::memory_order_relaxed);
+        writePosition.store(
+            position + static_cast<uint64_t>(count), std::memory_order_release);
+        writeGeneration.fetch_add(1, std::memory_order_seq_cst);
     }
 
     template <size_t DestinationSize>
@@ -26,29 +40,34 @@ public:
         std::array<float, DestinationSize>& destination,
         float emptyValue = 0.0f) const
     {
-        destination.fill(emptyValue);
         for (int attempt = 0; attempt < 2; ++attempt)
         {
+            const auto generation =
+                writeGeneration.load(std::memory_order_seq_cst);
+            if ((generation & 1u) != 0)
+                continue;
             const auto end = writePosition.load(std::memory_order_acquire);
             const auto available = static_cast<size_t>(juce::jmin<uint64_t>(
                 end, static_cast<uint64_t>(juce::jmin(Capacity, DestinationSize))));
             const auto start = end - available;
             const auto offset = DestinationSize - available;
+            std::fill_n(destination.begin(), offset, emptyValue);
             for (size_t index = 0; index < available; ++index)
                 destination[offset + index] =
                     samples[(start + index) % Capacity].load(std::memory_order_relaxed);
-            const auto finalPosition = writePosition.load(std::memory_order_acquire);
-            if (finalPosition - end < Capacity)
+            std::atomic_thread_fence(std::memory_order_acquire);
+            if (writeGeneration.load(std::memory_order_seq_cst) == generation)
                 return available;
         }
+        destination.fill(emptyValue);
         return 0;
     }
 
     void clear()
     {
-        for (auto& sample : samples)
-            sample.store(0.0f, std::memory_order_relaxed);
+        writeGeneration.fetch_add(1, std::memory_order_seq_cst);
         writePosition.store(0, std::memory_order_release);
+        writeGeneration.fetch_add(1, std::memory_order_seq_cst);
     }
 
     uint64_t position() const noexcept
@@ -59,6 +78,8 @@ public:
 private:
     std::array<std::atomic<float>, Capacity> samples {};
     std::atomic<uint64_t> writePosition { 0 };
+    // Payloads remain atomic: generation checks reject overlapping block writes.
+    std::atomic<uint64_t> writeGeneration { 0 };
 };
 
 struct SlotVisualizationData
@@ -74,11 +95,34 @@ struct SlotVisualizationData
     SampleHistory<512> outputLevel;
     SampleHistory<512> gainReductionLevel;
 
+    template <size_t Size>
+    bool copyOutputStereoLatest(
+        std::array<float, Size>& left, std::array<float, Size>& right) const
+    {
+        for (int attempt = 0; attempt < 2; ++attempt)
+        {
+            const auto end = outputLeft.position();
+            if (outputRight.position() != end)
+                continue;
+            const auto leftCount = outputLeft.copyLatest(left);
+            const auto rightCount = outputRight.copyLatest(right);
+            if (leftCount == rightCount && (end == 0 || leftCount != 0)
+                && outputLeft.position() == end && outputRight.position() == end)
+                return true;
+        }
+        return false;
+    }
+
     struct LevelWriter
     {
         void prepare(double sampleRate)
         {
             interval = juce::jmax(1, juce::roundToInt(sampleRate / 50.0));
+            reset();
+        }
+
+        void reset()
+        {
             remaining = interval;
             peak = 0.0f;
         }
@@ -96,10 +140,13 @@ struct SlotVisualizationData
 
         void pushValue(float value, int numSamples, SampleHistory<512>& history)
         {
-            for (int sample = 0; sample < numSamples; ++sample)
+            while (numSamples > 0)
             {
                 peak = juce::jmax(peak, value);
-                if (--remaining <= 0)
+                const auto count = juce::jmin(remaining, numSamples);
+                remaining -= count;
+                numSamples -= count;
+                if (remaining == 0)
                 {
                     history.push(peak);
                     remaining = interval;
@@ -136,21 +183,51 @@ struct SlotVisualizationData
         inputLevel.clear();
         outputLevel.clear();
         gainReductionLevel.clear();
+        inputLevelWriter.reset();
+        outputLevelWriter.reset();
+        gainReductionWriter.reset();
     }
 };
 
 class VisualizationData
 {
 public:
+    void setCaptureRequirements(int slot, std::uint32_t requirements)
+    {
+        if (juce::isPositiveAndBelow(slot, slotCount))
+        {
+            const auto index = static_cast<size_t>(slot);
+            const auto next = requirements & captureAll;
+            if (captureRequirements[index].exchange(
+                    next, std::memory_order_acq_rel) != next)
+                resetRequested[index].store(true, std::memory_order_release);
+        }
+    }
+
+    std::uint32_t getCaptureRequirements(int slot) const
+    {
+        return juce::isPositiveAndBelow(slot, slotCount)
+            ? captureRequirements[static_cast<size_t>(slot)]
+                  .load(std::memory_order_acquire) : 0;
+    }
+
+    void copyCaptureRequirementsFrom(const VisualizationData& other)
+    {
+        for (int slot = 0; slot < slotCount; ++slot)
+            setCaptureRequirements(slot, other.getCaptureRequirements(slot));
+    }
+
     void setSlotActive(int slot, bool active)
     {
         if (!juce::isPositiveAndBelow(slot, slotCount))
             return;
         const auto bit = std::uint32_t { 1 } << static_cast<unsigned>(slot);
-        if (active)
-            activeSlotMask.fetch_or(bit, std::memory_order_release);
-        else
-            activeSlotMask.fetch_and(~bit, std::memory_order_release);
+        const auto previous = active
+            ? activeSlotMask.fetch_or(bit, std::memory_order_acq_rel)
+            : activeSlotMask.fetch_and(~bit, std::memory_order_acq_rel);
+        if (((previous & bit) != 0) != active)
+            resetRequested[static_cast<size_t>(slot)].store(
+                true, std::memory_order_release);
     }
 
     bool isSlotActive(int slot) const
@@ -170,12 +247,19 @@ public:
     {
         constexpr auto validMask =
             (std::uint32_t { 1 } << static_cast<unsigned>(slotCount)) - 1u;
-        activeSlotMask.store(mask & validMask, std::memory_order_release);
+        const auto next = mask & validMask;
+        const auto previous =
+            activeSlotMask.exchange(next, std::memory_order_acq_rel);
+        for (int slot = 0; slot < slotCount; ++slot)
+            if (((previous ^ next)
+                 & (std::uint32_t { 1 } << static_cast<unsigned>(slot))) != 0)
+                resetRequested[static_cast<size_t>(slot)].store(
+                    true, std::memory_order_release);
     }
 
     void clearActiveSlots()
     {
-        activeSlotMask.store(0, std::memory_order_release);
+        setActiveSlotMask(0);
     }
 
     void prepare(double sampleRate)
@@ -187,41 +271,62 @@ public:
 
     void captureInput(int slot, const juce::AudioBuffer<float>& buffer)
     {
-        if (juce::isPositiveAndBelow(slot, slotCount))
+        if (juce::isPositiveAndBelow(slot, slotCount)
+            && buffer.getNumChannels() > 0)
         {
             auto& data = slots[static_cast<size_t>(slot)];
-            capture(buffer, data.input, data.inputLevel, data.inputLevelWriter);
-            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            // Visibility requests a reset; only the audio producer clears histories.
+            if (resetRequested[static_cast<size_t>(slot)].exchange(
+                    false, std::memory_order_acq_rel))
             {
-                const auto left = buffer.getSample(0, sample);
-                data.inputLeft.push(left);
-                data.inputRight.push(
-                    buffer.getNumChannels() > 1
-                        ? buffer.getSample(1, sample) : left);
+                data.clear();
+            }
+            const auto requirements = getCaptureRequirements(slot);
+            capture(buffer, data.input, data.inputLevel, data.inputLevelWriter,
+                    (requirements & captureMonoInput) != 0,
+                    (requirements & captureInputLevels) != 0);
+            if ((requirements & captureStereoInput) != 0)
+            {
+                data.inputLeft.pushBlock(buffer.getNumSamples(),
+                    [&buffer](int sample) { return buffer.getSample(0, sample); });
+                data.inputRight.pushBlock(buffer.getNumSamples(),
+                    [&buffer](int sample)
+                    {
+                        return buffer.getSample(
+                            buffer.getNumChannels() > 1 ? 1 : 0, sample);
+                    });
             }
         }
     }
 
     void captureOutput(int slot, const juce::AudioBuffer<float>& buffer)
     {
-        if (juce::isPositiveAndBelow(slot, slotCount))
+        if (juce::isPositiveAndBelow(slot, slotCount)
+            && buffer.getNumChannels() > 0)
         {
             auto& data = slots[static_cast<size_t>(slot)];
-            capture(buffer, data.output, data.outputLevel, data.outputLevelWriter);
-            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            const auto requirements = getCaptureRequirements(slot);
+            capture(buffer, data.output, data.outputLevel, data.outputLevelWriter,
+                    (requirements & captureMonoOutput) != 0,
+                    (requirements & captureOutputLevels) != 0);
+            if ((requirements & captureStereoOutput) != 0)
             {
-                const auto left = buffer.getSample(0, sample);
-                const auto right = buffer.getNumChannels() > 1
-                                       ? buffer.getSample(1, sample) : left;
-                data.outputLeft.push(left);
-                data.outputRight.push(right);
+                data.outputLeft.pushBlock(buffer.getNumSamples(),
+                    [&buffer](int sample) { return buffer.getSample(0, sample); });
+                data.outputRight.pushBlock(buffer.getNumSamples(),
+                    [&buffer](int sample)
+                    {
+                        return buffer.getSample(
+                            buffer.getNumChannels() > 1 ? 1 : 0, sample);
+                    });
             }
         }
     }
 
     void captureGainReduction(int slot, float value, int numSamples)
     {
-        if (juce::isPositiveAndBelow(slot, slotCount))
+        if (juce::isPositiveAndBelow(slot, slotCount)
+            && (getCaptureRequirements(slot) & captureReduction) != 0)
         {
             auto& data = slots[static_cast<size_t>(slot)];
             data.gainReduction.push(value);
@@ -245,9 +350,12 @@ private:
     static void capture(const juce::AudioBuffer<float>& buffer,
                         SampleHistory<8192>& waveform,
                         SampleHistory<512>& levels,
-                        SlotVisualizationData::LevelWriter& levelWriter)
+                        SlotVisualizationData::LevelWriter& levelWriter,
+                        bool captureWaveform, bool captureLevels)
     {
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        if (!captureWaveform && !captureLevels)
+            return;
+        const auto read = [&](int sample)
         {
             float power = 0.0f;
             for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
@@ -259,12 +367,25 @@ private:
                 juce::jmax(1, buffer.getNumChannels())));
             const auto signSource = buffer.getNumChannels() > 0
                                         ? buffer.getSample(0, sample) : 0.0f;
-            waveform.push(std::copysign(rms, signSource));
-            levelWriter.pushMagnitude(rms, levels);
+            if (captureLevels)
+                levelWriter.pushMagnitude(rms, levels);
+            return std::copysign(rms, signSource);
+        };
+        if (captureWaveform)
+            waveform.pushBlock(buffer.getNumSamples(), read);
+        else
+        {
+            for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+                read(sample);
         }
     }
 
     std::array<SlotVisualizationData, slotCount> slots;
     std::atomic<std::uint32_t> activeSlotMask { 0 };
+    std::array<std::atomic<std::uint32_t>, slotCount> captureRequirements {
+        captureAll, captureAll, captureAll, captureAll,
+        captureAll, captureAll, captureAll, captureAll
+    };
+    std::array<std::atomic<bool>, slotCount> resetRequested {};
 };
 } // namespace megadsp

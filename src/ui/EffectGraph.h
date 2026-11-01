@@ -37,6 +37,7 @@ public:
     static size_t spectrumBinForProportion(
         float proportion, double sampleRate);
 #if defined(MEGADSP_TESTS)
+    bool isVisualizationTimerRunningForTesting() const { return isTimerRunning(); }
     void refreshVisualizationForTesting();
     void setCompactCompressorThresholdFromYForTesting(float y);
     void setCompactEqualizerBandFromPointForTesting(
@@ -195,6 +196,7 @@ private:
     MegaDSPAudioProcessor& processor;
     int slot;
     ModuleType type;
+    std::array<std::atomic<float>*, controlsPerSlot> controlPointers {};
     std::uint64_t delayTelemetrySequence = 0;
     double delayTelemetryTime = 0.0;
     bool delayTelemetryAvailable = false;
@@ -215,8 +217,11 @@ private:
     int dragSecondary = -1;
     int compactEqualizerBand = -1;
     int compactEnvelopeSelection = 0;
-    uint64_t lastInputHistoryPosition = 0;
     uint64_t lastOutputHistoryPosition = 0;
+    std::array<uint64_t, 3> compressorLevelPositions {};
+    ControlValues compressorPaintedValues {};
+    bool compressorFrameValid = false;
+    bool compressorPaintedSidechain = false;
     juce::String dragReadout;
     juce::TextEditor compactAssetSearch;
     juce::TextButton compactNamFavoriteFilter;
@@ -224,6 +229,8 @@ private:
     std::vector<NamModelLibraryEntry> compactNamModels;
     std::vector<ImpulseResponseLibraryEntry> compactImpulseResponses;
     std::uint64_t compactAssetLibraryGeneration = 0;
+    juce::String compactAssetPaintedPath;
+    bool compactAssetPaintedIndexing = false;
     int compactAssetFirstVisible = 0;
     int compactAssetSelected = -1;
     bool compactAssetLoadPending = false;

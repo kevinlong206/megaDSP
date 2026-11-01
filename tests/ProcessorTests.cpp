@@ -950,7 +950,17 @@ public:
             editor->setCardsEditorVisibleForTesting(true);
             expectEquals(
                 editor->activeVisualizationCardCountForTesting(),
-                megadsp::slotCount);
+                1);
+            expect(rackProcessor->getVisualizationData().isSlotActive(0));
+            expect(!rackProcessor->getVisualizationData().isSlotActive(7));
+            for (const auto slot : { 0, 7 })
+                for (auto* component : editor->cardForTesting(slot)->getChildren())
+                    if (auto* graph = dynamic_cast<megadsp::ui::EffectGraph*>(component))
+                        expect(graph->isVisualizationTimerRunningForTesting() == (slot == 0));
+            editor->clickChainNavigatorForTesting(7);
+            expect(rackProcessor->getVisualizationData().isSlotActive(7));
+            expect(!rackProcessor->getVisualizationData().isSlotActive(0));
+            editor->clickChainNavigatorForTesting(0);
             rackProcessor->getVisualizationData().clearActiveSlots();
             editor->setWidgetSizeForTesting(
                 megadsp::ui::WidgetSize::medium);
@@ -958,7 +968,7 @@ public:
                 static_cast<int>(
                     rackProcessor->getVisualizationData()
                         .getActiveSlotMask()),
-                (1 << megadsp::slotCount) - 1);
+                3);
         }
 
         beginTest("Ultra compact keeps primary controls, expansion and vertical reordering");
@@ -1027,7 +1037,7 @@ public:
                 expect(editor.cardChildrenFitForTesting());
             }
             editor.setCardsEditorVisibleForTesting(true);
-            expectEquals(editor.activeVisualizationCardCountForTesting(), 8);
+            expect(editor.activeVisualizationCardCountForTesting() < 8);
             editor.refreshCardsForTesting();
             for (int slot = 0; slot < 8; ++slot)
             {
@@ -3126,6 +3136,9 @@ public:
         auto* drive = snapshotProcessor.parameters.getParameter(
             megadsp::controlParameterId(0, 0));
         drive->setValueNotifyingHost(0.2f);
+        snapshotProcessor.getVisualizationData().setCaptureRequirements(
+            0, megadsp::captureMonoOutput);
+        snapshotProcessor.getVisualizationData().setSlotActive(0, true);
         snapshotProcessor.storeSnapshot(1, false);
         expect(snapshotProcessor.isSnapshotPopulated(1));
         expect(snapshotProcessor.isSnapshotReady(1));
@@ -3135,6 +3148,13 @@ public:
         snapshotProcessor.processBlock(snapshotBuffer, snapshotMidi);
         snapshotProcessor.flushPendingUpdatesForTesting();
         expectEquals(snapshotProcessor.getSelectedSnapshot(), 1);
+        expectEquals(static_cast<int>(
+                         snapshotProcessor.getVisualizationData().getCaptureRequirements(0)),
+                     int(megadsp::captureMonoOutput));
+        expectEquals(static_cast<int>(snapshotProcessor.getVisualizationData()
+                                          .slotData(0).output.position()), 512);
+        expectEquals(static_cast<int>(snapshotProcessor.getVisualizationData()
+                                          .slotData(0).inputLeft.position()), 0);
         drive->setValueNotifyingHost(0.8f);
         snapshotProcessor.recallSnapshot(0);
         expectEquals(snapshotProcessor.getSelectedSnapshot(), 0);
@@ -3209,6 +3229,9 @@ public:
         liveSafeBuffer.clear();
         liveSafeProcessor.processBlock(liveSafeBuffer, liveSafeMidi);
         liveSafeProcessor.setLiveSafeSnapshotsEnabled(true);
+        liveSafeProcessor.getVisualizationData().setCaptureRequirements(
+            0, megadsp::captureMonoOutput);
+        liveSafeProcessor.getVisualizationData().setSlotActive(0, true);
         for (int channel = 0; channel < liveSafeBuffer.getNumChannels();
              ++channel)
             juce::FloatVectorOperations::fill(
@@ -3217,6 +3240,14 @@ public:
         liveSafeProcessor.processBlock(liveSafeBuffer, liveSafeMidi);
         expectEquals(
             liveSafeProcessor.processedSnapshotGraphCountForTesting(), 3);
+        const auto historyPosition =
+            liveSafeProcessor.getVisualizationData().slotData(0).output.position();
+        liveSafeMidi.addEvent(juce::MidiMessage::programChange(1, 2), 0);
+        liveSafeProcessor.processBlock(liveSafeBuffer, liveSafeMidi);
+        expectEquals(static_cast<int>(
+                         liveSafeProcessor.getVisualizationData().slotData(0).output.position()),
+                     static_cast<int>(historyPosition) + liveSafeBuffer.getNumSamples());
+        liveSafeMidi.clear();
         liveSafeProcessor.recallSnapshot(0);
         liveSafeProcessor.processBlock(liveSafeBuffer, liveSafeMidi);
         expectEquals(

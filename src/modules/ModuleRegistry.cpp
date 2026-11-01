@@ -5208,6 +5208,20 @@ const ModuleDefinition& moduleDefinition(ModuleType type)
     return *findModuleDefinition(ModuleType::empty);
 }
 
+std::uint32_t visualizationCaptureRequirements(
+    ModuleType type, bool nativeEqualizer)
+{
+    if (type == ModuleType::delay || type == ModuleType::guitarTuner
+        || type == ModuleType::envelopeModulator
+        || type == ModuleType::envelopeConvolution)
+        return 0;
+    if (type == ModuleType::equalizer && nativeEqualizer)
+        return captureStereoInput | captureStereoOutput;
+    if (type == ModuleType::compressor)
+        return captureInputLevels | captureOutputLevels | captureReduction;
+    return captureAll & ~(captureStereoInput | captureMonoInput);
+}
+
 CompactVisualization compactVisualization(ModuleType type)
 {
     switch (type)
