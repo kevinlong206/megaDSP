@@ -359,7 +359,7 @@ See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and licenses.
 
 | Module | What it does |
 |---|---|
-| **Delay** | Flagship dual-line echo with Studio, Tape, BBD, and Vintage Digital styles; Mono, Dual, Ping Pong, and Cross routing; model-specific movement, colored feedback, wet-only ducking, and a measured stereo repeat timeline |
+| **Delay** | Flagship dual-line echo with Studio, Tape, BBD, and Vintage Digital styles; Mono, Dual, Ping Pong, and Cross routing; model-specific movement, colored feedback, wet-only ducking, and a read-only nominal repeat preview with separate measured wet meters |
 | **Diffusion Delay** | Full-width Time/Division and Cloud Density field with DSP-synchronized primary/cloud activity, energy, progress, and stereo placement |
 | **Algorithmic Reverb** | 16-line Hall, Chamber, and Plate network with input high-pass/low-pass filtering, smooth wet ducking, Decay, Room Scale, and independent Dry/Wet |
 | **Convolution Reverb** | Dedicated asynchronous, energy-normalized Wet convolution with adjustable scheduling headroom, immediate unaligned Dry, and zero host PDC. Its widget includes an always-visible smart filter above the scrollable globally persisted IR library; clicking a result loads it on a background worker. Every row has a persistent favorite star and **FAVORITES** filtering. Search ranks exact and typo-tolerant path matches, supports unordered terms, quoted phrases, exclusions, and structured mono/stereo, duration, and sample-rate filters. **FIND** opens the full metadata browser, while Wormhole provides separate **FIND** buttons for lanes A and B. The shared root and index rebuild are in **SETTINGS > Libraries**. Filename/path results appear immediately while an uncached metadata scan runs in the background, with channel/duration/sample-rate filters after validation. Filesystem additions, removals, and replacements are detected automatically and published to every open instance. |
@@ -373,7 +373,9 @@ See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and licenses.
 | **Chord Loom** | Automatically captures each guitar strum and sustains it as a continuously woven pad, smoothly replacing the previous held chord |
 | **Spectral Nebula** | Continuously absorbs guitar or vocals into a drifting, shimmering spectral cloud with tonal/noise focus and freeze |
 
-![Tempo-synced Delay timeline with ping-pong routing and direct repeat controls](docs/images/delay-movement.png)
+Delay's **Repeat Preview** illustrates nominal timing and feedback decay on a labeled time axis; it is not a recording of individual echoes. Edit Time/Division and Sync separately from Feedback, Tone, and Mix. Style and Stereo Mode appear once, with Character, Spread, Movement, and Ducking grouped below. Spread and Movement can offset actual repeats from the preview. The L/R meters measure wet activity after Ducking and **before Mix**, so they can show internal repeats even at Mix 0% (dry only). Short windows scroll vertically when needed to keep the complete Delay widget available.
+
+![Delay repeat preview with separate timing controls and measured wet meters](docs/images/delay-movement.png)
 
 ### Modulation
 

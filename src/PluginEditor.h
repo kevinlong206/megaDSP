@@ -19,9 +19,16 @@ public:
         const juce::MouseEvent& event,
         const juce::MouseWheelDetails& wheel) override
     {
+        if (verticalScrolling && wheel.deltaX == 0.0f)
+        {
+            getVerticalScrollBar().mouseWheelMove(event, wheel);
+            setViewPosition(
+                getViewPositionX(),
+                juce::roundToInt(getVerticalScrollBar().getCurrentRangeStart()));
+            return;
+        }
         auto axisWheel = wheel;
-        if (!verticalScrolling)
-            axisWheel.deltaY = 0.0f;
+        axisWheel.deltaY = 0.0f;
         juce::Viewport::mouseWheelMove(event, axisWheel);
     }
 

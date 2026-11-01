@@ -2193,6 +2193,9 @@ void MegaDSPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     }
 
     const auto bpm = currentBpm();
+    bpmForUI.store(
+        std::isfinite(bpm) && bpm >= 30.0 && bpm <= 400.0 ? bpm : 120.0,
+        std::memory_order_relaxed);
     const auto processRange = [this, &main, sidechainPointer, bpm, upmixMono](
                                   int start, int samples)
     {

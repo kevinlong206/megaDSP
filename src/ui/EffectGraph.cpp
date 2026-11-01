@@ -135,7 +135,7 @@ EffectGraph::EffectGraph(
         || type == ModuleType::envelopeConvolution;
     const auto compactAssets = isCompactAssetLibrary();
     setWantsKeyboardFocus(
-        compactCompressor || compactEqualizer || compactDelay || compactTuner
+        compactCompressor || compactEqualizer || compactTuner
         || compactAssets || compactEnvelope);
     if (compactEnvelope)
     {
@@ -181,12 +181,14 @@ EffectGraph::EffectGraph(
     }
     if (compactDelay)
     {
-        setTitle("Delay repeat field");
+        setTitle("Delay repeat preview");
         setDescription(
-            "Edit delay time and feedback while viewing measured stereo repeats.");
+            "Predicted nominal repeat spacing and feedback decay, with separate "
+            "measured wet activity before Mix.");
         setHelpText(
-            "Drag horizontally for Time or Division and vertically for "
-            "Feedback. Click Style or Stereo Mode pills to select routing.");
+            "This preview is read-only. Use Time or Division and Feedback below. "
+            "Spread and Movement can offset actual repeats from the nominal timing. "
+            "Wet meters show measured activity after Ducking and before Mix.");
     }
     if (compactTuner)
     {
@@ -1876,149 +1878,110 @@ void EffectGraph::paintCompact(
                 break;
             }
 
-            visualizationLabel = "REPEAT FIELD";
-            ContinuousTelemetrySnapshot telemetry;
-            const auto valid =
-                processor.readContinuousTelemetry(slot, telemetry)
-                && telemetry.sequence != 0
-                && telemetry.valueCount
-                       >= DelayModule::telemetryValueCount;
-            const auto styleArea = compactDelayStyleArea();
-            const auto stereoArea = compactDelayStereoArea();
+            visualizationLabel = "REPEAT PREVIEW";
+            const auto wetLevels = compactDelayWetLevels();
             const auto timeline = compactDelayTimelineArea();
-            constexpr std::array<const char*, 4> styleLabels {
-                "STUDIO", "TAPE", "BBD", "VINTAGE"
-            };
-            constexpr std::array<const char*, 4> stereoLabels {
-                "MONO", "DUAL", "PING PONG", "CROSS"
-            };
-            const auto drawPills =
-                [&](juce::Rectangle<float> pills,
-                    const auto& labels, int selected)
+            const auto preview = compactDelayPreview();
+            const auto timeText = [](float seconds)
             {
-                for (int index = 0; index < 4; ++index)
-                {
-                    auto pill = pills;
-                    pill.setX(
-                        pills.getX()
-                        + static_cast<float>(index)
-                            * pills.getWidth() / 4.0f);
-                    pill.setWidth(pills.getWidth() / 4.0f - 2.0f);
-                    const auto active = index == selected;
-                    graphics.setColour(
-                        active ? accent.withAlpha(0.42f)
-                               : juce::Colours::black.withAlpha(0.24f));
-                    graphics.fillRoundedRectangle(pill, 3.0f);
-                    graphics.setColour(
-                        juce::Colours::white.withAlpha(
-                            active ? 0.95f : 0.55f));
-                    graphics.setFont(juce::FontOptions(
-                        6.8f, active ? juce::Font::bold
-                                    : juce::Font::plain));
-                    graphics.drawText(
-                        labels[static_cast<size_t>(index)],
-                        pill.toNearestInt(),
-                        juce::Justification::centred);
-                }
+                return seconds < 1.0f
+                    ? juce::String(seconds * 1000.0f, seconds < 0.01f ? 1 : 0)
+                        + " ms"
+                    : juce::String(seconds, 1) + " s";
             };
-            const auto selectedStyle = discreteIndex(value(4), 4);
-            const auto selectedStereo = discreteIndex(value(6), 4);
-            drawPills(styleArea, styleLabels, selectedStyle);
-            drawPills(stereoArea, stereoLabels, selectedStereo);
-
-            graphics.setColour(juce::Colours::white.withAlpha(0.08f));
-            graphics.drawHorizontalLine(
-                juce::roundToInt(timeline.getY()
-                                 + timeline.getHeight() * 0.32f),
-                timeline.getX(), timeline.getRight());
-            graphics.drawHorizontalLine(
-                juce::roundToInt(timeline.getY()
-                                 + timeline.getHeight() * 0.68f),
-                timeline.getX(), timeline.getRight());
-
+            graphics.setFont(juce::FontOptions(11.0f));
+            graphics.setColour(juce::Colours::white.withAlpha(0.85f));
+            auto timing = timeText(preview.interval) + " nominal";
+            if (value(2) >= 0.5f)
+                timing = formatControlValue(type, 1, value(1)) + " / " + timing;
+            graphics.drawText(
+                timing, area.withY(area.getY() + 14.0f).withHeight(16.0f)
+                            .toNearestInt(),
+                juce::Justification::centredLeft);
             const auto feedback = 0.94f * value(3);
-            const auto leftEnergy = valid
-                ? juce::jlimit(
-                      0.0f, 1.0f,
-                      telemetry.values[DelayModule::leftWetEnergy] * 3.0f)
-                : energy;
-            const auto rightEnergy = valid
-                ? juce::jlimit(
-                      0.0f, 1.0f,
-                      telemetry.values[DelayModule::rightWetEnergy] * 3.0f)
-                : energy;
-            const auto movement = valid
-                ? juce::jlimit(
-                      0.0f, 1.0f,
-                      telemetry.values[DelayModule::movementSamples]
-                          / juce::jmax(
-                              1.0f,
-                              static_cast<float>(
-                                  processor.getSampleRate() * 0.016)))
-                : value(8);
-            for (int tap = 0; tap < 8; ++tap)
+            if (!timeline.isEmpty())
             {
-                const auto decay = std::pow(
-                    juce::jmax(0.001f, feedback),
-                    static_cast<float>(tap));
-                const auto x = timeline.getX()
-                    + timeline.getWidth()
-                        * (static_cast<float>(tap) + 0.5f) / 8.0f;
-                auto left = selectedStereo != 2 || (tap & 1) == 0;
-                auto right = selectedStereo != 2 || (tap & 1) != 0;
-                if (selectedStereo == 0)
-                    left = right = true;
-                const auto wobble = std::sin(
-                    static_cast<float>(tap) * 1.7f
-                    + value(8) * juce::MathConstants<float>::twoPi)
-                    * movement * 3.5f;
-                if (left)
+                const auto baseline = timeline.getBottom();
+                for (int tick = 0; tick <= 4; ++tick)
                 {
-                    const auto radius =
-                        2.5f + 5.0f * decay
-                            * (0.4f + 0.6f * leftEnergy);
-                    graphics.setColour(
-                        accent.withAlpha(0.28f + 0.62f * decay));
-                    graphics.fillEllipse(
-                        x - radius,
-                        timeline.getY()
-                            + timeline.getHeight() * 0.32f
-                            - radius + wobble,
-                        radius * 2.0f, radius * 2.0f);
+                    const auto proportion = static_cast<float>(tick) / 4.0f;
+                    const auto x = timeline.getX()
+                        + timeline.getWidth() * proportion;
+                    graphics.setColour(juce::Colours::white.withAlpha(0.1f));
+                    graphics.drawVerticalLine(
+                        juce::roundToInt(x), timeline.getY(), baseline);
+                    graphics.setColour(juce::Colours::white.withAlpha(0.6f));
+                    graphics.setFont(juce::FontOptions(10.0f));
+                    graphics.drawText(
+                        tick == 0 ? "0" : timeText(preview.window * proportion),
+                        juce::Rectangle<float>(x - 26.0f, baseline + 2.0f,
+                                               52.0f, 14.0f)
+                            .withX(juce::jlimit(
+                                area.getX(), area.getRight() - 52.0f,
+                                x - 26.0f)).toNearestInt(),
+                        tick == 0 ? juce::Justification::centredLeft
+                            : tick == 4 ? juce::Justification::centredRight
+                                        : juce::Justification::centred);
                 }
-                if (right)
+                graphics.setColour(juce::Colours::white.withAlpha(0.8f));
+                graphics.fillRect(timeline.withWidth(2.0f));
+                for (int repeat = 1; repeat <= preview.repeats; ++repeat)
                 {
-                    const auto radius =
-                        2.5f + 5.0f * decay
-                            * (0.4f + 0.6f * rightEnergy);
+                    const auto decay = repeat == 1 ? 1.0f
+                        : std::pow(feedback, static_cast<float>(repeat - 1));
+                    const auto x = timeline.getX()
+                        + timeline.getWidth() * preview.interval
+                            * static_cast<float>(repeat) / preview.window;
                     graphics.setColour(
-                        outputColour.withAlpha(0.28f + 0.62f * decay));
-                    graphics.fillEllipse(
-                        x - radius,
-                        timeline.getY()
-                            + timeline.getHeight() * 0.68f
-                            - radius - wobble,
-                        radius * 2.0f, radius * 2.0f);
+                        accent.withAlpha(0.3f + 0.65f * decay));
+                    graphics.fillRoundedRectangle(
+                        { x - 2.0f, baseline - timeline.getHeight() * decay,
+                          4.0f, timeline.getHeight() * decay }, 1.5f);
+                }
+                if (feedback > 0.0f
+                    && std::pow(feedback, static_cast<float>(preview.repeats))
+                           >= 0.04f)
+                {
+                    graphics.setColour(accent.withAlpha(0.7f));
+                    graphics.drawText(
+                        "...", timeline.withHeight(14.0f).toNearestInt(),
+                        juce::Justification::centredRight);
                 }
             }
-            const auto interval = valid
-                ? telemetry.values[DelayModule::intervalSeconds]
-                : 0.001f * exponential(
-                      1.0f, 2000.0f, value(0));
-            const auto duckGain = valid
-                ? telemetry.values[DelayModule::duckingGain] : 1.0f;
+
+            auto meters = area.withY(area.getBottom() - 30.0f)
+                              .withHeight(30.0f);
             graphics.setColour(juce::Colours::white.withAlpha(0.68f));
-            graphics.setFont(juce::FontOptions(7.2f));
+            graphics.setFont(juce::FontOptions(10.0f));
             graphics.drawText(
-                juce::String(interval * 1000.0f, 0) + " ms  |  DUCK "
-                    + juce::String(
-                        juce::Decibels::gainToDecibels(
-                            juce::jmax(0.0001f, duckGain)),
-                        1)
-                    + " dB",
-                timeline.withY(timeline.getBottom() - 12.0f)
-                    .withHeight(12.0f).toNearestInt(),
-                juce::Justification::centredRight);
+                value(11) == 0.0f ? "Wet before Mix  |  Dry only"
+                    : delayTelemetryAvailable ? "Wet before Mix"
+                                              : "Wet before Mix  |  No live data",
+                meters.removeFromTop(14.0f).toNearestInt(),
+                juce::Justification::centredLeft);
+            const auto meterChannels = processor.hasStereoOutput() ? 2 : 1;
+            for (int channel = 0; channel < meterChannels; ++channel)
+            {
+                const auto meterWidth =
+                    meters.getWidth() / static_cast<float>(meterChannels);
+                auto meter = meters.withWidth(meterWidth)
+                    .withX(meters.getX()
+                           + static_cast<float>(channel) * meterWidth)
+                    .reduced(2.0f, 3.0f);
+                graphics.setColour(juce::Colours::white.withAlpha(0.7f));
+                graphics.drawText(
+                    meterChannels == 1 ? "Mono" : channel == 0 ? "L" : "R",
+                    meter.removeFromLeft(meterChannels == 1 ? 36.0f : 14.0f)
+                        .toNearestInt(),
+                    juce::Justification::centredLeft);
+                graphics.setColour(juce::Colours::black.withAlpha(0.35f));
+                graphics.fillRoundedRectangle(meter, 2.0f);
+                graphics.setColour(channel == 0 ? accent : outputColour);
+                graphics.fillRoundedRectangle(
+                    meter.withWidth(
+                        meter.getWidth() * wetLevels[static_cast<size_t>(channel)]),
+                    2.0f);
+            }
             break;
         }
 
@@ -3093,7 +3056,8 @@ void EffectGraph::paintCompact(
                     juce::String(visualizationLabel).length() * 6 + 8))),
         2.0f);
     graphics.setColour(juce::Colour(0xff8995a4).withAlpha(0.72f));
-    graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
+    graphics.setFont(juce::FontOptions(
+        type == ModuleType::delay ? 10.0f : 8.5f, juce::Font::bold));
     graphics.drawText(
         visualizationLabel,
         labelBounds.toNearestInt(),
@@ -3309,47 +3273,6 @@ void EffectGraph::mouseDown(const juce::MouseEvent& event)
             setCompactEqualizerBandFromPoint(band, event.position);
         }
     }
-    else if (type == ModuleType::delay)
-    {
-        grabKeyboardFocus();
-        if (compactDelayStyleArea().contains(event.position))
-        {
-            const auto index = juce::jlimit(
-                0, 3,
-                static_cast<int>(
-                    (event.position.x - compactDelayStyleArea().getX())
-                    / juce::jmax(
-                        1.0f, compactDelayStyleArea().getWidth())
-                    * 4.0f));
-            beginGestures();
-            setValue(4, discreteValue(index, 4));
-            endGestures();
-            repaint();
-            return;
-        }
-        if (compactDelayStereoArea().contains(event.position))
-        {
-            const auto index = juce::jlimit(
-                0, 3,
-                static_cast<int>(
-                    (event.position.x - compactDelayStereoArea().getX())
-                    / juce::jmax(
-                        1.0f, compactDelayStereoArea().getWidth())
-                    * 4.0f));
-            beginGestures();
-            setValue(6, discreteValue(index, 4));
-            endGestures();
-            repaint();
-            return;
-        }
-        if (compactDelayTimelineArea().contains(event.position))
-        {
-            dragPrimary = value(2) >= 0.5f ? 1 : 0;
-            dragSecondary = 3;
-            beginGestures();
-            setCompactDelayFromPoint(event.position);
-        }
-    }
 }
 
 void EffectGraph::mouseDrag(const juce::MouseEvent& event)
@@ -3368,8 +3291,6 @@ void EffectGraph::mouseDrag(const juce::MouseEvent& event)
             setCompactEqualizerBandFromPoint(
                 compactEqualizerBand, event.position);
     }
-    else if (type == ModuleType::delay && dragPrimary >= 0)
-        setCompactDelayFromPoint(event.position);
 }
 
 void EffectGraph::mouseUp(const juce::MouseEvent&)
@@ -3429,15 +3350,6 @@ void EffectGraph::mouseDoubleClick(const juce::MouseEvent& event)
                         band == 0 ? 10 : 11)]);
             repaint();
         }
-    }
-    else if (type == ModuleType::delay
-             && compactDelayTimelineArea().contains(event.position))
-    {
-        const auto defaults = moduleDefaults(type);
-        const auto timingControl = value(2) >= 0.5f ? 1 : 0;
-        setValue(timingControl, defaults[static_cast<size_t>(timingControl)]);
-        setValue(3, defaults[3]);
-        repaint();
     }
 }
 
@@ -3580,51 +3492,7 @@ bool EffectGraph::keyPressed(const juce::KeyPress& key)
         }
     }
     if (type == ModuleType::delay)
-    {
-        const auto timingControl = value(2) >= 0.5f ? 1 : 0;
-        if (key.getKeyCode() == juce::KeyPress::leftKey
-            || key.getKeyCode() == juce::KeyPress::rightKey)
-        {
-            const auto direction =
-                key.getKeyCode() == juce::KeyPress::rightKey
-                ? 1.0f : -1.0f;
-            const auto step = timingControl == 1
-                ? 1.0f / 12.0f
-                : key.getModifiers().isShiftDown()
-                    ? 1.0f / 400.0f : 1.0f / 100.0f;
-            setValue(
-                timingControl,
-                value(timingControl) + direction * step);
-            dragReadout = formatControlValue(
-                type, timingControl, value(timingControl));
-            repaint();
-            return true;
-        }
-        if (key.getKeyCode() == juce::KeyPress::upKey
-            || key.getKeyCode() == juce::KeyPress::downKey)
-        {
-            const auto direction =
-                key.getKeyCode() == juce::KeyPress::upKey
-                ? 1.0f : -1.0f;
-            const auto step = key.getModifiers().isShiftDown()
-                ? 1.0f / 400.0f : 1.0f / 100.0f;
-            setValue(3, value(3) + direction * step);
-            dragReadout = formatControlValue(type, 3, value(3));
-            repaint();
-            return true;
-        }
-        if (key.getKeyCode() == juce::KeyPress::homeKey)
-        {
-            const auto defaults = moduleDefaults(type);
-            setValue(
-                timingControl,
-                defaults[static_cast<size_t>(timingControl)]);
-            setValue(3, defaults[3]);
-            repaint();
-            return true;
-        }
         return false;
-    }
     if (type == ModuleType::guitarTuner)
         return false;
     if (type == ModuleType::compressor)
@@ -4211,52 +4079,70 @@ void EffectGraph::setCompactEqualizerOutputFromY(float y)
     repaint();
 }
 
-juce::Rectangle<float> EffectGraph::compactDelayStyleArea() const
+std::array<float, 2> EffectGraph::compactDelayWetLevels()
 {
-    auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
-    area.removeFromTop(14.0f);
-    return area.removeFromTop(18.0f).reduced(2.0f, 1.0f);
+    std::array<float, 2> levels {};
+    delayTelemetryAvailable = false;
+    ContinuousTelemetrySnapshot telemetry;
+    if (!visualizationActive || processor.isSlotBypassed(slot)
+        || !processor.readContinuousTelemetry(slot, telemetry)
+        || telemetry.sequence == 0
+        || telemetry.valueCount < DelayModule::telemetryValueCount)
+        return levels;
+    const auto now = juce::Time::getMillisecondCounterHiRes();
+    if (telemetry.sequence != delayTelemetrySequence)
+    {
+        delayTelemetrySequence = telemetry.sequence;
+        delayTelemetryTime = now;
+    }
+    if (now - delayTelemetryTime >= 250.0)
+        return levels;
+    delayTelemetryAvailable = true;
+    for (size_t channel = 0; channel < levels.size(); ++channel)
+    {
+        const auto rms = telemetry.values[
+            channel == 0 ? DelayModule::leftWetEnergy : DelayModule::rightWetEnergy];
+        if (std::isfinite(rms) && rms > 0.0f)
+            levels[channel] = juce::jlimit(
+                0.0f, 1.0f,
+                (juce::Decibels::gainToDecibels(rms, -60.0f) + 60.0f) / 60.0f);
+    }
+    return levels;
 }
 
-juce::Rectangle<float> EffectGraph::compactDelayStereoArea() const
+EffectGraph::DelayPreview EffectGraph::compactDelayPreview() const
 {
-    auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
-    area.removeFromTop(14.0f + 18.0f);
-    return area.removeFromTop(18.0f).reduced(2.0f, 1.0f);
+    constexpr std::array<float, 12> beats {
+        1.0f / 12.0f, 0.125f, 1.0f / 6.0f, 0.25f, 1.0f / 3.0f,
+        0.375f, 0.5f, 2.0f / 3.0f, 0.75f, 1.0f, 1.5f, 2.0f
+    };
+    const auto interval = value(2) >= 0.5f
+        ? juce::jlimit(
+              0.001f, 2.0f,
+              static_cast<float>(60.0 / processor.getLastProcessedBpmForUI())
+                  * beats[static_cast<size_t>(discreteIndex(value(1), 12))])
+        : 0.001f * exponential(1.0f, 2000.0f, value(0));
+    constexpr std::array<float, 10> windows {
+        0.01f, 0.02f, 0.05f, 0.1f, 0.2f, 0.5f, 1.0f, 2.0f, 5.0f, 10.0f
+    };
+    const auto window = *std::find_if(
+        windows.begin(), windows.end(),
+        [interval](float candidate) { return candidate >= interval * 4.0f; });
+    const auto feedback = 0.94f * value(3);
+    auto repeats = 1;
+    while (repeats < 6
+           && interval * static_cast<float>(repeats + 1) <= window
+           && std::pow(feedback, static_cast<float>(repeats)) >= 0.04f)
+        ++repeats;
+    return { interval, window, repeats };
 }
 
 juce::Rectangle<float> EffectGraph::compactDelayTimelineArea() const
 {
-    auto area = getLocalBounds().toFloat().reduced(8.0f, 3.0f);
-    area.removeFromTop(14.0f + 36.0f);
-    return area.reduced(4.0f, 2.0f);
-}
-
-void EffectGraph::setCompactDelayFromPoint(juce::Point<float> point)
-{
-    const auto area = compactDelayTimelineArea();
-    if (area.isEmpty())
-        return;
-    const auto horizontal = juce::jlimit(
-        0.0f, 1.0f,
-        (point.x - area.getX()) / area.getWidth());
-    const auto feedback = juce::jlimit(
-        0.0f, 1.0f,
-        1.0f - (point.y - area.getY()) / area.getHeight());
-    const auto timingControl = value(2) >= 0.5f ? 1 : 0;
-    setValue(
-        timingControl,
-        timingControl == 1
-            ? discreteValue(
-                  discreteIndex(horizontal, 12), 12)
-            : horizontal);
-    setValue(3, feedback);
-    dragReadout =
-        formatControlValue(
-            type, timingControl, value(timingControl))
-        + "  |  "
-        + formatControlValue(type, 3, value(3));
-    repaint();
+    auto area = getLocalBounds().toFloat().reduced(12.0f, 3.0f);
+    area.removeFromTop(34.0f);
+    area.removeFromBottom(50.0f);
+    return area;
 }
 
 #if defined(MEGADSP_TESTS)
@@ -4275,12 +4161,6 @@ void EffectGraph::setCompactEqualizerBandFromPointForTesting(
 void EffectGraph::setCompactEqualizerOutputFromYForTesting(float y)
 {
     setCompactEqualizerOutputFromY(y);
-}
-
-void EffectGraph::setCompactDelayFromPointForTesting(
-    juce::Point<float> point)
-{
-    setCompactDelayFromPoint(point);
 }
 
 #endif

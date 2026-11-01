@@ -366,6 +366,16 @@ public:
         child.mouseWheelMove(wheelEvent(child, false), wheel);
         expect(viewport.getViewPositionY() > 200);
         expectEquals(viewport.getViewPositionX(), 0);
+
+        beginTest("Short horizontal racks scroll vertically even with Shift");
+        viewport.setScrollBarsShown(true, true);
+        for (const auto shift : { false, true })
+        {
+            viewport.setViewPosition(500, 200);
+            child.mouseWheelMove(wheelEvent(child, shift), wheel);
+            expect(viewport.getViewPositionY() > 200);
+            expectEquals(viewport.getViewPositionX(), 500);
+        }
     }
 };
 
@@ -962,6 +972,10 @@ public:
                 megadsp::controlParameterId(0, 0))->setValueNotifyingHost(0.37f);
             MegaDSPAudioProcessorEditor editor(processor, 820, 280);
             const auto fullHeight = editor.cardHeightForTesting(0);
+            std::array<int, megadsp::slotCount> fullHeights {};
+            for (int slot = 0; slot < megadsp::slotCount; ++slot)
+                fullHeights[static_cast<size_t>(slot)] =
+                    editor.cardHeightForTesting(slot);
             const auto* preparedCompressor = processor.getRack().activeModuleInstance(0);
             editor.setWidgetSizeForTesting(
                 megadsp::ui::WidgetSize::ultraCompact);
@@ -1008,7 +1022,8 @@ public:
             for (int slot = 0; slot < 8; ++slot)
             {
                 toggleExpansion(slot);
-                expectEquals(editor.cardHeightForTesting(slot), fullHeight);
+                expectEquals(editor.cardHeightForTesting(slot),
+                             fullHeights[static_cast<size_t>(slot)]);
                 expect(editor.cardChildrenFitForTesting());
             }
             editor.setCardsEditorVisibleForTesting(true);
@@ -1016,7 +1031,8 @@ public:
             editor.refreshCardsForTesting();
             for (int slot = 0; slot < 8; ++slot)
             {
-                expectEquals(editor.cardHeightForTesting(slot), fullHeight);
+                expectEquals(editor.cardHeightForTesting(slot),
+                             fullHeights[static_cast<size_t>(slot)]);
                 expect(editor.cardForTesting(slot)->keyPressed(
                     juce::KeyPress(juce::KeyPress::returnKey)));
                 expectEquals(editor.cardHeightForTesting(slot), 36);
@@ -1245,10 +1261,10 @@ public:
                     juce::String("150 ms"));
             if (rawType == static_cast<int>(
                                megadsp::ModuleType::delay))
-                expect(
-                    editor->cardRotaryControlsWorkForTesting(0),
-                    "Compact knobs must be visible and use upward/downward "
-                    "relative dragging.");
+                for (auto* child : editor->cardForTesting(0)->getChildren())
+                    if (auto* slider = dynamic_cast<juce::Slider*>(child);
+                        slider != nullptr && slider->isVisible())
+                        expect(slider->getSliderStyle() == juce::Slider::LinearHorizontal);
             for (const auto size : {
                      megadsp::ui::WidgetSize::small,
                      megadsp::ui::WidgetSize::medium,
@@ -1788,36 +1804,218 @@ public:
                    > 0.1f);
         }
 
-        beginTest("Compact Delay directly edits timing and feedback");
+        beginTest("Delay preview is read-only and reflects timing and feedback");
         {
+            struct TempoHead final : juce::AudioPlayHead
+            {
+                double bpm = 120.0;
+                juce::Optional<PositionInfo> getPosition() const override
+                {
+                    PositionInfo position;
+                    position.setBpm(bpm);
+                    return position;
+                }
+            } playHead;
             MegaDSPAudioProcessor delayProcessor;
             delayProcessor.prepareToPlay(48000.0, 512);
-            setType(
-                delayProcessor, 0, megadsp::ModuleType::delay);
+            delayProcessor.setPlayHead(&playHead);
+            delayProcessor.addModule(megadsp::ModuleType::delay);
             delayProcessor.flushPendingUpdatesForTesting();
             megadsp::ui::EffectGraph graph(
                 delayProcessor, 0, megadsp::ModuleType::delay);
             graph.setBounds(0, 0, 384, 120);
             graph.setValue(2, 0.0f);
-            graph.setCompactDelayFromPointForTesting(
-                { 10000.0f, -100.0f });
+            graph.setValue(0, 0.4f);
+            const auto firstPosition = graph.compactDelayFirstRepeatPositionForTesting();
+            graph.setValue(0, 0.41f);
+            expect(graph.compactDelayFirstRepeatPositionForTesting() > firstPosition);
+            graph.setValue(3, 0.0f);
+            expectEquals(graph.compactDelayRepeatCountForTesting(), 1);
+            graph.setValue(3, 0.8f);
+            expect(graph.compactDelayRepeatCountForTesting() > 1);
+
+            megadsp::ControlValues before {};
+            for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+                before[static_cast<size_t>(control)] = graph.value(control);
+            const auto now = juce::Time::getCurrentTime();
+            const juce::MouseEvent event(
+                juce::Desktop::getInstance().getMainMouseSource(),
+                { 80.0f, 60.0f }, juce::ModifierKeys::leftButtonModifier,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                &graph, &graph, now, { 80.0f, 60.0f }, now, 1, false);
+            graph.mouseDown(event);
+            graph.mouseDrag(event);
+            graph.mouseUp(event);
+            graph.mouseDoubleClick(event);
+            for (const auto key : { juce::KeyPress::rightKey, juce::KeyPress::upKey,
+                                    juce::KeyPress::homeKey })
+                expect(!graph.keyPressed(juce::KeyPress(key)));
+            expect(!graph.getWantsKeyboardFocus());
+            for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+                expectWithinAbsoluteError(
+                    graph.value(control), before[static_cast<size_t>(control)], 0.000001f);
+
+            graph.setValue(0, 0.0f);
+            graph.setValue(1, 9.0f / 11.0f);
+            graph.setValue(2, 1.0f);
             expectWithinAbsoluteError(
-                graph.value(0), 1.0f, 0.000001f);
+                graph.compactDelayIntervalForTesting(), 0.5f, 0.000001f);
+            juce::AudioBuffer<float> audio(2, 512);
+            audio.clear();
+            juce::MidiBuffer midi;
+            playHead.bpm = 90.0;
+            delayProcessor.processBlock(audio, midi);
             expectWithinAbsoluteError(
-                graph.value(3), 1.0f, 0.000001f);
-            graph.setCompactDelayFromPointForTesting(
-                { -100.0f, 10000.0f });
+                graph.compactDelayIntervalForTesting(), 2.0f / 3.0f, 0.000001f);
+            graph.setValue(1, 1.0f);
+            playHead.bpm = 30.0;
+            delayProcessor.processBlock(audio, midi);
             expectWithinAbsoluteError(
-                graph.value(0), 0.0f, 0.000001f);
+                graph.compactDelayIntervalForTesting(), 2.0f, 0.000001f);
+            playHead.bpm = 0.0;
+            delayProcessor.processBlock(audio, midi);
             expectWithinAbsoluteError(
-                graph.value(3), 0.0f, 0.000001f);
-            expect(graph.keyPressed(juce::KeyPress(
-                juce::KeyPress::rightKey)));
-            expect(graph.value(0) > 0.0f);
+                graph.compactDelayIntervalForTesting(), 1.0f, 0.000001f);
+            expectEquals(graph.compactDelayWetLevelsForTesting()[0], 0.0f);
+            graph.setVisualizationActive(true);
+            graph.setValue(2, 0.0f);
+            graph.setValue(11, 0.0f);
+            delayProcessor.flushPendingUpdatesForTesting();
+            graph.setVisualizationActive(true);
+            for (int block = 0; block < 8; ++block)
+            {
+                for (int channel = 0; channel < 2; ++channel)
+                    juce::FloatVectorOperations::fill(
+                        audio.getWritePointer(channel), 0.25f, audio.getNumSamples());
+                delayProcessor.processBlock(audio, midi);
+            }
+            const auto wetLevels = graph.compactDelayWetLevelsForTesting();
+            expect(wetLevels[0] > 0.0f && wetLevels[1] > 0.0f,
+                   "Captured internal wet activity remains measurable at Mix zero.");
+            expectWithinAbsoluteError(audio.getSample(0, 511), 0.25f, 0.000001f);
+            juce::Thread::sleep(275);
+            expectEquals(graph.compactDelayWetLevelsForTesting()[0], 0.0f);
+            delayProcessor.processBlock(audio, midi);
+            expect(graph.compactDelayWetLevelsForTesting()[0] > 0.0f,
+                   "New audio telemetry reactivates the meter after staleness.");
+            delayProcessor.parameters.getParameter(
+                megadsp::slotParameterId(0, "bypass"))->setValueNotifyingHost(1.0f);
+            expectEquals(graph.compactDelayWetLevelsForTesting()[0], 0.0f);
             juce::Image image(
                 juce::Image::ARGB, graph.getWidth(), graph.getHeight(), true);
             juce::Graphics graphics(image);
             graph.paint(graphics);
+        }
+
+        beginTest("Delay cards keep their preview and all controls at short sizes");
+        {
+            MegaDSPAudioProcessor delayProcessor;
+            delayProcessor.prepareToPlay(48000.0, 512);
+            delayProcessor.addModule(megadsp::ModuleType::delay);
+            delayProcessor.flushPendingUpdatesForTesting();
+            MegaDSPAudioProcessorEditor editor(delayProcessor, 900, 360);
+            for (const auto size : { megadsp::ui::WidgetSize::small,
+                                     megadsp::ui::WidgetSize::medium,
+                                     megadsp::ui::WidgetSize::large })
+            {
+                editor.setWidgetSizeForTesting(size);
+                for (const auto height : { 280, 360, 720 })
+                {
+                    editor.setSize(900, height);
+                    expect(editor.cardGraphHeightForTesting(0) >= 120);
+                    expect(editor.cardChildrenFitForTesting());
+                    expect(editor.cardGraphsAvoidControlsForTesting());
+                    expect(editor.cardPresentsAllActiveControlsForTesting());
+                }
+            }
+            editor.setWidgetSizeForTesting(megadsp::ui::WidgetSize::medium);
+            editor.setSize(900, 560);
+            const auto beforeTime = delayProcessor.parameters.getParameter(
+                megadsp::controlParameterId(0, 0))->getValue();
+            for (auto* child : editor.cardForTesting(0)->getChildren())
+                if (auto* slider = dynamic_cast<juce::Slider*>(child);
+                    slider != nullptr && slider->getTitle() == "Feedback")
+                {
+                    slider->setValue(0.63f, juce::sendNotificationSync);
+                    expectWithinAbsoluteError(
+                        delayProcessor.parameters.getParameter(
+                            megadsp::controlParameterId(0, 3))->getValue(),
+                        0.63f, 0.000001f);
+                    expectWithinAbsoluteError(
+                        delayProcessor.parameters.getParameter(
+                            megadsp::controlParameterId(0, 0))->getValue(),
+                        beforeTime, 0.000001f);
+                    const auto now = juce::Time::getCurrentTime();
+                    const juce::MouseEvent reset(
+                        juce::Desktop::getInstance().getMainMouseSource(),
+                        { 20.0f, 8.0f }, {},
+                        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                        slider, slider, now, { 20.0f, 8.0f }, now, 2, false);
+                    slider->mouseDoubleClick(reset);
+                    expectWithinAbsoluteError(
+                        delayProcessor.parameters.getParameter(
+                            megadsp::controlParameterId(0, 3))->getValue(),
+                        megadsp::moduleDefaults(megadsp::ModuleType::delay)[3],
+                        0.000001f);
+                    expectWithinAbsoluteError(
+                        delayProcessor.parameters.getParameter(
+                            megadsp::controlParameterId(0, 0))->getValue(),
+                        beforeTime, 0.000001f);
+                }
+            const auto screenshot = juce::SystemStats::getEnvironmentVariable(
+                "MEGADSP_DELAY_SCREENSHOT", {});
+            if (screenshot.isNotEmpty())
+            {
+                const juce::File file(screenshot);
+                file.deleteFile();
+                auto stream = file.createOutputStream();
+                expect(stream != nullptr);
+                if (stream != nullptr)
+                    expect(juce::PNGImageFormat().writeImageToStream(
+                        editor.cardForTesting(0)->createComponentSnapshot(
+                            editor.cardForTesting(0)->getLocalBounds(), true, 2.0f),
+                        *stream));
+            }
+        }
+
+        beginTest("Mono Delay presentation retains unavailable stereo settings");
+        {
+            MegaDSPAudioProcessor delayProcessor;
+            auto mono = delayProcessor.getBusesLayout();
+            mono.inputBuses.set(0, juce::AudioChannelSet::mono());
+            mono.outputBuses.set(0, juce::AudioChannelSet::mono());
+            expect(delayProcessor.setBusesLayout(mono));
+            delayProcessor.prepareToPlay(48000.0, 512);
+            delayProcessor.addModule(megadsp::ModuleType::delay);
+            delayProcessor.flushPendingUpdatesForTesting();
+            const auto stereoParameter = delayProcessor.parameters.getParameter(
+                megadsp::controlParameterId(0, 6));
+            stereoParameter->setValueNotifyingHost(2.0f / 3.0f);
+            {
+                MegaDSPAudioProcessorEditor editor(delayProcessor, 900, 360);
+                auto found = false;
+                for (auto* child : editor.cardForTesting(0)->getChildren())
+                    if (auto* choice = dynamic_cast<juce::ComboBox*>(child);
+                        choice != nullptr && choice->getTitle() == "Stereo Mode")
+                    {
+                        found = true;
+                        expect(!choice->isEnabled());
+                    }
+                expect(found);
+                expectWithinAbsoluteError(
+                    stereoParameter->getValue(), 2.0f / 3.0f, 0.000001f);
+            }
+            auto stereo = delayProcessor.getBusesLayout();
+            stereo.inputBuses.set(0, juce::AudioChannelSet::stereo());
+            stereo.outputBuses.set(0, juce::AudioChannelSet::stereo());
+            expect(delayProcessor.setBusesLayout(stereo));
+            MegaDSPAudioProcessorEditor editor(delayProcessor, 900, 360);
+            for (auto* child : editor.cardForTesting(0)->getChildren())
+                if (auto* choice = dynamic_cast<juce::ComboBox*>(child);
+                    choice != nullptr && choice->getTitle() == "Stereo Mode")
+                    expect(choice->isEnabled());
+            expectWithinAbsoluteError(
+                stereoParameter->getValue(), 2.0f / 3.0f, 0.000001f);
         }
 
         beginTest("NAM library list does not request DSP telemetry");

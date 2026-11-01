@@ -42,7 +42,23 @@ public:
     void setCompactEqualizerBandFromPointForTesting(
         int band, juce::Point<float>);
     void setCompactEqualizerOutputFromYForTesting(float);
-    void setCompactDelayFromPointForTesting(juce::Point<float>);
+    float compactDelayIntervalForTesting() const
+    {
+        return compactDelayPreview().interval;
+    }
+    float compactDelayFirstRepeatPositionForTesting() const
+    {
+        const auto preview = compactDelayPreview();
+        return preview.interval / preview.window;
+    }
+    int compactDelayRepeatCountForTesting() const
+    {
+        return compactDelayPreview().repeats;
+    }
+    std::array<float, 2> compactDelayWetLevelsForTesting()
+    {
+        return compactDelayWetLevels();
+    }
     juce::Rectangle<float> compactEnvelopePlotAreaForTesting() const
     {
         return compactEnvelopePlotArea();
@@ -154,10 +170,15 @@ private:
     void setCompactEqualizerBandFromPoint(
         int band, juce::Point<float>);
     void setCompactEqualizerOutputFromY(float);
-    juce::Rectangle<float> compactDelayStyleArea() const;
-    juce::Rectangle<float> compactDelayStereoArea() const;
+    struct DelayPreview
+    {
+        float interval;
+        float window;
+        int repeats;
+    };
+    DelayPreview compactDelayPreview() const;
+    std::array<float, 2> compactDelayWetLevels();
     juce::Rectangle<float> compactDelayTimelineArea() const;
-    void setCompactDelayFromPoint(juce::Point<float>);
     void paintCompactEnvelopeMapping(juce::Graphics&);
     juce::Rectangle<float> compactEnvelopePlotArea() const;
     juce::Point<float> compactEnvelopeNode(int node) const;
@@ -174,6 +195,9 @@ private:
     MegaDSPAudioProcessor& processor;
     int slot;
     ModuleType type;
+    std::uint64_t delayTelemetrySequence = 0;
+    double delayTelemetryTime = 0.0;
+    bool delayTelemetryAvailable = false;
     juce::dsp::FFT fft;
     juce::dsp::WindowingFunction<float> window;
     std::array<float, graphFftSize> inputSamples {};

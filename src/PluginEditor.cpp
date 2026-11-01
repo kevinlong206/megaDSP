@@ -2098,6 +2098,8 @@ public:
                     processor.parameters,
                     megadsp::controlParameterId(slot, control),
                     slider);
+                if (type == megadsp::ModuleType::delay)
+                    slider.setDoubleClickReturnValue(true, defaults[index]);
                 slider.setMusicalValueFunctions(
                     [this, control](double value)
                     {
@@ -2443,6 +2445,44 @@ public:
             graph->setBounds(bounds.withTrimmedBottom(4));
             return;
         }
+        if (type == megadsp::ModuleType::delay)
+        {
+            const auto small = editor.widgetSize == megadsp::ui::WidgetSize::small;
+            const auto overlayBounds =
+                bounds.removeFromBottom((small ? 5 : 4) * 40 + 8).reduced(4, 2);
+            graph->setBounds(bounds.withTrimmedBottom(4));
+            controlsOverlay.setBounds(overlayBounds);
+            controlsOverlay.setFrames({});
+            auto rows = overlayBounds.reduced(2);
+            auto timing = rows.removeFromTop(40);
+            layoutGroup(timing.removeFromLeft(110), { 2 });
+            layoutGroup(timing, { controlVisible[0] ? 0 : 1 });
+            layoutGroup(rows.removeFromTop(40), { 3, 9, 11 });
+            layoutGroup(rows.removeFromTop(40), { 4, 6 });
+            if (small)
+            {
+                layoutGroup(rows.removeFromTop(40), { 5, 7 });
+                layoutGroup(rows.removeFromTop(40), { 8, 10 });
+            }
+            else
+                layoutGroup(rows.removeFromTop(40), { 5, 7, 8, 10 });
+            for (int control = 0; control < megadsp::controlsPerSlot; ++control)
+            {
+                const auto index = static_cast<size_t>(control);
+                labels[index].setFont(juce::FontOptions(10.5f));
+                if (sliderAttachments[index] == nullptr)
+                    continue;
+                auto& slider = sliders[index];
+                slider.setCompactFineDraggingEnabled(false);
+                slider.setSliderStyle(juce::Slider::LinearHorizontal);
+                slider.setTextBoxStyle(
+                    control == 0 ? juce::Slider::TextBoxRight
+                                 : juce::Slider::TextBoxBelow,
+                    false, 72, 16);
+                slider.updateText();
+            }
+            return;
+        }
         const auto columns =
             type == megadsp::ModuleType::compressor ? 4
             : editor.widgetSize == megadsp::ui::WidgetSize::small
@@ -2521,7 +2561,15 @@ public:
     int preferredHeight() const
     {
         return isUltraCompact() ? megadsp::ui::ultraCompactRowHeight
-                                : lastNonCompactHeight;
+                                : juce::jmax(
+                                      lastNonCompactHeight, minimumFullHeight());
+    }
+
+    int minimumFullHeight() const
+    {
+        if (type != megadsp::ModuleType::delay)
+            return 1;
+        return editor.widgetSize == megadsp::ui::WidgetSize::small ? 390 : 352;
     }
 
     void collapseUltraPresentation()
@@ -4196,8 +4244,16 @@ void MegaDSPAudioProcessorEditor::resized()
         + rackPadding * 2;
     const auto targetWidth =
         juce::jmax(rackViewport.getWidth(), contentWidth);
-    const auto targetHeight =
-        juce::jmax(1, rackViewport.getMaximumVisibleHeight());
+    const auto visibleCardHeight =
+        juce::jmax(1, rackViewport.getMaximumVisibleHeight() - rackPadding * 2);
+    auto targetHeight = visibleCardHeight + rackPadding * 2;
+    for (const auto& card : cards)
+        targetHeight = juce::jmax(
+            targetHeight, card->minimumFullHeight() + rackPadding * 2);
+    const auto scrollVertically =
+        targetHeight > rackViewport.getMaximumVisibleHeight();
+    rackViewport.setVerticalScrolling(scrollVertically);
+    rackViewport.setScrollBarsShown(scrollVertically, true);
     rackContent.setSize(targetWidth, targetHeight);
     for (auto& button : chainInsertButtons)
         button->setBounds({});
@@ -4211,7 +4267,9 @@ void MegaDSPAudioProcessorEditor::resized()
         auto& card = cards[static_cast<size_t>(index)];
         card->setBounds(
             cardBounds.removeFromLeft(
-                cardWidths[static_cast<size_t>(index)]));
+                cardWidths[static_cast<size_t>(index)])
+                .withHeight(juce::jmax(
+                    visibleCardHeight, card->minimumFullHeight())));
         if (index + 1 < static_cast<int>(cards.size()))
             cardBounds.removeFromLeft(megadsp::ui::moduleCardGap);
     }

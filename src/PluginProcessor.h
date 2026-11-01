@@ -332,6 +332,10 @@ public:
     juce::String getInstanceName() const;
     void setInstanceName(const juce::String&);
     double getCurrentBpmForUI() const { return currentBpm(); }
+    double getLastProcessedBpmForUI() const
+    {
+        return bpmForUI.load(std::memory_order_relaxed);
+    }
     bool hasExternalSidechain() const
     {
         if (const auto* bus = getBus(true, 1))
@@ -539,6 +543,7 @@ private:
     std::atomic<int> processedSnapshotGraphCount { 0 };
     std::atomic<std::int64_t> snapshotRecallDurationMicros { 0 };
     double preparedSampleRate = 48000.0;
+    std::atomic<double> bpmForUI { 120.0 };
     int preparedMaximumBlockSize = 0;
     int preparedChannelCount = 2;
     std::atomic<int> pendingLatency { 0 };
